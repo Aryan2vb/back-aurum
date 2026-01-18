@@ -1,0 +1,462 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  /// Matches Supabase auth.users.id (UUID string)
+  id                         String                   @id
+  email                      String                   @unique
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+  passwordHash               String?
+  fullName                   String?
+  accountsCreated            Account[]
+  auditLogsPerformed         AuditLog[]
+  customersCreated           Customer[]
+  invitationsCreated         OrganizationInvitation[]
+  members                    OrganizationMember[]
+  sessions                   Session[]
+  creditsCreated             Credit[]
+  creditTransactionsCreated  CreditTransaction[]
+}
+
+model Organization {
+  id                   String                   @id @default(uuid())
+  name                 String
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  deletedAt            DateTime?
+  locale               String                   @default("en-US")
+  status               OrganizationStatus       @default(ACTIVE)
+  timezone             String                   @default("UTC")
+  nextCustomerNumber   Int                      @default(1)
+  accounts             Account[]
+  auditLogs            AuditLog[]
+  contactDetails       ContactDetail[]
+  customers            Customer[]
+  documents            Document[]
+  locations            Location[]
+  metaTrackings        MetaTracking[]
+  invitations          OrganizationInvitation[]
+  members              OrganizationMember[]
+  sessions             Session[]
+  socialContexts       SocialContext[]
+  credits              Credit[]
+  creditTransactions   CreditTransaction[]
+
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model OrganizationMember {
+  id             String           @id @default(uuid())
+  userId         String
+  organizationId String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  role           OrganizationRole @default(STAFF)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([organizationId, role])
+}
+
+model OrganizationInvitation {
+  id             String           @id @default(uuid())
+  organizationId String
+  email          String
+  role           OrganizationRole @default(STAFF)
+  token          String           @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  createdBy      User?            @relation(fields: [createdById], references: [id])
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model Session {
+  id             String           @id @default(uuid())
+  userId         String
+  organizationId String
+  role           OrganizationRole
+  ipAddress      String?
+  userAgent      String?
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([expiresAt])
+  @@index([organizationId, userId])
+}
+
+model Customer {
+  id             String          @id @default(uuid())
+  organizationId String
+  customerCode   String
+  fullName       String
+  fatherName     String?
+  motherName     String?
+  spouseName     String?
+  dateOfBirth    DateTime?
+  isDobEstimated Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  createdById    String?
+  deletedAt      DateTime?
+  gender         Gender?
+  status         CustomerStatus  @default(ACTIVE)
+  accounts       Account[]
+  contactDetails ContactDetail[]
+  createdBy      User?           @relation(fields: [createdById], references: [id])
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents      Document[]
+  locations      Location[]
+  metaTrackings  MetaTracking[]
+  socialContexts SocialContext[]
+  credits        Credit[]
+
+  @@unique([organizationId, customerCode])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, customerCode])
+  @@index([createdById])
+  @@index([deletedAt])
+  @@index([organizationId, deletedAt])
+}
+
+model ContactDetail {
+  id                     String          @id @default(uuid())
+  customerId             String
+  organizationId         String
+  primaryPhone           String
+  secondaryPhone         String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  deletedAt              DateTime?
+  phoneOwnerType         PhoneOwnerType?
+  preferredContactMethod ContactMethod?
+  customer               Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization           Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, primaryPhone])
+  @@index([organizationId])
+  @@index([primaryPhone])
+  @@index([customerId])
+  @@index([deletedAt])
+}
+
+model Location {
+  id             String       @id @default(uuid())
+  customerId     String
+  organizationId String
+  village        String?
+  tehsil         String?
+  district       String?
+  state          String?
+  pincode        String?
+  landmark       String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, tehsil])
+  @@index([organizationId, district])
+  @@index([organizationId, village])
+  @@index([customerId])
+  @@index([deletedAt])
+}
+
+model SocialContext {
+  id             String       @id @default(uuid())
+  customerId     String
+  organizationId String
+  caste          String?
+  educationLevel String?
+  occupation     String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+  incomeRange    IncomeRange?
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([deletedAt])
+}
+
+model Document {
+  id             String       @id @default(uuid())
+  customerId     String
+  organizationId String
+  aadharLast4    String?      @db.Char(4)
+  aadharVerified Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, aadharLast4])
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([deletedAt])
+}
+
+model Account {
+  id             String        @id @default(uuid())
+  customerId     String
+  organizationId String
+  openingBalance Decimal       @default(0) @db.Decimal(12, 2)
+  openedAt       DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  createdById    String?
+  deletedAt      DateTime?
+  status         AccountStatus @default(ACTIVE)
+  createdBy      User?         @relation(fields: [createdById], references: [id])
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, customerId])
+  @@index([organizationId, status])
+  @@index([createdById])
+  @@index([deletedAt])
+}
+
+model MetaTracking {
+  id             String       @id @default(uuid())
+  customerId     String
+  organizationId String
+  registeredOn   DateTime?
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+  source         String?
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, source])
+  @@index([organizationId, registeredOn])
+  @@index([customerId])
+  @@index([deletedAt])
+}
+
+model AuditLog {
+  id             String       @id @default(uuid())
+  organizationId String
+  userId         String?
+  action         AuditAction
+  entityType     String
+  entityId       String?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, action])
+  @@index([organizationId, entityType])
+  @@index([organizationId, entityId])
+  @@index([userId])
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+}
+
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  STAFF
+  VIEWER
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  INACTIVE
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  CLOSED
+  SUSPENDED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum AccountStatus {
+  ACTIVE
+  CLOSED
+  SUSPENDED
+  DORMANT
+}
+
+enum PhoneOwnerType {
+  SELF
+  FAMILY
+  NEIGHBOR
+  OTHER
+}
+
+enum ContactMethod {
+  CALL
+  WHATSAPP
+  SMS
+  VISIT
+  EMAIL
+}
+
+enum IncomeRange {
+  LOW
+  MEDIUM
+  HIGH
+  VERY_HIGH
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  SOFT_DELETE
+  RESTORE
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+}
+
+// ===========================
+// UDHAR & RECOVERY MANAGEMENT
+// ===========================
+
+model Credit {
+  id              String              @id @default(uuid())
+  organizationId  String
+  customerId      String
+
+  // Sale/Item reference (loose coupling)
+  saleReference   String?             // Invoice/bill number
+  itemSummary     String?             // "Gold Necklace 22K, 45g"
+  description     String?             // Additional notes about the credit
+
+  // Amounts (Decimal for precise money handling)
+  totalAmount     Decimal             @db.Decimal(12, 2) // Total credit amount
+  paidAmount      Decimal             @default(0) @db.Decimal(12, 2) // Sum of payments
+
+  // Dates
+  creditDate      DateTime            @default(now()) // When credit was given
+  expectedDueDate DateTime?           // Customer's promised repayment date
+  lastPaymentDate DateTime?           // Denormalized for reminder logic
+
+  // Reminders
+  reminderFrequency ReminderFrequency?
+  nextReminderDate  DateTime?
+
+  status          CreditStatus        @default(ACTIVE)
+  notes           String?
+
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  createdById     String?
+  deletedAt       DateTime?
+
+  // Relations
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer        Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  createdBy       User?               @relation(fields: [createdById], references: [id])
+  transactions    CreditTransaction[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([organizationId, customerId])
+  @@index([organizationId, status])
+  @@index([organizationId, nextReminderDate])
+  @@index([organizationId, expectedDueDate])
+  @@index([createdById])
+  @@index([deletedAt])
+}
+
+model CreditTransaction {
+  id              String          @id @default(uuid())
+  creditId        String
+  organizationId  String
+
+  amount          Decimal         @db.Decimal(12, 2) // Payment amount
+  transactionDate DateTime        @default(now())
+  paymentMethod   PaymentMethod?
+  referenceNumber String?         // UPI ref, cheque number, etc.
+  collectedBy     String?         // Staff name who collected
+  notes           String?
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  createdById     String?
+
+  // Relations
+  credit          Credit          @relation(fields: [creditId], references: [id], onDelete: Cascade)
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       User?           @relation(fields: [createdById], references: [id])
+
+  @@index([creditId])
+  @@index([organizationId])
+  @@index([organizationId, transactionDate])
+  @@index([createdById])
+}
+
+enum CreditStatus {
+  ACTIVE      // Unpaid or partially paid
+  PAID        // Fully repaid
+  OVERDUE     // Past expected due date
+  CANCELLED   // Written off
+}
+
+enum ReminderFrequency {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  CUSTOM
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+  CHEQUE
+  CARD
+  OTHER
+}
