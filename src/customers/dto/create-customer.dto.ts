@@ -5,11 +5,13 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsArray,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Gender } from '@prisma/client';
 import { CreateContactDetailDto } from './create-contact-detail.dto';
+import { CreateLocationDto } from './create-location.dto';
 
 export class CreateCustomerDto {
   @IsString()
@@ -44,5 +46,11 @@ export class CreateCustomerDto {
   @Type(() => CreateContactDetailDto)
   @IsOptional()
   contactDetails?: CreateContactDetailDto;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateLocationDto)
+  @IsOptional()
+  locations?: CreateLocationDto[];
 }
 

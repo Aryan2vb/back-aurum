@@ -70,6 +70,22 @@ export class CustomersService {
       const sequenceNumber = await this.bumpCustomerSequence(tx, organizationId);
       const customerCode = this.generateCustomerCode(sequenceNumber);
 
+      const locationCreates = (createCustomerDto.locations ?? [])
+        .filter((loc) =>
+          [loc.village, loc.tehsil, loc.district, loc.state, loc.pincode, loc.landmark].some(
+            (v) => v !== undefined && v !== null && v !== '',
+          ),
+        )
+        .map((loc) => ({
+          organizationId,
+          village: loc.village,
+          tehsil: loc.tehsil,
+          district: loc.district,
+          state: loc.state,
+          pincode: loc.pincode,
+          landmark: loc.landmark,
+        }));
+
       const customer = await tx.customer.create({
         data: {
           organizationId,
@@ -99,9 +115,14 @@ export class CustomersService {
               },
             }
             : undefined,
+          locations:
+            locationCreates.length > 0 ? { create: locationCreates } : undefined,
         },
         include: {
           contactDetails: {
+            where: { deletedAt: null },
+          },
+          locations: {
             where: { deletedAt: null },
           },
           organization: {
