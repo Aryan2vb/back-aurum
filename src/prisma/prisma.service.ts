@@ -81,8 +81,28 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async onModuleInit() {
-    await this.$connect();
-    this.logger.log('PrismaService connected to database');
+    const maxRetries = 5;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.$connect();
+        this.logger.log('PrismaService connected to database');
+        return;
+      } catch (error) {
+        if (attempt === maxRetries) {
+          this.logger.error(
+            `Failed to connect to database after ${maxRetries} attempts`,
+            error instanceof Error ? error.stack : String(error),
+          );
+          throw error;
+        }
+        const delayMs = Math.pow(2, attempt - 1) * 1000;
+        this.logger.warn(
+          `Database connection attempt ${attempt} failed, retrying in ${delayMs / 1000}s... (${maxRetries - attempt} attempts left)`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
   }
 
   async onModuleDestroy() {
