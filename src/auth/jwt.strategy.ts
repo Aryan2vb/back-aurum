@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,6 +19,8 @@ export interface JwtPayload {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(private prisma: PrismaService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -23,57 +30,70 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
-    const session = await this.prisma.session.findUnique({
-      where: { id: payload.sessionId },
-    });
+    try {
+      const session = await this.prisma.session.findUnique({
+        where: { id: payload.sessionId },
+      });
 
-    if (!session) {
-      throw new UnauthorizedException('Session not found');
-    }
+      if (!session) {
+        throw new UnauthorizedException('Session not found');
+      }
 
-    if (session.revokedAt) {
-      throw new UnauthorizedException('Session has been revoked');
-    }
+      if (session.revokedAt) {
+        throw new UnauthorizedException('Session has been revoked');
+      }
 
-    if (session.expiresAt < new Date()) {
-      throw new UnauthorizedException('Session has expired');
-    }
+      if (session.expiresAt < new Date()) {
+        throw new UnauthorizedException('Session has expired');
+      }
 
-    if (session.userId !== payload.sub || session.organizationId !== payload.org) {
-      throw new UnauthorizedException('Session does not match token claims');
-    }
+      if (session.userId !== payload.sub || session.organizationId !== payload.org) {
+        throw new UnauthorizedException('Session does not match token claims');
+      }
 
-    if (session.role !== payload.role) {
-      throw new UnauthorizedException('Session role mismatch');
-    }
+      if (session.role !== payload.role) {
+        throw new UnauthorizedException('Session role mismatch');
+      }
 
-    const membership = await this.prisma.organizationMember.findUnique({
-      where: {
-        userId_organizationId: {
-          userId: payload.sub,
-          organizationId: payload.org,
+      const membership = await this.prisma.organizationMember.findUnique({
+        where: {
+          userId_organizationId: {
+            userId: payload.sub,
+            organizationId: payload.org,
+          },
         },
-      },
-    });
+      });
 
-    if (!membership) {
-      throw new UnauthorizedException(
-        'User is not a member of the specified organization',
+      if (!membership) {
+        throw new UnauthorizedException(
+          'User is not a member of the specified organization',
+        );
+      }
+
+      if (membership.role !== payload.role) {
+        throw new UnauthorizedException('Role mismatch');
+      }
+
+      // Return user info that will be attached to request.user
+      return {
+        userId: payload.sub,
+        email: payload.email,
+        organizationId: payload.org,
+        role: payload.role,
+        sessionId: session.id,
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      this.logger.error(
+        'Database error during JWT validation',
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new ServiceUnavailableException(
+        'Database temporarily unavailable, please try again later',
       );
     }
-
-    if (membership.role !== payload.role) {
-      throw new UnauthorizedException('Role mismatch');
-    }
-
-    // Return user info that will be attached to request.user
-    return {
-      userId: payload.sub,
-      email: payload.email,
-      organizationId: payload.org,
-      role: payload.role,
-      sessionId: session.id,
-    };
   }
 }
 
