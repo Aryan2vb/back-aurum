@@ -28,7 +28,7 @@ try {
 } catch (error) {
   console.error('❌ Invalid URL format:', error.message);
   console.error('\nExpected format:');
-  console.error('postgresql://user:password@host:port/database?pgbouncer=true&connection_limit=1');
+  console.error('postgresql://user:password@host:port/database?pgbouncer=true');
   process.exit(1);
 }
 

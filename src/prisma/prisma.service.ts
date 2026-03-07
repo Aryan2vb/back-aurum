@@ -42,8 +42,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     'upsert',
   ]);
 
+  private static readonly DEFAULT_POOL_SIZE = 5;
+  private static readonly DEFAULT_POOL_TIMEOUT_SECONDS = 20;
+
   constructor() {
-    super();
+    super(PrismaService.buildClientOptions());
 
     this.$use(async (params, next) => {
       if (
@@ -78,6 +81,41 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
       return next(params);
     });
+  }
+
+  private static buildClientOptions(): Prisma.PrismaClientOptions {
+    const url = process.env.DATABASE_URL;
+    if (!url) return {};
+
+    try {
+      const parsed = new URL(url);
+
+      // Persistent NestJS servers need more than 1 connection to handle concurrent
+      // requests. Use DATABASE_POOL_SIZE (default 5) to override the connection_limit
+      // that is typically set to 1 in Supabase/PgBouncer DATABASE_URLs.
+      const poolSize = Math.max(
+        1,
+        parseInt(
+          process.env.DATABASE_POOL_SIZE ||
+            String(PrismaService.DEFAULT_POOL_SIZE),
+          10,
+        ),
+      );
+      parsed.searchParams.set('connection_limit', String(poolSize));
+
+      // Use a more lenient pool timeout (seconds) to tolerate brief contention.
+      // Only set when the URL does not already specify a value.
+      if (!parsed.searchParams.has('pool_timeout')) {
+        parsed.searchParams.set(
+          'pool_timeout',
+          String(PrismaService.DEFAULT_POOL_TIMEOUT_SECONDS),
+        );
+      }
+
+      return { datasources: { db: { url: parsed.toString() } } };
+    } catch {
+      return {};
+    }
   }
 
   async onModuleInit() {
