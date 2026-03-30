@@ -10,14 +10,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
-import {
-  AuditAction,
-  Organization,
-  OrganizationInvitation,
-  OrganizationRole,
-  OrganizationStatus,
-  Prisma,
-} from '@prisma/client';
+import { AuditAction, OrganizationRole, OrganizationStatus, Prisma } from '@prisma/client';
 import { JwtPayload } from './jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
 import { SignupDto } from './dto/signup.dto';
@@ -48,11 +41,10 @@ export class AuthService {
     this.logger.log('AuthService initialized');
   }
 
-  async signupFounder(
-    dto: SignupDto,
-    meta: AuthRequestMetadata,
-  ): Promise<AuthTokenResponse> {
-    this.logger.log(`Signup attempt for email: ${dto.email}, organization: ${dto.organizationName}`);
+  async signupFounder(dto: SignupDto, meta: AuthRequestMetadata): Promise<AuthTokenResponse> {
+    this.logger.log(
+      `Signup attempt for email: ${dto.email}, organization: ${dto.organizationName}`,
+    );
     return this.prisma.$transaction(async (tx) => {
       await this.assertEmailAvailable(tx, dto.email);
       const normalizedFullName = dto.fullName.trim();
@@ -110,13 +102,7 @@ export class AuthService {
         meta,
       });
 
-      const session = await this.createSession(
-        tx,
-        user.id,
-        organization.id,
-        membership.role,
-        meta,
-      );
+      const session = await this.createSession(tx, user.id, organization.id, membership.role, meta);
 
       const accessToken = this.buildAccessToken({
         sub: user.id,
@@ -251,15 +237,14 @@ export class AuthService {
         meta,
       });
 
-      this.logger.log(`Invitation accepted for user ${user.id}, organization ${invitation.organizationId}`);
+      this.logger.log(
+        `Invitation accepted for user ${user.id}, organization ${invitation.organizationId}`,
+      );
       return { accessToken };
     });
   }
 
-  async login(
-    dto: LoginDto,
-    meta: AuthRequestMetadata,
-  ): Promise<AuthTokenResponse> {
+  async login(dto: LoginDto, meta: AuthRequestMetadata): Promise<AuthTokenResponse> {
     this.logger.log(`Login attempt for email: ${dto.email}`);
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
@@ -285,9 +270,7 @@ export class AuthService {
     }
 
     if (user.members.length !== 1) {
-      throw new ForbiddenException(
-        'User must be bound to exactly one organization',
-      );
+      throw new ForbiddenException('User must be bound to exactly one organization');
     }
 
     const membership = user.members[0];
@@ -325,7 +308,9 @@ export class AuthService {
       meta,
     });
 
-    this.logger.log(`Login successful for user ${user.id}, organization ${membership.organizationId}`);
+    this.logger.log(
+      `Login successful for user ${user.id}, organization ${membership.organizationId}`,
+    );
     return { accessToken };
   }
 

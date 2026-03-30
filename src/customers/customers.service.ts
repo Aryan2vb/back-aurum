@@ -24,7 +24,7 @@ import { CreateMetaTrackingDto } from './dto/create-meta-tracking.dto';
 import { UpdateMetaTrackingDto } from './dto/update-meta-tracking.dto';
 import { SearchCustomerDto } from './dto/search-customer.dto';
 import { BulkUpdateStatusDto } from './dto/bulk-update-status.dto';
-import { PaginationQueryDto, PaginatedResponse } from './dto/pagination.dto';
+import { PaginationQueryDto } from './dto/pagination.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
 import { Prisma } from '@prisma/client';
 
@@ -105,18 +105,16 @@ export class CustomersService {
               : createCustomerDto.isDobEstimated,
           contactDetails: createCustomerDto.contactDetails
             ? {
-              create: {
-                organizationId,
-                primaryPhone: createCustomerDto.contactDetails.primaryPhone,
-                secondaryPhone: createCustomerDto.contactDetails.secondaryPhone,
-                phoneOwnerType: createCustomerDto.contactDetails.phoneOwnerType,
-                preferredContactMethod:
-                  createCustomerDto.contactDetails.preferredContactMethod,
-              },
-            }
+                create: {
+                  organizationId,
+                  primaryPhone: createCustomerDto.contactDetails.primaryPhone,
+                  secondaryPhone: createCustomerDto.contactDetails.secondaryPhone,
+                  phoneOwnerType: createCustomerDto.contactDetails.phoneOwnerType,
+                  preferredContactMethod: createCustomerDto.contactDetails.preferredContactMethod,
+                },
+              }
             : undefined,
-          locations:
-            locationCreates.length > 0 ? { create: locationCreates } : undefined,
+          locations: locationCreates.length > 0 ? { create: locationCreates } : undefined,
         },
         include: {
           contactDetails: {
@@ -178,7 +176,7 @@ export class CustomersService {
           deletedAt: null,
         },
         select: { primaryPhone: true },
-        take: 1
+        take: 1,
       });
 
       if (existingPhones.length > 0) {
@@ -213,8 +211,7 @@ export class CustomersService {
           spouseName: dto.spouseName,
           gender: dto.gender,
           dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
-          isDobEstimated:
-            dto.isDobEstimated === undefined ? undefined : dto.isDobEstimated,
+          isDobEstimated: dto.isDobEstimated === undefined ? undefined : dto.isDobEstimated,
           status: 'ACTIVE',
         });
 
@@ -253,12 +250,7 @@ export class CustomersService {
   }
 
   async findAll(paginationDto: PaginationQueryDto, organizationId: string) {
-    const {
-      page = 1,
-      limit = 20,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-    } = paginationDto;
+    const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc' } = paginationDto;
 
     const skip = (page - 1) * limit;
     const where = {
@@ -354,10 +346,7 @@ export class CustomersService {
           contactDetails: {
             some: {
               deletedAt: null,
-              OR: [
-                { primaryPhone: { contains: query } },
-                { secondaryPhone: { contains: query } },
-              ],
+              OR: [{ primaryPhone: { contains: query } }, { secondaryPhone: { contains: query } }],
             },
           },
         },
@@ -373,10 +362,7 @@ export class CustomersService {
       where.contactDetails = {
         some: {
           deletedAt: null,
-          OR: [
-            { primaryPhone: { contains: phone } },
-            { secondaryPhone: { contains: phone } },
-          ],
+          OR: [{ primaryPhone: { contains: phone } }, { secondaryPhone: { contains: phone } }],
         },
       };
     }
@@ -1252,11 +1238,7 @@ export class CustomersService {
     });
   }
 
-  async addAccount(
-    customerId: string,
-    createAccountDto: CreateAccountDto,
-    user: CurrentUserData,
-  ) {
+  async addAccount(customerId: string, createAccountDto: CreateAccountDto, user: CurrentUserData) {
     const { organizationId, userId } = user;
 
     await this.ensureCustomerAccess(customerId, organizationId);
@@ -1312,9 +1294,7 @@ export class CustomersService {
     });
 
     if (result.count === 0) {
-      throw new NotFoundException(
-        `Account ${accountId} not found for this customer/organization`,
-      );
+      throw new NotFoundException(`Account ${accountId} not found for this customer/organization`);
     }
 
     return this.getEntity('account', accountId, customerId, organizationId);
@@ -1336,9 +1316,7 @@ export class CustomersService {
     });
 
     if (result.count === 0) {
-      throw new NotFoundException(
-        `Account ${accountId} not found for this customer/organization`,
-      );
+      throw new NotFoundException(`Account ${accountId} not found for this customer/organization`);
     }
 
     return { message: 'Account deleted successfully' };
@@ -1516,7 +1494,13 @@ export class CustomersService {
   }
 
   private async getEntity(
-    entityType: 'contactDetail' | 'location' | 'socialContext' | 'document' | 'account' | 'metaTracking',
+    entityType:
+      | 'contactDetail'
+      | 'location'
+      | 'socialContext'
+      | 'document'
+      | 'account'
+      | 'metaTracking',
     entityId: string,
     customerId: string,
     organizationId: string,
@@ -1575,12 +1559,9 @@ export class CustomersService {
   }
 
   private ensureSocialContextPayloadHasData(dto: CreateSocialContextDto | UpdateSocialContextDto) {
-    const hasData = [
-      dto.caste,
-      dto.educationLevel,
-      dto.occupation,
-      dto.incomeRange,
-    ].some((value) => value !== undefined);
+    const hasData = [dto.caste, dto.educationLevel, dto.occupation, dto.incomeRange].some(
+      (value) => value !== undefined,
+    );
 
     if (!hasData) {
       throw new BadRequestException('At least one social context field is required');
@@ -1588,10 +1569,7 @@ export class CustomersService {
   }
 
   private ensureDocumentPayloadHasData(dto: CreateDocumentDto | UpdateDocumentDto) {
-    const hasData = [
-      dto.aadharLast4,
-      dto.aadharVerified,
-    ].some((value) => value !== undefined);
+    const hasData = [dto.aadharLast4, dto.aadharVerified].some((value) => value !== undefined);
 
     if (!hasData) {
       throw new BadRequestException('At least one document field is required');
@@ -1599,11 +1577,7 @@ export class CustomersService {
   }
 
   private ensureMetaTrackingPayloadHasData(dto: CreateMetaTrackingDto | UpdateMetaTrackingDto) {
-    const hasData = [
-      dto.registeredOn,
-      dto.notes,
-      dto.source,
-    ].some((value) => value !== undefined);
+    const hasData = [dto.registeredOn, dto.notes, dto.source].some((value) => value !== undefined);
 
     if (!hasData) {
       throw new BadRequestException('At least one meta tracking field is required');
