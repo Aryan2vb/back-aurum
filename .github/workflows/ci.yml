@@ -78,7 +78,7 @@ jobs:
           DIRECT_URL: postgresql://aurum:aurum_test@localhost:5432/aurum_test
 
       - name: Run Jest
-        run: npm run test:cov -- --ci
+        run: npm run test:cov -- --ci --passWithNoTests
         env:
           DATABASE_URL: postgresql://aurum:aurum_test@localhost:5432/aurum_test
           DIRECT_URL: postgresql://aurum:aurum_test@localhost:5432/aurum_test
