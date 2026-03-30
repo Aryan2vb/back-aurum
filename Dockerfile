@@ -8,16 +8,19 @@ RUN npm ci
 
 # ── Stage 2: build ────────────────────────────────
 FROM node:20-alpine AS builder
+# Prisma's query engine binary requires openssl at build time
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Generate Prisma client for the target platform
+# Generate Prisma client for the target platform (linux-musl-openssl-3.0.x)
 RUN npx prisma generate
 RUN npm run build
 
 # ── Stage 3: production ───────────────────────────
 FROM node:20-alpine AS production
-RUN apk add --no-cache curl            # needed for healthcheck
+# curl for healthcheck, openssl for Prisma query engine + migrate deploy
+RUN apk add --no-cache curl openssl
 WORKDIR /app
 ENV NODE_ENV=production
 
