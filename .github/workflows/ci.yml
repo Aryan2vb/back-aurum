@@ -117,35 +117,36 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
-  
-            cd /home/ec2-user/back-aurum
-  
-            echo "── Pulling latest code ──"
-            git pull origin main
-  
+
+            cd /opt/aurum
+
+            echo "── Pulling latest backend code ──"
+            git -C back-aurum pull origin main
+
+            echo "── Syncing compose from frontend repo ──"
+            cp aurum/docker/docker-compose.prod.yml docker-compose.prod.yml
+
             echo "── Freeing space (t2.micro survival mode) ──"
             docker image prune -af || true
             docker builder prune -af || true
             docker volume prune -f || true
-  
-            echo "── Rebuilding backend ──"
+
+            echo "── Rebuilding backend only ──"
             docker compose -f docker-compose.prod.yml up -d --build --no-deps backend
-  
+
             echo "── Waiting for container to be HEALTHY ──"
-  
-            # Wait until Docker healthcheck passes
-            until [ "$(docker inspect -f '{{.State.Health.Status}}' back-aurum-prod 2>/dev/null || echo "starting")" = "healthy" ]; do
+            until [ "$(docker inspect -f '{{.State.Health.Status}}' $(docker compose -f docker-compose.prod.yml ps -q backend) 2>/dev/null || echo 'starting')" = "healthy" ]; do
               echo "Waiting for backend to be healthy..."
               sleep 3
             done
-  
+
             echo "Container is healthy ✅"
-  
+
             echo "── Running Prisma migrations ──"
             docker compose -f docker-compose.prod.yml exec -T backend \
               npx prisma migrate deploy
-  
+
             echo "── Cleaning up ──"
             docker image prune -f
-  
+
             echo "── Deploy complete ✓ ──"
