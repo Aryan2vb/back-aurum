@@ -104,9 +104,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [unit-tests]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  
     environment:
       name: production
-
+  
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -116,32 +117,33 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
+  
             cd /home/ec2-user/back-aurum
-
+  
             echo "── Pulling latest code ──"
             git pull origin main
-
-            echo "── Aggressive pre-build prune ──"
-            # Attempt to free up as much SSD and RAM as possible on our t2.micro
+  
+            echo "── Freeing space (t2.micro survival mode) ──"
             docker image prune -af || true
-
-            echo "── Rebuilding backend container ──"
+  
+            echo "── Rebuilding backend ──"
             docker compose -f docker-compose.prod.yml up -d --build --no-deps backend
-
-            echo "── Health Check (Waiting 10s) ──"
-            sleep 10
-            if ! docker ps --filter "name=back-aurum-prod" --filter "status=running" | grep -q back-aurum-prod; then
-              echo "CRITICAL ERROR: Container is not running!"
-              docker logs back-aurum-prod --tail 50
-              exit 1
-            fi
-            echo "Container is running properly!"
-
+  
+            echo "── Waiting for container to be HEALTHY ──"
+  
+            # Wait until Docker healthcheck passes
+            until [ "$(docker inspect -f '{{.State.Health.Status}}' back-aurum-prod 2>/dev/null || echo "starting")" = "healthy" ]; do
+              echo "Waiting for backend to be healthy..."
+              sleep 3
+            done
+  
+            echo "Container is healthy ✅"
+  
             echo "── Running Prisma migrations ──"
             docker compose -f docker-compose.prod.yml exec -T backend \
               npx prisma migrate deploy
-
-            echo "── Pruning dangling images ──"
+  
+            echo "── Cleaning up ──"
             docker image prune -f
-
+  
             echo "── Deploy complete ✓ ──"
