@@ -104,7 +104,6 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: production
-      url: http://${{ secrets.EC2_HOST }}:3000
 
     steps:
       - name: Deploy via SSH
