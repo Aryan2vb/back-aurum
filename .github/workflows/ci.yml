@@ -118,11 +118,24 @@ jobs:
             set -e
             cd /home/ec2-user/back-aurum
 
-            echo "── Pulling back-aurum ──"
+            echo "── Pulling latest code ──"
             git pull origin main
+
+            echo "── Aggressive pre-build prune ──"
+            # Attempt to free up as much SSD and RAM as possible on our t2.micro
+            docker image prune -af || true
 
             echo "── Rebuilding backend container ──"
             docker compose -f docker-compose.prod.yml up -d --build --no-deps backend
+
+            echo "── Health Check (Waiting 10s) ──"
+            sleep 10
+            if ! docker ps --filter "name=back-aurum-prod" --filter "status=running" | grep -q back-aurum-prod; then
+              echo "CRITICAL ERROR: Container is not running!"
+              docker logs back-aurum-prod --tail 50
+              exit 1
+            fi
+            echo "Container is running properly!"
 
             echo "── Running Prisma migrations ──"
             docker compose -f docker-compose.prod.yml exec -T backend \

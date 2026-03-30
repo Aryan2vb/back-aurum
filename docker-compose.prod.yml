@@ -11,6 +11,11 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    # Limit backend container to 800MB RAM to prevent t2.micro OS from crashing
+    deploy:
+      resources:
+        limits:
+          memory: 800M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
