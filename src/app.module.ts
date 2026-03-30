@@ -7,6 +7,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { CustomersModule } from './customers/customers.module';
 import { CreditsModule } from './credits/credits.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -22,10 +23,10 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
     PrismaModule,
     AuthModule,
     OrganizationsModule,
-    OrganizationsModule,
     CustomersModule,
     CreditsModule,
   ],
+  controllers: [AppController],
   providers: [
     {
       provide: APP_GUARD,
@@ -33,5 +34,4 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
     },
   ],
 })
-export class AppModule { }
-
+export class AppModule {}
