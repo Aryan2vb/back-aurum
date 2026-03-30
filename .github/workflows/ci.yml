@@ -75,11 +75,13 @@ jobs:
         run: npx prisma migrate deploy
         env:
           DATABASE_URL: postgresql://aurum:aurum_test@localhost:5432/aurum_test
+          DIRECT_URL: postgresql://aurum:aurum_test@localhost:5432/aurum_test
 
       - name: Run Jest
         run: npm run test:cov -- --ci
         env:
           DATABASE_URL: postgresql://aurum:aurum_test@localhost:5432/aurum_test
+          DIRECT_URL: postgresql://aurum:aurum_test@localhost:5432/aurum_test
           JWT_SECRET: ci-test-secret-not-for-production
           NODE_ENV: test
 
