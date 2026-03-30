@@ -125,6 +125,8 @@ jobs:
   
             echo "── Freeing space (t2.micro survival mode) ──"
             docker image prune -af || true
+            docker builder prune -af || true
+            docker volume prune -f || true
   
             echo "── Rebuilding backend ──"
             docker compose -f docker-compose.prod.yml up -d --build --no-deps backend

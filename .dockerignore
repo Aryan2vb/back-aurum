@@ -1,0 +1,40 @@
+# ── Dependencies (rebuilt inside Docker via npm ci) ──
+node_modules
+.npm
+
+# ── Build output (rebuilt inside Docker) ──
+dist
+
+# ── Environment & secrets ──
+.env
+.env.*
+!.env.example
+
+# ── Git ──
+.git
+.gitignore
+
+# ── Dev tooling ──
+.eslintrc*
+.eslintignore
+.prettierrc*
+jest.config.*
+*.test.ts
+*.spec.ts
+test/
+coverage/
+
+# ── Editor & OS ──
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# ── Docker files (not needed in context) ──
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# ── CI/CD ──
+.github
