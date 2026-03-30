@@ -1,0 +1,133 @@
+name: back-aurum · CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ─────────────────────────────────────────────────────────
+  # 1. Lint + Type-check
+  # ─────────────────────────────────────────────────────────
+  lint-typecheck:
+    name: Lint & tsc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+  # ─────────────────────────────────────────────────────────
+  # 2. Unit + Integration tests (Jest)
+  # ─────────────────────────────────────────────────────────
+  unit-tests:
+    name: Jest (unit + integration)
+    runs-on: ubuntu-latest
+    needs: lint-typecheck
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aurum
+          POSTGRES_PASSWORD: aurum_test
+          POSTGRES_DB: aurum_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Prisma migrations (test DB)
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://aurum:aurum_test@localhost:5432/aurum_test
+
+      - name: Run Jest
+        run: npm run test:cov -- --ci
+        env:
+          DATABASE_URL: postgresql://aurum:aurum_test@localhost:5432/aurum_test
+          JWT_SECRET: ci-test-secret-not-for-production
+          NODE_ENV: test
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: coverage/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────
+  # 3. Deploy → EC2 via SSH (main only)
+  #    NOTE: E2E Playwright tests live in aurum's workflow.
+  #    This job triggers after aurum's pipeline succeeds,
+  #    or can be triggered standalone for backend-only changes.
+  # ─────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy → EC2
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: http://${{ secrets.EC2_HOST }}:3000
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/aurum
+
+            echo "── Pulling back-aurum ──"
+            git -C back-aurum pull origin main
+
+            echo "── Rebuilding backend container ──"
+            docker compose -f docker-compose.prod.yml up -d --build --no-deps backend
+
+            echo "── Running Prisma migrations ──"
+            docker compose -f docker-compose.prod.yml exec -T backend \
+              npx prisma migrate deploy
+
+            echo "── Pruning dangling images ──"
+            docker image prune -f
+
+            echo "── Deploy complete ✓ ──"
