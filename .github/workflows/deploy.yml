@@ -1,23 +1,112 @@
-name: Deploy to EC2
+name: aurum · deploy
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
 
 jobs:
   deploy:
+    name: Deploy → EC2 (dynamic IP)
     runs-on: ubuntu-latest
 
+    # ── OIDC permissions (no stored AWS keys needed) ──────
+    permissions:
+      id-token: write
+      contents: read
+
+    environment:
+      name: production
+
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@master
+      - uses: actions/checkout@v4
+
+      # ── 1. Authenticate to AWS via OIDC ─────────────────
+      # Zero stored credentials. GitHub exchanges a short-lived
+      # OIDC token for temporary AWS credentials at runtime.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_KEY }}
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # ── 2. Fetch current public IP dynamically ───────────
+      # EC2_INSTANCE_ID never changes on stop/start — only the
+      # public IP does. We query it fresh on every deploy run.
+      - name: Fetch EC2 public IP
+        id: ec2
+        run: |
+          IP=$(aws ec2 describe-instances \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text)
+
+          if [ -z "$IP" ] || [ "$IP" = "None" ]; then
+            echo "ERROR: Instance has no public IP. Is it running?"
+            exit 1
+          fi
+
+          echo "ip=$IP" >> "$GITHUB_OUTPUT"
+          echo "Resolved IP: $IP"
+
+      # ── 3. Wait for SSH to be ready ──────────────────────
+      # If this deploy runs right after an EventBridge start,
+      # the instance may still be booting. Retry for 2 minutes.
+      - name: Wait for SSH readiness
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+
+          for i in $(seq 1 12); do
+            if ssh -o StrictHostKeyChecking=no \
+                   -o ConnectTimeout=10 \
+                   -i /tmp/deploy_key \
+                   ${{ secrets.EC2_USER }}@${{ steps.ec2.outputs.ip }} \
+                   "echo ok" 2>/dev/null; then
+              echo "SSH ready"
+              exit 0
+            fi
+            echo "Attempt $i/12 — retrying in 10s..."
+            sleep 10
+          done
+          echo "ERROR: SSH did not become ready in time."
+          exit 1
+
+      # ── 4. Deploy ────────────────────────────────────────
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ steps.ec2.outputs.ip }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /home/ec2-user/REPO
-            git pull origin main
-            npm install
-            npm run build
-            pm2 restart backend
+            set -e
+            cd /opt/aurum
+
+            echo "── Pulling latest code ──"
+            git -C aurum      pull origin main
+            git -C back-aurum pull origin main
+
+            echo "── Setting up configuration ──"
+            cp aurum/docker/docker-compose.prod.yml .
+            cp -r aurum/docker/nginx .
+
+            echo "── Rebuilding containers ──"
+            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+
+            echo "── Prisma migrations ──"
+            docker compose -f docker-compose.prod.yml exec -T backend \
+              npx prisma migrate deploy
+
+            echo "── Pruning images ──"
+            docker image prune -f
+
+            echo "── Done ✓ ──"
+
+      # ── 5. Cleanup ───────────────────────────────────────
+      - name: Remove temp SSH key
+        if: always()
+        run: rm -f /tmp/deploy_key
