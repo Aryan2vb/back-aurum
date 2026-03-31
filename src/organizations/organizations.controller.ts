@@ -12,7 +12,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { OrganizationsService } from './organizations.service';
-import { InviteMemberDto } from './dto/invite-member.dto';
+import { AddMemberDto } from './dto/add-member.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -28,11 +28,11 @@ export class OrganizationsController {
     this.logger.log('OrganizationsController initialized');
   }
 
-  @Post('invitations')
+  @Post('members')
   @HttpCode(HttpStatus.CREATED)
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  inviteMember(@Body() dto: InviteMemberDto, @CurrentUser() user: CurrentUserData) {
-    return this.organizationsService.inviteMember(dto, user);
+  addMember(@Body() dto: AddMemberDto, @CurrentUser() user: CurrentUserData) {
+    return this.organizationsService.addMember(dto, user);
   }
 
   @Get('members')

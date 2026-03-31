@@ -32,18 +32,6 @@ export class AuthController {
     return this.authService.signupFounder(dto, this.extractRequestMeta(req));
   }
 
-  @Post('accept-invite')
-  @HttpCode(HttpStatus.CREATED)
-  acceptInvitation(@Body() dto: AcceptInvitationDto, @Req() req: Request) {
-    return this.authService.acceptInvitation(dto, this.extractRequestMeta(req));
-  }
-
-  @Get('invitations/:token')
-  @HttpCode(HttpStatus.OK)
-  getInvitationByToken(@Param('token') token: string) {
-    return this.authService.getInvitationByToken(token);
-  }
-
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto, @Req() req: Request) {
