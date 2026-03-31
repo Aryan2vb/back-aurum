@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
   Logger,
+  Param,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
@@ -35,6 +36,12 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   acceptInvitation(@Body() dto: AcceptInvitationDto, @Req() req: Request) {
     return this.authService.acceptInvitation(dto, this.extractRequestMeta(req));
+  }
+
+  @Get('invitations/:token')
+  @HttpCode(HttpStatus.OK)
+  getInvitationByToken(@Param('token') token: string) {
+    return this.authService.getInvitationByToken(token);
   }
 
   @Post('login')

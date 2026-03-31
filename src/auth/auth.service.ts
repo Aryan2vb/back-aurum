@@ -131,6 +131,40 @@ export class AuthService {
     });
   }
 
+  async getInvitationByToken(token: string) {
+    this.logger.log(`Fetching invitation details for token: ${token.substring(0, 8)}...`);
+    const invitation = await this.prisma.organizationInvitation.findUnique({
+      where: { token },
+      include: {
+        organization: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    if (invitation.acceptedAt) {
+      throw new ConflictException('Invitation has already been accepted');
+    }
+
+    if (invitation.expiresAt < new Date()) {
+      throw new BadRequestException('Invitation has expired');
+    }
+
+    return {
+      email: invitation.email,
+      role: invitation.role,
+      organizationName: invitation.organization.name,
+      expiresAt: invitation.expiresAt,
+    };
+  }
+
   async acceptInvitation(
     dto: AcceptInvitationDto,
     meta: AuthRequestMetadata,

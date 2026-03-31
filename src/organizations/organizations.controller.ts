@@ -1,9 +1,13 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Post,
+  Patch,
+  Delete,
+  Param,
   UseGuards,
   Logger,
 } from '@nestjs/common';
@@ -29,6 +33,32 @@ export class OrganizationsController {
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   inviteMember(@Body() dto: InviteMemberDto, @CurrentUser() user: CurrentUserData) {
     return this.organizationsService.inviteMember(dto, user);
+  }
+
+  @Get('members')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
+  getMembers(@CurrentUser() user: CurrentUserData) {
+    return this.organizationsService.getMembers(user);
+  }
+
+  @Patch('members/:userId/role')
+  @Roles(OrganizationRole.OWNER)
+  changeMemberRole(
+    @Param('userId') userId: string,
+    @Body('role') role: OrganizationRole,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.organizationsService.changeMemberRole(userId, role, user);
+  }
+
+  @Delete('members/:userId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles(OrganizationRole.OWNER)
+  removeMember(
+    @Param('userId') userId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.organizationsService.removeMember(userId, user);
   }
 }
 

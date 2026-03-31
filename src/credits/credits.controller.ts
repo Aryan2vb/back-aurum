@@ -20,9 +20,12 @@ import { UpdateCreditTransactionDto } from './dto/update-credit-transaction.dto'
 import { QueryCreditsDto } from './dto/query-credits.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { OrganizationRole } from '@prisma/client';
 
 @Controller('credits')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class CreditsController {
     private readonly logger = new Logger(CreditsController.name);
 
@@ -36,6 +39,7 @@ export class CreditsController {
 
     @Post()
     @HttpCode(HttpStatus.CREATED)
+    @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
     create(
         @Body() createCreditDto: CreateCreditDto,
         @CurrentUser() user: CurrentUserData,
@@ -45,6 +49,7 @@ export class CreditsController {
     }
 
     @Get()
+    @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
     findAll(
         @Query() queryDto: QueryCreditsDto,
         @CurrentUser() user: CurrentUserData,
@@ -54,12 +59,14 @@ export class CreditsController {
     }
 
     @Get('stats')
+    @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
     getStats(@CurrentUser() user: CurrentUserData) {
         this.logger.debug(`GET /credits/stats - Organization: ${user.organizationId}`);
         return this.creditsService.getStats(user.organizationId);
     }
 
     @Get('due-reminders')
+    @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
     getDueReminders(
         @CurrentUser() user: CurrentUserData,
         @Query('days') days?: number,
@@ -73,6 +80,7 @@ export class CreditsController {
     }
 
     @Get('customer/:customerId/summary')
+    @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
     getCustomerCreditSummary(
         @Param('customerId') customerId: string,
         @CurrentUser() user: CurrentUserData,
@@ -84,11 +92,13 @@ export class CreditsController {
     }
 
     @Get(':id')
+    @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
     findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
         return this.creditsService.findOne(id, user.organizationId);
     }
 
     @Patch(':id')
+    @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
     update(
         @Param('id') id: string,
         @Body() updateCreditDto: UpdateCreditDto,
@@ -99,6 +109,7 @@ export class CreditsController {
 
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
+    @Roles(OrganizationRole.OWNER)
     softDelete(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
         return this.creditsService.softDelete(id, user);
     }
@@ -108,6 +119,7 @@ export class CreditsController {
     // ===========================
 
     @Get(':id/transactions')
+    @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
     getTransactions(
         @Param('id') id: string,
         @CurrentUser() user: CurrentUserData,
@@ -117,6 +129,7 @@ export class CreditsController {
 
     @Post(':id/transactions')
     @HttpCode(HttpStatus.CREATED)
+    @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
     addTransaction(
         @Param('id') id: string,
         @Body() createTransactionDto: CreateCreditTransactionDto,
@@ -127,6 +140,7 @@ export class CreditsController {
     }
 
     @Patch(':creditId/transactions/:transactionId')
+    @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
     updateTransaction(
         @Param('creditId') creditId: string,
         @Param('transactionId') transactionId: string,
@@ -143,6 +157,7 @@ export class CreditsController {
 
     @Delete(':creditId/transactions/:transactionId')
     @HttpCode(HttpStatus.NO_CONTENT)
+    @Roles(OrganizationRole.OWNER)
     deleteTransaction(
         @Param('creditId') creditId: string,
         @Param('transactionId') transactionId: string,

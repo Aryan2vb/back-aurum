@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { AuditAction, OrganizationStatus } from '@prisma/client';
+import { AuditAction, OrganizationStatus, OrganizationRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
@@ -115,6 +115,113 @@ export class OrganizationsService {
     const clone = new Date(date);
     clone.setDate(clone.getDate() + days);
     return clone;
+  }
+
+  async getMembers(actor: CurrentUserData) {
+    const members = await this.prisma.organizationMember.findMany({
+      where: {
+        organizationId: actor.organizationId,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            fullName: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    return members.map((m) => ({
+      id: m.userId,
+      email: m.user?.email,
+      fullName: m.user?.fullName,
+      role: m.role,
+      joinedAt: m.createdAt,
+    }));
+  }
+
+  async changeMemberRole(targetUserId: string, newRole: OrganizationRole, actor: CurrentUserData) {
+    return this.prisma.$transaction(async (tx) => {
+      const membership = await tx.organizationMember.findUnique({
+        where: {
+          userId_organizationId: {
+            userId: targetUserId,
+            organizationId: actor.organizationId,
+          },
+        },
+      });
+
+      if (!membership) throw new NotFoundException('Member not found');
+      
+      if (membership.role === OrganizationRole.OWNER && newRole !== OrganizationRole.OWNER) {
+        const ownerCount = await tx.organizationMember.count({
+          where: { organizationId: actor.organizationId, role: OrganizationRole.OWNER },
+        });
+        if (ownerCount <= 1) throw new ForbiddenException('Cannot change the role of the last owner');
+      }
+
+      await tx.organizationMember.update({
+        where: { id: membership.id },
+        data: { role: newRole },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organizationId: actor.organizationId,
+          userId: actor.userId,
+          action: AuditAction.UPDATE,
+          entityType: 'OrganizationMember',
+          entityId: membership.id,
+          metadata: { event: 'CHANGE_ROLE', newRole },
+        },
+      });
+
+      return { success: true };
+    });
+  }
+
+  async removeMember(targetUserId: string, actor: CurrentUserData) {
+    return this.prisma.$transaction(async (tx) => {
+      const membership = await tx.organizationMember.findUnique({
+        where: {
+          userId_organizationId: {
+            userId: targetUserId,
+            organizationId: actor.organizationId,
+          },
+        },
+      });
+
+      if (!membership) throw new NotFoundException('Member not found');
+      
+      if (membership.role === OrganizationRole.OWNER) {
+        const ownerCount = await tx.organizationMember.count({
+          where: { organizationId: actor.organizationId, role: OrganizationRole.OWNER },
+        });
+        if (ownerCount <= 1) throw new ForbiddenException('Cannot remove the last owner');
+      }
+
+      await tx.organizationMember.delete({
+        where: { id: membership.id },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organizationId: actor.organizationId,
+          userId: actor.userId,
+          action: AuditAction.DELETE,
+          entityType: 'OrganizationMember',
+          entityId: membership.id,
+          metadata: { event: 'REMOVE_MEMBER' },
+        },
+      });
+
+      return { success: true };
+    });
   }
 }
 
