@@ -124,14 +124,8 @@ export class CustomersController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Roles(OrganizationRole.OWNER)
-  softDelete(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
-    return this.customersService.softDelete(id, user);
-  }
-
-  @Patch(':id/restore')
-  @Roles(OrganizationRole.OWNER)
-  restore(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
-    return this.customersService.restore(id, user);
+  remove(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+    return this.customersService.remove(id, user);
   }
 
   @Patch('bulk/status')

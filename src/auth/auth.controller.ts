@@ -8,7 +8,6 @@ import {
   Req,
   UseGuards,
   Logger,
-  Param,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
@@ -16,7 +15,6 @@ import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser, CurrentUserData } from './current-user.decorator';
-import { AcceptInvitationDto } from './dto/accept-invitation.dto';
 
 @Controller('auth')
 export class AuthController {
