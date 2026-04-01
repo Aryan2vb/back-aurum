@@ -671,17 +671,14 @@ export class CustomersService {
     return this.findOne(id, organizationId);
   }
 
-  async softDelete(id: string, user: CurrentUserData) {
+  async remove(id: string, user: CurrentUserData) {
     const { organizationId } = user;
 
-    const result = await this.prisma.customer.updateMany({
+    // We use deleteMany so it doesn't fail if already gone, and to check organizationId
+    const result = await this.prisma.customer.deleteMany({
       where: {
         id,
         organizationId,
-        deletedAt: null,
-      },
-      data: {
-        deletedAt: new Date(),
       },
     });
 
@@ -689,38 +686,7 @@ export class CustomersService {
       throw new NotFoundException(`Customer with ID ${id} not found in this organization`);
     }
 
-    return { message: 'Customer deleted successfully' };
-  }
-
-  async restore(id: string, user: CurrentUserData) {
-    const { organizationId } = user;
-
-    const result = await this.prisma.customer.updateMany({
-      where: {
-        id,
-        organizationId,
-        deletedAt: { not: null },
-      },
-      data: {
-        deletedAt: null,
-      },
-    });
-
-    if (result.count === 0) {
-      throw new NotFoundException(`Deleted customer with ID ${id} not found in this organization`);
-    }
-
-    return this.prisma.customer.findFirst({
-      where: { id, organizationId },
-      include: {
-        contactDetails: { where: { deletedAt: null } },
-        locations: { where: { deletedAt: null } },
-        socialContexts: { where: { deletedAt: null } },
-        documents: { where: { deletedAt: null } },
-        accounts: { where: { deletedAt: null } },
-        metaTrackings: { where: { deletedAt: null } },
-      },
-    });
+    return { message: 'Customer permanently deleted and all linked data removed' };
   }
 
   async bulkUpdateStatus(bulkUpdateStatusDto: BulkUpdateStatusDto, user: CurrentUserData) {

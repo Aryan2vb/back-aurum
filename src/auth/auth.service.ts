@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -15,7 +14,7 @@ import { JwtPayload } from './jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
-import { AcceptInvitationDto } from './dto/accept-invitation.dto';
+
 import { CurrentUserData } from './current-user.decorator';
 
 interface AuthRequestMetadata {
@@ -127,119 +126,6 @@ export class AuthService {
       });
 
       this.logger.log(`Signup successful for user ${user.id}, organization ${organization.id}`);
-      return { accessToken };
-    });
-  }
-
-  async acceptInvitation(
-    dto: AcceptInvitationDto,
-    meta: AuthRequestMetadata,
-  ): Promise<AuthTokenResponse> {
-    this.logger.log(`Accepting invitation with token: ${dto.token.substring(0, 8)}...`);
-    return this.prisma.$transaction(async (tx) => {
-      await this.assertEmailAvailable(tx, dto.email);
-      const normalizedFullName = dto.fullName?.trim() ?? null;
-
-      const invitation = await tx.organizationInvitation.findUnique({
-        where: { token: dto.token },
-        include: {
-          organization: true,
-        },
-      });
-
-      if (!invitation) {
-        throw new NotFoundException('Invitation not found');
-      }
-
-      if (invitation.acceptedAt) {
-        throw new ConflictException('Invitation has already been accepted');
-      }
-
-      if (invitation.expiresAt < new Date()) {
-        throw new BadRequestException('Invitation has expired');
-      }
-
-      if (invitation.email.toLowerCase() !== dto.email.toLowerCase()) {
-        throw new ForbiddenException('Invitation email does not match');
-      }
-
-      if (
-        invitation.organization.status !== OrganizationStatus.ACTIVE ||
-        invitation.organization.deletedAt
-      ) {
-        throw new ForbiddenException('Organization is not active');
-      }
-
-      const user = await tx.user.create({
-        data: {
-          id: randomUUID(),
-          email: dto.email,
-          fullName: normalizedFullName,
-          passwordHash: await this.hashPassword(dto.password),
-        },
-      });
-
-      const membership = await tx.organizationMember.create({
-        data: {
-          userId: user.id,
-          organizationId: invitation.organizationId,
-          role: invitation.role ?? OrganizationRole.STAFF,
-        },
-      });
-
-      await tx.organizationInvitation.update({
-        where: { id: invitation.id },
-        data: { acceptedAt: new Date() },
-      });
-
-      await this.recordAuditLog(tx, {
-        organizationId: invitation.organizationId,
-        userId: user.id,
-        action: AuditAction.CREATE,
-        entityType: 'OrganizationMember',
-        entityId: membership.id,
-        metadata: {
-          event: 'CREATE_ORGANIZATION_MEMBER',
-          source: 'INVITATION',
-          role: membership.role,
-          userFullName: normalizedFullName,
-        },
-        meta,
-      });
-
-      const session = await this.createSession(
-        tx,
-        user.id,
-        invitation.organizationId,
-        membership.role,
-        meta,
-      );
-
-      const accessToken = this.buildAccessToken({
-        sub: user.id,
-        email: user.email,
-        org: invitation.organizationId,
-        role: membership.role,
-        sessionId: session.id,
-      });
-
-      await this.recordAuditLog(tx, {
-        organizationId: invitation.organizationId,
-        userId: user.id,
-        action: AuditAction.LOGIN,
-        entityType: 'User',
-        entityId: user.id,
-        metadata: {
-          event: 'LOGIN',
-          reason: 'INVITATION',
-          fullName: normalizedFullName,
-        },
-        meta,
-      });
-
-      this.logger.log(
-        `Invitation accepted for user ${user.id}, organization ${invitation.organizationId}`,
-      );
       return { accessToken };
     });
   }

@@ -33,12 +33,12 @@ import { PaginationQueryDto } from './dto/pagination.dto';
 import { BulkCreateCustomerDto } from './dto/bulk-create-customer.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
-// import { RolesGuard } from '../auth/roles.guard';
-// import { Roles } from '../auth/roles.decorator';
-// import { OrganizationRole } from '@prisma/client';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { OrganizationRole } from '@prisma/client';
 
 @Controller('customers')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class CustomersController {
   private readonly logger = new Logger(CustomersController.name);
 
@@ -54,6 +54,7 @@ export class CustomersController {
 
   @Post('bulk')
   @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   bulkCreate(
     @Body() bulkCreateCustomerDto: BulkCreateCustomerDto,
     @CurrentUser() user: CurrentUserData,
@@ -63,6 +64,7 @@ export class CustomersController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   create(
     @Body() createCustomerDto: CreateCustomerDto,
     @CurrentUser() user: CurrentUserData,
@@ -71,6 +73,7 @@ export class CustomersController {
   }
 
   @Get()
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   findAll(
     @Query() paginationDto: PaginationQueryDto,
     @CurrentUser() user: CurrentUserData,
@@ -79,6 +82,7 @@ export class CustomersController {
   }
 
   @Get('search')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   search(
     @Query() searchDto: SearchCustomerDto,
     @CurrentUser() user: CurrentUserData,
@@ -87,11 +91,13 @@ export class CustomersController {
   }
 
   @Get('stats')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   getStats(@CurrentUser() user: CurrentUserData) {
     return this.customersService.getStats(user.organizationId);
   }
 
   @Get('code/:customerCode')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   findByCode(
     @Param('customerCode') customerCode: string,
     @CurrentUser() user: CurrentUserData,
@@ -100,11 +106,13 @@ export class CustomersController {
   }
 
   @Get(':id')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.findOne(id, user.organizationId);
   }
 
   @Patch(':id')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   update(
     @Param('id') id: string,
     @Body() updateCustomerDto: UpdateCustomerDto,
@@ -115,16 +123,13 @@ export class CustomersController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  softDelete(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
-    return this.customersService.softDelete(id, user);
-  }
-
-  @Patch(':id/restore')
-  restore(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
-    return this.customersService.restore(id, user);
+  @Roles(OrganizationRole.OWNER)
+  remove(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+    return this.customersService.remove(id, user);
   }
 
   @Patch('bulk/status')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   bulkUpdateStatus(
     @Body() bulkUpdateStatusDto: BulkUpdateStatusDto,
     @CurrentUser() user: CurrentUserData,
@@ -137,6 +142,7 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/contact-details')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   getContactDetails(
     @Param('customerId') customerId: string,
     @CurrentUser() user: CurrentUserData,
@@ -146,6 +152,7 @@ export class CustomersController {
 
   @Post(':customerId/contact-details')
   @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   addContactDetail(
     @Param('customerId') customerId: string,
     @Body() createContactDetailDto: CreateContactDetailDto,
@@ -155,6 +162,7 @@ export class CustomersController {
   }
 
   @Patch(':customerId/contact-details/:contactDetailId')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   updateContactDetail(
     @Param('customerId') customerId: string,
     @Param('contactDetailId') contactDetailId: string,
@@ -171,6 +179,7 @@ export class CustomersController {
 
   @Delete(':customerId/contact-details/:contactDetailId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles(OrganizationRole.OWNER)
   deleteContactDetail(
     @Param('customerId') customerId: string,
     @Param('contactDetailId') contactDetailId: string,
@@ -184,6 +193,7 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/locations')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   getLocations(
     @Param('customerId') customerId: string,
     @CurrentUser() user: CurrentUserData,
@@ -193,6 +203,7 @@ export class CustomersController {
 
   @Post(':customerId/locations')
   @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   addLocation(
     @Param('customerId') customerId: string,
     @Body() createLocationDto: CreateLocationDto,
@@ -202,6 +213,7 @@ export class CustomersController {
   }
 
   @Patch(':customerId/locations/:locationId')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   updateLocation(
     @Param('customerId') customerId: string,
     @Param('locationId') locationId: string,
@@ -218,6 +230,7 @@ export class CustomersController {
 
   @Delete(':customerId/locations/:locationId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles(OrganizationRole.OWNER)
   deleteLocation(
     @Param('customerId') customerId: string,
     @Param('locationId') locationId: string,
@@ -231,6 +244,7 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/social-contexts')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   getSocialContexts(
     @Param('customerId') customerId: string,
     @CurrentUser() user: CurrentUserData,
@@ -240,6 +254,7 @@ export class CustomersController {
 
   @Post(':customerId/social-contexts')
   @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   addSocialContext(
     @Param('customerId') customerId: string,
     @Body() createSocialContextDto: CreateSocialContextDto,
@@ -249,6 +264,7 @@ export class CustomersController {
   }
 
   @Patch(':customerId/social-contexts/:socialContextId')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   updateSocialContext(
     @Param('customerId') customerId: string,
     @Param('socialContextId') socialContextId: string,
@@ -265,6 +281,7 @@ export class CustomersController {
 
   @Delete(':customerId/social-contexts/:socialContextId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles(OrganizationRole.OWNER)
   deleteSocialContext(
     @Param('customerId') customerId: string,
     @Param('socialContextId') socialContextId: string,
@@ -278,6 +295,7 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/documents')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   getDocuments(
     @Param('customerId') customerId: string,
     @CurrentUser() user: CurrentUserData,
@@ -287,6 +305,7 @@ export class CustomersController {
 
   @Post(':customerId/documents')
   @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   addDocument(
     @Param('customerId') customerId: string,
     @Body() createDocumentDto: CreateDocumentDto,
@@ -296,6 +315,7 @@ export class CustomersController {
   }
 
   @Patch(':customerId/documents/:documentId')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   updateDocument(
     @Param('customerId') customerId: string,
     @Param('documentId') documentId: string,
@@ -312,6 +332,7 @@ export class CustomersController {
 
   @Delete(':customerId/documents/:documentId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles(OrganizationRole.OWNER)
   deleteDocument(
     @Param('customerId') customerId: string,
     @Param('documentId') documentId: string,
@@ -325,6 +346,7 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/accounts')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   getAccounts(
     @Param('customerId') customerId: string,
     @CurrentUser() user: CurrentUserData,
@@ -334,6 +356,7 @@ export class CustomersController {
 
   @Post(':customerId/accounts')
   @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   addAccount(
     @Param('customerId') customerId: string,
     @Body() createAccountDto: CreateAccountDto,
@@ -343,6 +366,7 @@ export class CustomersController {
   }
 
   @Patch(':customerId/accounts/:accountId')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   updateAccount(
     @Param('customerId') customerId: string,
     @Param('accountId') accountId: string,
@@ -359,6 +383,7 @@ export class CustomersController {
 
   @Delete(':customerId/accounts/:accountId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles(OrganizationRole.OWNER)
   deleteAccount(
     @Param('customerId') customerId: string,
     @Param('accountId') accountId: string,
@@ -372,6 +397,7 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/meta-tracking')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   getMetaTrackings(
     @Param('customerId') customerId: string,
     @CurrentUser() user: CurrentUserData,
@@ -381,6 +407,7 @@ export class CustomersController {
 
   @Post(':customerId/meta-tracking')
   @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   addMetaTracking(
     @Param('customerId') customerId: string,
     @Body() createMetaTrackingDto: CreateMetaTrackingDto,
@@ -390,6 +417,7 @@ export class CustomersController {
   }
 
   @Patch(':customerId/meta-tracking/:metaTrackingId')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   updateMetaTracking(
     @Param('customerId') customerId: string,
     @Param('metaTrackingId') metaTrackingId: string,
@@ -406,6 +434,7 @@ export class CustomersController {
 
   @Delete(':customerId/meta-tracking/:metaTrackingId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles(OrganizationRole.OWNER)
   deleteMetaTracking(
     @Param('customerId') customerId: string,
     @Param('metaTrackingId') metaTrackingId: string,

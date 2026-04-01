@@ -15,7 +15,6 @@ import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser, CurrentUserData } from './current-user.decorator';
-import { AcceptInvitationDto } from './dto/accept-invitation.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -29,12 +28,6 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   signupFounder(@Body() dto: SignupDto, @Req() req: Request) {
     return this.authService.signupFounder(dto, this.extractRequestMeta(req));
-  }
-
-  @Post('accept-invite')
-  @HttpCode(HttpStatus.CREATED)
-  acceptInvitation(@Body() dto: AcceptInvitationDto, @Req() req: Request) {
-    return this.authService.acceptInvitation(dto, this.extractRequestMeta(req));
   }
 
   @Post('login')
