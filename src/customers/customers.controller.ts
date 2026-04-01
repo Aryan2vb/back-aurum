@@ -36,13 +36,18 @@ import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { OrganizationRole } from '@prisma/client';
+import { InvoicesService } from '../invoices/invoices.service';
+import { QueryInvoicesDto } from '../invoices/dto/query-invoices.dto';
 
 @Controller('customers')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CustomersController {
   private readonly logger = new Logger(CustomersController.name);
 
-  constructor(private readonly customersService: CustomersService) {
+  constructor(
+    private readonly customersService: CustomersService,
+    private readonly invoicesService: InvoicesService,
+  ) {
     this.logger.log('CustomersController initialized');
   }
 
@@ -126,6 +131,23 @@ export class CustomersController {
   @Roles(OrganizationRole.OWNER)
   remove(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.remove(id, user);
+  }
+
+  // ===========================
+  // INVOICES (customer profile view)
+  // ===========================
+
+  @Get(':id/invoices')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
+  getCustomerInvoices(
+    @Param('id') id: string,
+    @Query() query: QueryInvoicesDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.invoicesService.findAll(
+      { ...query, customerId: id },
+      user.organizationId,
+    );
   }
 
   @Patch('bulk/status')

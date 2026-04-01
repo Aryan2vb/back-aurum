@@ -3,12 +3,14 @@ import { CustomersService } from './customers.service';
 import { CustomersController } from './customers.controller';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { InvoicesModule } from '../invoices/invoices.module';
 
 @Module({
-  imports: [AuthModule, PrismaModule],
+  imports: [AuthModule, PrismaModule, InvoicesModule],
   controllers: [CustomersController],
   providers: [CustomersService],
   exports: [CustomersService],
 })
 export class CustomersModule {}
+
 

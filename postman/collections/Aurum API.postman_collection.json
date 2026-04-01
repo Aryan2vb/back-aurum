@@ -1,0 +1,1379 @@
+{
+  "info": {
+    "name": "Aurum API",
+    "_postman_id": "aurum-api-collection",
+    "description": "Postman collection for the Aurum NestJS backend API. Covers Auth, Organizations, Customers, Invoices, and Credits modules.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST Signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"founder@example.com\",\n  \"fullName\": \"John Doe\",\n  \"password\": \"password123\",\n  \"organizationName\": \"My Jewellery Shop\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/signup",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "signup"]
+            }
+          }
+        },
+        {
+          "name": "POST Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"founder@example.com\",\n  \"password\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "POST Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "GET Whoami",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/whoami",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "whoami"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Organizations",
+      "item": [
+        {
+          "name": "POST Add Member",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"staff@example.com\",\n  \"fullName\": \"Staff Member\",\n  \"password\": \"password123\",\n  \"role\": \"STAFF\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/organizations/members",
+              "host": ["{{baseUrl}}"],
+              "path": ["organizations", "members"]
+            }
+          }
+        },
+        {
+          "name": "GET Get Members",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/members",
+              "host": ["{{baseUrl}}"],
+              "path": ["organizations", "members"]
+            }
+          }
+        },
+        {
+          "name": "PATCH Change Member Role",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"ADMIN\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/organizations/members/:userId/role",
+              "host": ["{{baseUrl}}"],
+              "path": ["organizations", "members", ":userId", "role"],
+              "variable": [
+                { "key": "userId", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "DELETE Remove Member",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/members/:userId",
+              "host": ["{{baseUrl}}"],
+              "path": ["organizations", "members", ":userId"],
+              "variable": [
+                { "key": "userId", "value": "" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "Customer CRUD",
+          "item": [
+            {
+              "name": "POST Create Customer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"Ramesh Kumar\",\n  \"fatherName\": \"Suresh Kumar\",\n  \"gender\": \"MALE\",\n  \"dateOfBirth\": \"1990-01-15\",\n  \"contactDetails\": {\n    \"primaryPhone\": \"9876543210\",\n    \"secondaryPhone\": \"9876543211\",\n    \"phoneOwnerType\": \"SELF\",\n    \"preferredContactMethod\": \"PHONE\"\n  },\n  \"locations\": [\n    {\n      \"village\": \"Rampur\",\n      \"tehsil\": \"Sadar\",\n      \"district\": \"Agra\",\n      \"state\": \"Uttar Pradesh\",\n      \"pincode\": \"282001\",\n      \"landmark\": \"Near temple\"\n    }\n  ]\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers"]
+                }
+              }
+            },
+            {
+              "name": "POST Bulk Create Customers",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customers\": []\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/bulk",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", "bulk"]
+                }
+              }
+            },
+            {
+              "name": "GET List Customers",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers?page=1&limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET Search Customers",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/search?query=Ramesh&status=ACTIVE&gender=MALE&page=1&limit=20&sortBy=createdAt&sortOrder=desc",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", "search"],
+                  "query": [
+                    { "key": "query", "value": "Ramesh" },
+                    { "key": "status", "value": "ACTIVE" },
+                    { "key": "gender", "value": "MALE" },
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" },
+                    { "key": "sortBy", "value": "createdAt" },
+                    { "key": "sortOrder", "value": "desc" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET Customer Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/stats",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", "stats"]
+                }
+              }
+            },
+            {
+              "name": "GET Find Customer by Code",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/code/:customerCode",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", "code", ":customerCode"],
+                  "variable": [
+                    { "key": "customerCode", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET Find Customer by ID",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":id"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Update Customer",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"Ramesh Kumar Updated\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":id"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE Delete Customer",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":id"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Bulk Update Status",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerIds\": [\"id1\", \"id2\"],\n  \"status\": \"ACTIVE\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/bulk/status",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", "bulk", "status"]
+                }
+              }
+            },
+            {
+              "name": "GET Customer Invoices",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:id/invoices?page=1&limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":id", "invoices"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Contact Details",
+          "item": [
+            {
+              "name": "GET Get Contact Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/contact-details",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "contact-details"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "POST Add Contact Detail",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"primaryPhone\": \"9876543210\",\n  \"secondaryPhone\": \"9876543211\",\n  \"phoneOwnerType\": \"SELF\",\n  \"preferredContactMethod\": \"PHONE\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/contact-details",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "contact-details"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Update Contact Detail",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"primaryPhone\": \"9999999999\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/contact-details/:contactDetailId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "contact-details", ":contactDetailId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "contactDetailId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE Delete Contact Detail",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/contact-details/:contactDetailId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "contact-details", ":contactDetailId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "contactDetailId", "value": "" }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Locations",
+          "item": [
+            {
+              "name": "GET Get Locations",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/locations",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "locations"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "POST Add Location",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"village\": \"Rampur\",\n  \"tehsil\": \"Sadar\",\n  \"district\": \"Agra\",\n  \"state\": \"Uttar Pradesh\",\n  \"pincode\": \"282001\",\n  \"landmark\": \"Near temple\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/locations",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "locations"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Update Location",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"village\": \"New Village\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/locations/:locationId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "locations", ":locationId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "locationId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE Delete Location",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/locations/:locationId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "locations", ":locationId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "locationId", "value": "" }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Social Contexts",
+          "item": [
+            {
+              "name": "GET Get Social Contexts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/social-contexts",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "social-contexts"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "POST Add Social Context",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"caste\": \"General\",\n  \"educationLevel\": \"Graduate\",\n  \"occupation\": \"Farmer\",\n  \"incomeRange\": \"MEDIUM\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/social-contexts",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "social-contexts"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Update Social Context",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"occupation\": \"Business\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/social-contexts/:socialContextId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "social-contexts", ":socialContextId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "socialContextId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE Delete Social Context",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/social-contexts/:socialContextId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "social-contexts", ":socialContextId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "socialContextId", "value": "" }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Documents (KYC)",
+          "item": [
+            {
+              "name": "GET Get Documents",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/documents",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "documents"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "POST Add Document",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"aadharLast4\": \"1234\",\n  \"aadharVerified\": false\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/documents",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "documents"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Update Document",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"aadharVerified\": true\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/documents/:documentId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "documents", ":documentId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "documentId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE Delete Document",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/documents/:documentId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "documents", ":documentId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "documentId", "value": "" }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Accounts",
+          "item": [
+            {
+              "name": "GET Get Accounts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/accounts",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "accounts"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "POST Add Account",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"openingBalance\": 0,\n  \"openedAt\": \"2024-01-01\",\n  \"status\": \"ACTIVE\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/accounts",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "accounts"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Update Account",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"INACTIVE\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/accounts/:accountId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "accounts", ":accountId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "accountId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE Delete Account",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/accounts/:accountId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "accounts", ":accountId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "accountId", "value": "" }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Meta Tracking",
+          "item": [
+            {
+              "name": "GET Get Meta Trackings",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/meta-tracking",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "meta-tracking"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "POST Add Meta Tracking",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"registeredOn\": \"2024-01-01\",\n  \"notes\": \"Referred by existing customer\",\n  \"source\": \"REFERRAL\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/meta-tracking",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "meta-tracking"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Update Meta Tracking",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"notes\": \"Updated notes\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/meta-tracking/:metaTrackingId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "meta-tracking", ":metaTrackingId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "metaTrackingId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE Delete Meta Tracking",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/meta-tracking/:metaTrackingId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["customers", ":customerId", "meta-tracking", ":metaTrackingId"],
+                  "variable": [
+                    { "key": "customerId", "value": "" },
+                    { "key": "metaTrackingId", "value": "" }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Invoices",
+      "item": [
+        {
+          "name": "Settings",
+          "item": [
+            {
+              "name": "POST Upsert Invoice Settings",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"companyName\": \"My Jewellery Shop\",\n  \"address\": \"123 Main Street, Agra\",\n  \"gstin\": \"09ABCDE1234F1Z5\",\n  \"state\": \"Uttar Pradesh\",\n  \"stateCode\": \"09\",\n  \"phone\": \"9876543210\",\n  \"email\": \"shop@example.com\",\n  \"pan\": \"ABCDE1234F\",\n  \"bankName\": \"State Bank of India\",\n  \"bankBranch\": \"Agra Main\",\n  \"bankAccountName\": \"My Jewellery Shop\",\n  \"bankAccountNumber\": \"1234567890\",\n  \"bankIfsc\": \"SBIN0001234\",\n  \"defaultTaxType\": \"CGST_SGST\",\n  \"defaultCgstRate\": 1.5,\n  \"defaultSgstRate\": 1.5,\n  \"defaultTemplate\": \"jewellery\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/settings",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["invoices", "settings"]
+                }
+              }
+            },
+            {
+              "name": "GET Get Invoice Settings",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/settings",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["invoices", "settings"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invoice CRUD",
+          "item": [
+            {
+              "name": "POST Create Invoice Draft",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"customer-id-here\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"unitPrice\": 50000,\n      \"grossWeight\": 10.5,\n      \"netWeight\": 9.8,\n      \"purity\": \"22K\",\n      \"huid\": \"HUID123456\"\n    }\n  ],\n  \"paidAmount\": 0,\n  \"taxType\": \"CGST_SGST\",\n  \"cgstRate\": 1.5,\n  \"sgstRate\": 1.5,\n  \"templateType\": \"jewellery\",\n  \"notes\": \"Thank you for your purchase\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/draft",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["invoices", "draft"]
+                }
+              }
+            },
+            {
+              "name": "POST Create Invoice",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"customer-id-here\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"unitPrice\": 50000,\n      \"grossWeight\": 10.5,\n      \"netWeight\": 9.8,\n      \"purity\": \"22K\",\n      \"huid\": \"HUID123456\"\n    }\n  ],\n  \"paidAmount\": 10000,\n  \"taxType\": \"CGST_SGST\",\n  \"cgstRate\": 1.5,\n  \"sgstRate\": 1.5,\n  \"templateType\": \"jewellery\",\n  \"modeOfPayment\": \"CASH\",\n  \"notes\": \"Thank you for your purchase\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["invoices"]
+                }
+              }
+            },
+            {
+              "name": "GET List Invoices",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices?page=1&limit=20&sortBy=invoiceDate&sortOrder=desc",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["invoices"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" },
+                    { "key": "sortBy", "value": "invoiceDate" },
+                    { "key": "sortOrder", "value": "desc" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET Get Invoice by ID",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["invoices", ":id"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET Get Invoice PDF",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/pdf",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["invoices", ":id", "pdf"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Record Payment",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"amount\": 5000,\n  \"paymentMethod\": \"CASH\",\n  \"referenceNumber\": \"REF123\",\n  \"collectedBy\": \"Staff Name\",\n  \"notes\": \"Partial payment\",\n  \"transactionDate\": \"2024-01-15\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/payment",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["invoices", ":id", "payment"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "POST Send Invoice",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"channel\": \"WHATSAPP\",\n  \"phoneNumber\": \"9876543210\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/send",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["invoices", ":id", "send"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE Cancel Invoice",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["invoices", ":id"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Credits",
+      "item": [
+        {
+          "name": "Credits CRUD",
+          "item": [
+            {
+              "name": "POST Create Credit",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"customer-id-here\",\n  \"totalAmount\": 25000,\n  \"saleReference\": \"INV-001\",\n  \"itemSummary\": \"Gold Ring 22K\",\n  \"description\": \"Udhar for gold ring purchase\",\n  \"creditDate\": \"2024-01-15\",\n  \"expectedDueDate\": \"2024-04-15\",\n  \"reminderFrequency\": \"WEEKLY\",\n  \"notes\": \"Customer promised to pay by April\",\n  \"initialPayment\": 5000\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/credits",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits"]
+                }
+              }
+            },
+            {
+              "name": "GET List Credits",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits?page=1&limit=20&sortBy=creditDate&sortOrder=desc",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" },
+                    { "key": "sortBy", "value": "creditDate" },
+                    { "key": "sortOrder", "value": "desc" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET Credit Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/stats",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits", "stats"]
+                }
+              }
+            },
+            {
+              "name": "GET Due Reminders",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/due-reminders?days=7",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits", "due-reminders"],
+                  "query": [
+                    { "key": "days", "value": "7" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET Customer Credit Summary",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/customer/:customerId/summary",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits", "customer", ":customerId", "summary"],
+                  "variable": [
+                    { "key": "customerId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "GET Get Credit by ID",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits", ":id"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Update Credit",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"notes\": \"Updated notes\",\n  \"expectedDueDate\": \"2024-05-15\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits", ":id"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE Delete Credit",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits", ":id"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Transactions",
+          "item": [
+            {
+              "name": "GET Get Transactions",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:id/transactions",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits", ":id", "transactions"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "POST Add Transaction",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"amount\": 5000,\n  \"transactionDate\": \"2024-02-01\",\n  \"paymentMethod\": \"CASH\",\n  \"referenceNumber\": \"REF456\",\n  \"collectedBy\": \"Staff Name\",\n  \"notes\": \"Monthly installment\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:id/transactions",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits", ":id", "transactions"],
+                  "variable": [
+                    { "key": "id", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "PATCH Update Transaction",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"notes\": \"Corrected amount\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:creditId/transactions/:transactionId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits", ":creditId", "transactions", ":transactionId"],
+                  "variable": [
+                    { "key": "creditId", "value": "" },
+                    { "key": "transactionId", "value": "" }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "DELETE Delete Transaction",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:creditId/transactions/:transactionId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["credits", ":creditId", "transactions", ":transactionId"],
+                  "variable": [
+                    { "key": "creditId", "value": "" },
+                    { "key": "transactionId", "value": "" }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
