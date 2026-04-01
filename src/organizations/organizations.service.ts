@@ -37,7 +37,10 @@ export class OrganizationsService {
         throw new NotFoundException('Organization not found');
       }
 
-      if (organization.status !== OrganizationStatus.ACTIVE && organization.status !== OrganizationStatus.TRIAL) {
+      if (
+        organization.status !== OrganizationStatus.ACTIVE &&
+        organization.status !== OrganizationStatus.TRIAL
+      ) {
         throw new ForbiddenException('Organization is not active');
       }
 
@@ -96,8 +99,6 @@ export class OrganizationsService {
     return bcrypt.hash(password, salt);
   }
 
-
-
   async getMembers(actor: CurrentUserData) {
     const members = await this.prisma.organizationMember.findMany({
       where: {
@@ -138,12 +139,17 @@ export class OrganizationsService {
       });
 
       if (!membership) throw new NotFoundException('Member not found');
-      
+
+      if (targetUserId === actor.userId && membership.role === OrganizationRole.OWNER) {
+        throw new ForbiddenException('Owners cannot change their own role');
+      }
+
       if (membership.role === OrganizationRole.OWNER && newRole !== OrganizationRole.OWNER) {
         const ownerCount = await tx.organizationMember.count({
           where: { organizationId: actor.organizationId, role: OrganizationRole.OWNER },
         });
-        if (ownerCount <= 1) throw new ForbiddenException('Cannot change the role of the last owner');
+        if (ownerCount <= 1)
+          throw new ForbiddenException('Cannot change the role of the last owner');
       }
 
       await tx.organizationMember.update({
@@ -178,7 +184,11 @@ export class OrganizationsService {
       });
 
       if (!membership) throw new NotFoundException('Member not found');
-      
+
+      if (targetUserId === actor.userId && membership.role === OrganizationRole.OWNER) {
+        throw new ForbiddenException('Owners cannot remove themselves from the organization');
+      }
+
       if (membership.role === OrganizationRole.OWNER) {
         const ownerCount = await tx.organizationMember.count({
           where: { organizationId: actor.organizationId, role: OrganizationRole.OWNER },
@@ -205,4 +215,3 @@ export class OrganizationsService {
     });
   }
 }
-
