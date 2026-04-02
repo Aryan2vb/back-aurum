@@ -14,7 +14,7 @@ export class PdfService {
   private readonly logger = new Logger(PdfService.name);
 
   async generatePdf(html: string): Promise<Buffer> {
-    this.logger.debug('Generating PDF replacing Puppeteer with pdfmake');
+    this.logger.debug('Generating PDF using pdfmake');
 
     try {
       const { window } = new JSDOM('');
