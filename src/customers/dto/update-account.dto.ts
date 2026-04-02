@@ -3,16 +3,16 @@ import { AccountStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 
 export class UpdateAccountDto {
-    @IsOptional()
-    @IsNumber({ maxDecimalPlaces: 2 })
-    @Type(() => Number)
-    openingBalance?: number;
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Type(() => Number)
+  openingBalance?: number;
 
-    @IsOptional()
-    @IsDateString()
-    openedAt?: string;
+  @IsOptional()
+  @IsDateString()
+  openedAt?: string;
 
-    @IsOptional()
-    @IsEnum(AccountStatus)
-    status?: AccountStatus;
+  @IsOptional()
+  @IsEnum(AccountStatus)
+  status?: AccountStatus;
 }

@@ -12,5 +12,3 @@ import { InvoicesModule } from '../invoices/invoices.module';
   exports: [CustomersService],
 })
 export class CustomersModule {}
-
-

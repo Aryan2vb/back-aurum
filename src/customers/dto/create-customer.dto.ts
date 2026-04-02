@@ -53,4 +53,3 @@ export class CreateCustomerDto {
   @IsOptional()
   locations?: CreateLocationDto[];
 }
-

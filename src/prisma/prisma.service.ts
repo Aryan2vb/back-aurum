@@ -55,9 +55,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       ) {
         if (PrismaService.ACTIONS_REQUIRING_WHERE.has(params.action)) {
           if (!this.containsOrganizationId(params.args?.where)) {
-            this.logger.warn(
-              `Missing organizationId filter for ${params.model}.${params.action}`,
-            );
+            this.logger.warn(`Missing organizationId filter for ${params.model}.${params.action}`);
             throw new ForbiddenException(
               `Missing organizationId filter for ${params.model}.${params.action}`,
             );
@@ -67,9 +65,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         if (PrismaService.ACTIONS_REQUIRING_DATA.has(params.action)) {
           const dataArg = params.args?.data;
           const entries = Array.isArray(dataArg) ? dataArg : [dataArg];
-          const allEntriesScoped = entries.every((entry) =>
-            this.containsOrganizationId(entry),
-          );
+          const allEntriesScoped = entries.every((entry) => this.containsOrganizationId(entry));
 
           if (!allEntriesScoped) {
             throw new ForbiddenException(
@@ -95,21 +91,14 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       // that is typically set to 1 in Supabase/PgBouncer DATABASE_URLs.
       const poolSize = Math.max(
         1,
-        parseInt(
-          process.env.DATABASE_POOL_SIZE ||
-            String(PrismaService.DEFAULT_POOL_SIZE),
-          10,
-        ),
+        parseInt(process.env.DATABASE_POOL_SIZE || String(PrismaService.DEFAULT_POOL_SIZE), 10),
       );
       parsed.searchParams.set('connection_limit', String(poolSize));
 
       // Use a more lenient pool timeout (seconds) to tolerate brief contention.
       // Only set when the URL does not already specify a value.
       if (!parsed.searchParams.has('pool_timeout')) {
-        parsed.searchParams.set(
-          'pool_timeout',
-          String(PrismaService.DEFAULT_POOL_TIMEOUT_SECONDS),
-        );
+        parsed.searchParams.set('pool_timeout', String(PrismaService.DEFAULT_POOL_TIMEOUT_SECONDS));
       }
 
       return { datasources: { db: { url: parsed.toString() } } };
@@ -170,4 +159,3 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     );
   }
 }
-

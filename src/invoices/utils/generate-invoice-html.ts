@@ -6,37 +6,45 @@
 import { InvoiceData } from './invoice-types';
 
 export function generateInvoiceHtml(data: InvoiceData): string {
-    const {
-        company,
-        buyer,
-        metadata,
-        items,
-        taxes,
-        hsnSummary,
-        roundOff,
-        totalAmount,
-        amountInWords,
-        taxAmountInWords,
-        declaration = 'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.',
-    } = data;
+  const {
+    company,
+    buyer,
+    metadata,
+    items,
+    taxes,
+    hsnSummary,
+    roundOff,
+    totalAmount,
+    amountInWords,
+    taxAmountInWords,
+    declaration = 'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.',
+  } = data;
 
-    const formatCurrency = (amount: number): string =>
-        new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+  const formatCurrency = (amount: number): string =>
+    new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+      amount,
+    );
 
-    const hallmarkingCharge = data.hallmarkingCharge !== undefined ? data.hallmarkingCharge : 0;
+  const hallmarkingCharge = data.hallmarkingCharge !== undefined ? data.hallmarkingCharge : 0;
 
-    const itemRows = items.map(item => {
-        const rateDisplay =
-            item.makingCharges && item.makingCharges > 0
-                ? `<strong>${formatCurrency(item.rate)}</strong><br/><span class="text-sm" style="font-size:11px;">+ ${formatCurrency(item.makingCharges)} Making Charge</span>`
-                : formatCurrency(item.rate);
+  const itemRows = items
+    .map((item) => {
+      const rateDisplay =
+        item.makingCharges && item.makingCharges > 0
+          ? `<strong>${formatCurrency(item.rate)}</strong><br/><span class="text-sm" style="font-size:11px;">+ ${formatCurrency(item.makingCharges)} Making Charge</span>`
+          : formatCurrency(item.rate);
 
-        const descLines = item.description.split('\n');
-        const huidLine = item.huid ? `<br/><span class="text-sm"><strong>HUID:</strong> ${item.huid}</span>` : '';
+      const descLines = item.description.split('\n');
+      const huidLine = item.huid
+        ? `<br/><span class="text-sm"><strong>HUID:</strong> ${item.huid}</span>`
+        : '';
 
-        return `<tr>
+      return `<tr>
       <td class="text-center">${item.slNo}</td>
-      <td><strong>${descLines[0]}</strong>${descLines.slice(1).map(l => `<br/><span class="text-sm">${l}</span>`).join('')}${huidLine}</td>
+      <td><strong>${descLines[0]}</strong>${descLines
+        .slice(1)
+        .map((l) => `<br/><span class="text-sm">${l}</span>`)
+        .join('')}${huidLine}</td>
       <td class="text-center">${item.hsnSac}</td>
       <td class="text-center">${item.purity || ''}</td>
       <td class="text-right">${item.grossWeight ? formatCurrency(item.grossWeight) + ' GMS' : ''}</td>
@@ -44,9 +52,12 @@ export function generateInvoiceHtml(data: InvoiceData): string {
       <td class="text-right">${rateDisplay}</td>
       <td class="text-right">${formatCurrency(item.amount)}</td>
     </tr>`;
-    }).join('');
+    })
+    .join('');
 
-    const hsnRows = hsnSummary.map(hsn => `<tr>
+  const hsnRows = hsnSummary
+    .map(
+      (hsn) => `<tr>
       <td>${hsn.hsnSac}</td>
       <td class="text-right">${formatCurrency(hsn.taxableValue)}</td>
       <td class="text-center">${hsn.cgstRate}%</td>
@@ -54,14 +65,16 @@ export function generateInvoiceHtml(data: InvoiceData): string {
       <td class="text-center">${hsn.sgstRate}%</td>
       <td class="text-right">${formatCurrency(hsn.sgstAmount)}</td>
       <td class="text-right">${formatCurrency(hsn.totalTaxAmount)}</td>
-    </tr>`).join('');
+    </tr>`,
+    )
+    .join('');
 
-    const totalTaxableValue = hsnSummary.reduce((sum, h) => sum + h.taxableValue, 0);
-    const totalCgst = hsnSummary.reduce((sum, h) => sum + h.cgstAmount, 0);
-    const totalSgst = hsnSummary.reduce((sum, h) => sum + h.sgstAmount, 0);
-    const totalTax = hsnSummary.reduce((sum, h) => sum + h.totalTaxAmount, 0);
+  const totalTaxableValue = hsnSummary.reduce((sum, h) => sum + h.taxableValue, 0);
+  const totalCgst = hsnSummary.reduce((sum, h) => sum + h.cgstAmount, 0);
+  const totalSgst = hsnSummary.reduce((sum, h) => sum + h.sgstAmount, 0);
+  const totalTax = hsnSummary.reduce((sum, h) => sum + h.totalTaxAmount, 0);
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -115,10 +128,14 @@ export function generateInvoiceHtml(data: InvoiceData): string {
 <body>
   <div class="invoice-container">
     ${company.mantra ? `<div class="mantra-text">${company.mantra}</div>` : ''}
-    ${(company.logo || company.bisLogo) ? `<div class="logo-container">
+    ${
+      company.logo || company.bisLogo
+        ? `<div class="logo-container">
       ${company.logo ? `<div class="main-logo"><img src="${company.logo}" alt="${company.name} Logo"/></div>` : ''}
       ${company.bisLogo ? `<div class="bis-logo"><img src="${company.bisLogo}" alt="BIS Hallmarked"/></div>` : ''}
-    </div>` : ''}
+    </div>`
+        : ''
+    }
     <div class="header-title">Tax Invoice</div>
     <div class="company-section">
       <div class="company-left">

@@ -13,4 +13,3 @@ export class CreateOrganizationWithUserDto {
   @IsNotEmpty()
   userEmail: string;
 }
-

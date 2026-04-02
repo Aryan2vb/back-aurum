@@ -17,5 +17,3 @@ export class SignupDto {
   @IsNotEmpty()
   organizationName: string;
 }
-
-

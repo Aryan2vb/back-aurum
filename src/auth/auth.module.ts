@@ -24,4 +24,3 @@ const accessTokenTtlSeconds = accessTokenTtlMinutes * 60;
   exports: [JwtModule, PassportModule, AuthService, RolesGuard],
 })
 export class AuthModule {}
-

@@ -1,144 +1,144 @@
 import {
-    IsString,
-    IsNotEmpty,
-    IsOptional,
-    IsEnum,
-    IsNumber,
-    IsArray,
-    ValidateNested,
-    Min,
-    IsDateString,
-    IsPositive,
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEnum,
+  IsNumber,
+  IsArray,
+  ValidateNested,
+  Min,
+  IsDateString,
+  IsPositive,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TaxType } from '@prisma/client';
 
 export class CreateInvoiceItemDto {
-    @IsString()
-    @IsNotEmpty()
-    description: string;
+  @IsString()
+  @IsNotEmpty()
+  description: string;
 
-    @IsString()
-    @IsNotEmpty()
-    hsnSac: string;
+  @IsString()
+  @IsNotEmpty()
+  hsnSac: string;
 
-    @IsNumber()
-    @IsPositive()
-    quantity: number;
+  @IsNumber()
+  @IsPositive()
+  quantity: number;
 
-    @IsString()
-    @IsOptional()
-    unit?: string; // defaults to 'PCS'
+  @IsString()
+  @IsOptional()
+  unit?: string; // defaults to 'PCS'
 
-    @IsNumber()
-    @Min(0)
-    unitPrice: number;
+  @IsNumber()
+  @Min(0)
+  unitPrice: number;
 
-    @IsNumber()
-    @Min(0)
-    @IsOptional()
-    makingCharges?: number; // display-only, per-unit making charge
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  makingCharges?: number; // display-only, per-unit making charge
 
-    // Jewellery extras
-    @IsNumber()
-    @Min(0)
-    @IsOptional()
-    grossWeight?: number;
+  // Jewellery extras
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  grossWeight?: number;
 
-    @IsNumber()
-    @Min(0)
-    @IsOptional()
-    netWeight?: number;
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  netWeight?: number;
 
-    @IsString()
-    @IsOptional()
-    purity?: string;
+  @IsString()
+  @IsOptional()
+  purity?: string;
 
-    @IsString()
-    @IsOptional()
-    huid?: string;
+  @IsString()
+  @IsOptional()
+  huid?: string;
 }
 
 export class CreateInvoiceDto {
-    @IsString()
-    @IsNotEmpty()
-    customerId: string;
+  @IsString()
+  @IsNotEmpty()
+  customerId: string;
 
-    @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => CreateInvoiceItemDto)
-    items: CreateInvoiceItemDto[];
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateInvoiceItemDto)
+  items: CreateInvoiceItemDto[];
 
-    /** Amount already paid at time of sale. Defaults to 0 (full Udhar). */
-    @IsNumber()
-    @Min(0)
-    @IsOptional()
-    paidAmount?: number;
+  /** Amount already paid at time of sale. Defaults to 0 (full Udhar). */
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  paidAmount?: number;
 
-    @IsEnum(TaxType)
-    @IsOptional()
-    taxType?: TaxType;
+  @IsEnum(TaxType)
+  @IsOptional()
+  taxType?: TaxType;
 
-    /** GST rates — if omitted, defaults from OrgInvoiceSettings are used. */
-    @IsNumber()
-    @Min(0)
-    @IsOptional()
-    cgstRate?: number;
+  /** GST rates — if omitted, defaults from OrgInvoiceSettings are used. */
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  cgstRate?: number;
 
-    @IsNumber()
-    @Min(0)
-    @IsOptional()
-    sgstRate?: number;
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  sgstRate?: number;
 
-    @IsNumber()
-    @Min(0)
-    @IsOptional()
-    igstRate?: number;
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  igstRate?: number;
 
-    /** "standard" or "jewellery" — defaults from OrgInvoiceSettings if omitted. */
-    @IsString()
-    @IsOptional()
-    templateType?: string;
+  /** "standard" or "jewellery" — defaults from OrgInvoiceSettings if omitted. */
+  @IsString()
+  @IsOptional()
+  templateType?: string;
 
-    // Dispatch / delivery fields
-    @IsString()
-    @IsOptional()
-    modeOfPayment?: string;
+  // Dispatch / delivery fields
+  @IsString()
+  @IsOptional()
+  modeOfPayment?: string;
 
-    @IsString()
-    @IsOptional()
-    deliveryNote?: string;
+  @IsString()
+  @IsOptional()
+  deliveryNote?: string;
 
-    @IsString()
-    @IsOptional()
-    dispatchDocNo?: string;
+  @IsString()
+  @IsOptional()
+  dispatchDocNo?: string;
 
-    @IsString()
-    @IsOptional()
-    destination?: string;
+  @IsString()
+  @IsOptional()
+  destination?: string;
 
-    @IsString()
-    @IsOptional()
-    termsOfDelivery?: string;
+  @IsString()
+  @IsOptional()
+  termsOfDelivery?: string;
 
-    @IsString()
-    @IsOptional()
-    notes?: string;
+  @IsString()
+  @IsOptional()
+  notes?: string;
 
-    @IsDateString()
-    @IsOptional()
-    invoiceDate?: string;
+  @IsDateString()
+  @IsOptional()
+  invoiceDate?: string;
 
-    // Buyer address override (if different from customer's stored address)
-    @IsString()
-    @IsOptional()
-    buyerAddress?: string;
+  // Buyer address override (if different from customer's stored address)
+  @IsString()
+  @IsOptional()
+  buyerAddress?: string;
 
-    @IsString()
-    @IsOptional()
-    buyerState?: string;
+  @IsString()
+  @IsOptional()
+  buyerState?: string;
 
-    @IsString()
-    @IsOptional()
-    buyerStateCode?: string;
+  @IsString()
+  @IsOptional()
+  buyerStateCode?: string;
 }

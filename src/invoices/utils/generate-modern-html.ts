@@ -4,28 +4,33 @@ import { InvoiceData } from './invoice-types';
  * Generates a modern/clean themed HTML invoice
  */
 export function generateModernInvoiceHtml(data: InvoiceData): string {
-    const {
-        company,
-        buyer,
-        metadata,
-        items,
-        taxes,
-        hsnSummary,
-        roundOff,
-        totalAmount,
-        amountInWords,
-        taxAmountInWords,
-        declaration = "We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct."
-    } = data;
+  const {
+    company,
+    buyer,
+    metadata,
+    items,
+    taxes,
+    hsnSummary,
+    roundOff,
+    totalAmount,
+    amountInWords,
+    taxAmountInWords,
+    declaration = 'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.',
+  } = data;
 
-    const fmt = (n: number) => new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+      n,
+    );
 
-    const totalTaxableValue = hsnSummary.reduce((s, h) => s + h.taxableValue, 0);
-    const totalCgst = hsnSummary.reduce((s, h) => s + h.cgstAmount, 0);
-    const totalSgst = hsnSummary.reduce((s, h) => s + h.sgstAmount, 0);
-    const totalTax = hsnSummary.reduce((s, h) => s + h.totalTaxAmount, 0);
+  const totalTaxableValue = hsnSummary.reduce((s, h) => s + h.taxableValue, 0);
+  const totalCgst = hsnSummary.reduce((s, h) => s + h.cgstAmount, 0);
+  const totalSgst = hsnSummary.reduce((s, h) => s + h.sgstAmount, 0);
+  const totalTax = hsnSummary.reduce((s, h) => s + h.totalTaxAmount, 0);
 
-    const itemRows = items.map(item => `
+  const itemRows = items
+    .map(
+      (item) => `
         <tr>
             <td style="text-align:center;padding:10px 8px;border-bottom:1px solid #eee;">${item.slNo}</td>
             <td style="padding:10px 8px;border-bottom:1px solid #eee;font-weight:500;">${item.description}</td>
@@ -34,9 +39,13 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
             <td style="text-align:right;padding:10px 8px;border-bottom:1px solid #eee;">₹${fmt(item.rate)}</td>
             <td style="text-align:right;padding:10px 8px;border-bottom:1px solid #eee;font-weight:600;">₹${fmt(item.amount)}</td>
         </tr>
-    `).join('');
+    `,
+    )
+    .join('');
 
-    const hsnRows = hsnSummary.map(h => `
+  const hsnRows = hsnSummary
+    .map(
+      (h) => `
         <tr>
             <td style="padding:6px 10px;border-bottom:1px solid #eee;">${h.hsnSac}</td>
             <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.taxableValue)}</td>
@@ -46,9 +55,11 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
             <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.sgstAmount)}</td>
             <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;font-weight:600;">₹${fmt(h.totalTaxAmount)}</td>
         </tr>
-    `).join('');
+    `,
+    )
+    .join('');
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -222,5 +233,5 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
         <div class="bottom-note">This is a Computer Generated Invoice</div>
     </div>
 </body>
-</html>\`.trim();
+</html>`.trim();
 }

@@ -9,4 +9,3 @@ export class CreateOrganizationDto {
   @IsNotEmpty()
   userId: string; // User ID who will be the owner/member
 }
-

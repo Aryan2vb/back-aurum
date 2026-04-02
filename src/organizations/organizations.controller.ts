@@ -54,11 +54,7 @@ export class OrganizationsController {
   @Delete('members/:userId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Roles(OrganizationRole.OWNER)
-  removeMember(
-    @Param('userId') userId: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  removeMember(@Param('userId') userId: string, @CurrentUser() user: CurrentUserData) {
     return this.organizationsService.removeMember(userId, user);
   }
 }
-

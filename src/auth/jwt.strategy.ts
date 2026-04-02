@@ -65,9 +65,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       });
 
       if (!membership) {
-        throw new UnauthorizedException(
-          'User is not a member of the specified organization',
-        );
+        throw new UnauthorizedException('User is not a member of the specified organization');
       }
 
       if (membership.role !== payload.role) {
@@ -96,4 +94,3 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
   }
 }
-

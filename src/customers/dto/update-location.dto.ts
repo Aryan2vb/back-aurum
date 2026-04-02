@@ -25,4 +25,3 @@ export class UpdateLocationDto {
   @IsOptional()
   landmark?: string;
 }
-

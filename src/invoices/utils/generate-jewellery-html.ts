@@ -5,28 +5,37 @@
 import { InvoiceData } from './invoice-types';
 
 export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
-    const {
-        company,
-        buyer,
-        metadata,
-        items,
-        taxes,
-        roundOff,
-        totalAmount,
-        amountInWords,
-        declaration,
-    } = data;
+  const {
+    company,
+    buyer,
+    metadata,
+    items,
+    taxes,
+    roundOff,
+    totalAmount,
+    amountInWords,
+    declaration,
+  } = data;
 
-    const fmt = (n: number) =>
-        new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+      n,
+    );
 
-    const subtotal = items.reduce((s, i) => s + i.amount, 0);
-    const cashReceived = data.cashReceived !== undefined ? data.cashReceived : totalAmount;
-    const amtBalance = data.amtBalance !== undefined ? data.amtBalance : 0;
+  const subtotal = items.reduce((s, i) => s + i.amount, 0);
+  const cashReceived = data.cashReceived !== undefined ? data.cashReceived : totalAmount;
+  const amtBalance = data.amtBalance !== undefined ? data.amtBalance : 0;
 
-    const itemRows = items.map(item => `
+  const itemRows = items
+    .map(
+      (item) => `
         <tr>
-            <td>${item.description.split('\\n')[0].replace(/GOLD JEWELLERY-\d+\n?/i, '').trim() || item.description.split('\n').pop()}</td>
+            <td>${
+              item.description
+                .split('\\n')[0]
+                .replace(/GOLD JEWELLERY-\d+\n?/i, '')
+                .trim() || item.description.split('\n').pop()
+            }</td>
             <td class="ctr">${item.quantity}</td>
             <td class="ctr">${item.hsnSac}</td>
             <td class="ctr">${item.grossWeight ? fmt(item.grossWeight) + ' GM' : item.quantity + ' ' + item.unit}</td>
@@ -35,23 +44,27 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
             <td class="rgt">${item.makingCharges ? fmt(item.makingCharges) : '-'}</td>
             <td class="rgt">${item.huid ? '45.00' : '-'}</td>
             <td class="rgt">${fmt(item.amount)}</td>
-        </tr>`).join('');
+        </tr>`,
+    )
+    .join('');
 
-    const emptyRows = Array(Math.max(0, 6 - items.length))
-        .fill('<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>')
-        .join('');
+  const emptyRows = Array(Math.max(0, 6 - items.length))
+    .fill(
+      '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>',
+    )
+    .join('');
 
-    const termsDefault = `1. All disputes are subject to REWA Jurisdiction Only.
+  const termsDefault = `1. All disputes are subject to REWA Jurisdiction Only.
 2. Interest @18% p.a. will be charged if the payment is not paid within 30 days.
 3. I have checked the ornaments mentioned above and I am satisfied with the quality, rates, designs and specifications, thereof which are in perfect and acceptable condition and in taken thereof I have appended my signature here.
 4. Making Charges & GST are not refundable in case of changing/exchanging of jewellery.
 5. Choose wisely & purchase only if it satisfies you.`;
 
-    const terms = declaration || termsDefault;
+  const terms = declaration || termsDefault;
 
-    const coAny = company as any;
+  const coAny = company as any;
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">

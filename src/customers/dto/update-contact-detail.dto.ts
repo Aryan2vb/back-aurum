@@ -18,4 +18,3 @@ export class UpdateContactDetailDto {
   @IsOptional()
   preferredContactMethod?: ContactMethod;
 }
-
