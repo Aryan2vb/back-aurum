@@ -12,6 +12,7 @@ import {
   HttpStatus,
   UseGuards,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { InvoicesService } from './invoices.service';
@@ -25,6 +26,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { OrganizationRole } from '@prisma/client';
+import { Public } from '../auth/public.decorator';
 
 @Controller('invoices')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -123,19 +125,22 @@ export class InvoicesController {
   // ===========================
 
   @Get(':id/pdf')
-  @Roles(
-    OrganizationRole.OWNER,
-    OrganizationRole.ADMIN,
-    OrganizationRole.STAFF,
-    OrganizationRole.VIEWER,
-  )
+  @Public()
   async getPdf(
     @Param('id') id: string,
+    @Query('signature') signature: string,
     @CurrentUser() user: CurrentUserData,
     @Res() res: Response,
   ) {
     this.logger.log(`GET /invoices/${id}/pdf`);
-    const buffer = await this.invoicesService.generatePdf(id, user.organizationId);
+    let orgId = user?.organizationId;
+
+    if (!orgId) {
+      if (!signature) throw new ForbiddenException('Missing authorization');
+      orgId = await this.invoicesService.verifySignature(id, signature);
+    }
+
+    const buffer = await this.invoicesService.generatePdf(id, orgId);
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="invoice-${id}.pdf"`,
@@ -145,23 +150,38 @@ export class InvoicesController {
   }
 
   @Get(':id/html')
+  @Public()
+  async getHtml(
+    @Param('id') id: string,
+    @Query('signature') signature: string,
+    @CurrentUser() user: CurrentUserData,
+    @Res() res: Response,
+  ) {
+    this.logger.log(`GET /invoices/${id}/html`);
+    let orgId = user?.organizationId;
+
+    if (!orgId) {
+      if (!signature) throw new ForbiddenException('Missing authorization');
+      orgId = await this.invoicesService.verifySignature(id, signature);
+    }
+
+    const html = await this.invoicesService.generateHtml(id, orgId);
+    res.set({
+      'Content-Type': 'text/html',
+    });
+    res.send(html);
+  }
+
+  @Get(':id/sign')
   @Roles(
     OrganizationRole.OWNER,
     OrganizationRole.ADMIN,
     OrganizationRole.STAFF,
     OrganizationRole.VIEWER,
   )
-  async getHtml(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserData,
-    @Res() res: Response,
-  ) {
-    this.logger.log(`GET /invoices/${id}/html`);
-    const html = await this.invoicesService.generateHtml(id, user.organizationId);
-    res.set({
-      'Content-Type': 'text/html',
-    });
-    res.send(html);
+  signUrl(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+    const signature = this.invoicesService.generateSignature(id, user.organizationId);
+    return { signature };
   }
 
   // ===========================

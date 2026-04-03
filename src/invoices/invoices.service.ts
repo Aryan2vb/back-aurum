@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditsService } from '../credits/credits.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
@@ -756,5 +757,43 @@ export class InvoicesService {
 
       return { cancelled: true, invoiceId: id };
     });
+  }
+
+  // ===========================
+  // SIGNED URLs
+  // ===========================
+
+  generateSignature(invoiceId: string, organizationId: string): string {
+    const secret = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+    const expiry = Math.floor(Date.now() / 1000) + 900; // 15 mins expiry
+    const payload = `${invoiceId}:${organizationId}:${expiry}`;
+    const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+    return `${expiry}.${signature}`;
+  }
+
+  async verifySignature(invoiceId: string, signatureParam: string): Promise<string> {
+    const [expiry, signature] = signatureParam.split('.');
+    if (!expiry || !signature) throw new BadRequestException('Invalid signature format');
+
+    if (Date.now() / 1000 > Number(expiry)) {
+      throw new BadRequestException('Signature expired');
+    }
+
+    // Need organizationId since it was part of the payload
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { organizationId: true },
+    });
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const secret = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+    const payload = `${invoiceId}:${invoice.organizationId}:${expiry}`;
+    const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+
+    if (signature !== expected) {
+      throw new BadRequestException('Invalid signature');
+    }
+
+    return invoice.organizationId;
   }
 }
