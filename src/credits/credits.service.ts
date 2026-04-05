@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,7 +11,7 @@ import { CreateCreditTransactionDto } from './dto/create-credit-transaction.dto'
 import { UpdateCreditTransactionDto } from './dto/update-credit-transaction.dto';
 import { QueryCreditsDto } from './dto/query-credits.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
-import { CreditStatus, Prisma } from '@prisma/client';
+import { CreditStatus, LedgerType, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
@@ -20,1084 +19,408 @@ export class CreditsService {
   private readonly logger = new Logger(CreditsService.name);
 
   constructor(private prisma: PrismaService) {
-    this.logger.log('CreditsService initialized');
+    this.logger.log('CreditsService initialized in Pure Ledger mode');
   }
 
   // ===========================
-  // CREDIT CRUD
+  // UDHAR CRUD (PURE LEDGER)
   // ===========================
 
   async create(createCreditDto: CreateCreditDto, user: CurrentUserData) {
-    this.logger.log(
-      `Creating credit for customer ${createCreditDto.customerId} by user ${user.userId}`,
-    );
-    const { customerId, totalAmount, initialPayment, ...rest } = createCreditDto;
+    this.logger.log(`Creating udhar for customer ${createCreditDto.customerId}`);
+    const { customerId, totalAmount, initialPayment, creditDate, invoiceId, ...rest } = createCreditDto;
 
-    // Verify customer exists and belongs to organization
     const customer = await this.prisma.customer.findFirst({
-      where: {
-        id: customerId,
-        organizationId: user.organizationId,
-        deletedAt: null,
-      },
+      where: { id: customerId, organizationId: user.organizationId, deletedAt: null },
     });
 
-    if (!customer) {
-      this.logger.warn(`Customer not found: ${customerId} for organization ${user.organizationId}`);
-      throw new NotFoundException('Customer not found');
-    }
-
-    // Fetch customer credit summary BEFORE creating new credit (decision support)
-    this.logger.debug(`Fetching customer credit summary for customer ${customerId}`);
-    const customerCreditSummary = await this.getCustomerCreditSummary(
-      customerId,
-      user.organizationId,
-    );
-    this.logger.debug(
-      `Customer risk level: ${customerCreditSummary.riskLevel}, Active Udhar: ${customerCreditSummary.totalActiveUdhar}`,
-    );
-
-    // Validate initial payment doesn't exceed total
-    if (initialPayment && initialPayment > totalAmount) {
-      this.logger.warn(
-        `Initial payment ${initialPayment} exceeds total amount ${totalAmount} for customer ${customerId}`,
-      );
-      throw new BadRequestException('Initial payment cannot exceed total amount');
-    }
+    if (!customer) throw new NotFoundException('Customer not found');
 
     const paidAmount = initialPayment || 0;
     const status = paidAmount >= totalAmount ? CreditStatus.PAID : CreditStatus.ACTIVE;
 
-    // Calculate next reminder date if frequency is set
     let nextReminderDate: Date | null = null;
     if (rest.reminderFrequency && status !== CreditStatus.PAID) {
       nextReminderDate = this.calculateNextReminderDate(new Date(), rest.reminderFrequency);
     }
 
-    const credit = await this.prisma.$transaction(async (tx) => {
-      // Create the credit
-      const createdCredit = await tx.credit.create({
+    const createdAt = creditDate ? new Date(creditDate) : new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      const ledgerEntry = await tx.ledgerEntry.create({
         data: {
           organizationId: user.organizationId,
           customerId,
-          totalAmount: new Decimal(totalAmount),
-          paidAmount: new Decimal(paidAmount),
-          status,
-          nextReminderDate,
-          lastPaymentDate: initialPayment ? new Date() : null,
+          amount: new Decimal(totalAmount),
+          type: LedgerType.UDHAR,
+          description: rest.description || rest.itemSummary || 'Direct Udhar',
           createdById: user.userId,
-          creditDate: rest.creditDate ? new Date(rest.creditDate) : new Date(),
-          expectedDueDate: rest.expectedDueDate ? new Date(rest.expectedDueDate) : null,
-          saleReference: rest.saleReference,
-          itemSummary: rest.itemSummary,
-          description: rest.description,
-          reminderFrequency: rest.reminderFrequency,
-          notes: rest.notes,
-        },
-        include: {
-          customer: {
-            select: { id: true, fullName: true, customerCode: true },
+          createdAt,
+          udharEntry: {
+            create: {
+              organizationId: user.organizationId,
+              customerId,
+              amount: new Decimal(totalAmount),
+              paidAmount: new Decimal(paidAmount),
+              status,
+              dueDate: rest.expectedDueDate ? new Date(rest.expectedDueDate) : null,
+              notes: rest.notes,
+              reminderFrequency: rest.reminderFrequency,
+              nextReminderDate,
+              createdAt,
+              invoiceId,
+            },
           },
         },
+        include: { udharEntry: true, customer: { select: { id: true, fullName: true, customerCode: true } } },
       });
 
-      // Create initial payment transaction if provided
-      if (initialPayment && initialPayment > 0) {
-        await tx.creditTransaction.create({
-          data: {
-            creditId: createdCredit.id,
-            organizationId: user.organizationId,
-            amount: new Decimal(initialPayment),
-            transactionDate: new Date(),
-            notes: 'Initial payment at credit creation',
-            createdById: user.userId,
-          },
-        });
-      }
-
-      return createdCredit;
+      return ledgerEntry;
     });
-
-    this.logger.log(
-      `Credit created successfully: ${credit.id} for customer ${customerId}, amount: ${totalAmount}, status: ${status}`,
-    );
-
-    // Return credit with customer credit summary for decision support
-    return {
-      ...credit,
-      customerCreditSummary: {
-        ...customerCreditSummary,
-        // Note: This summary is from BEFORE the new credit was created
-        // Frontend can call GET /credits/customer/:customerId/summary for updated summary
-      },
-    };
   }
 
   async findAll(queryDto: QueryCreditsDto, organizationId: string) {
-    const {
-      customerId,
-      status,
-      overdueOnly,
-      dueBefore,
-      dueAfter,
-      creditDateFrom,
-      creditDateTo,
-      search,
-      page = 1,
-      limit = 20,
-      sortBy = 'creditDate',
-      sortOrder = 'desc',
-    } = queryDto;
+    const { customerId, status, overdueOnly, dueBefore, dueAfter, search, page = 1, limit = 20, sortOrder = 'desc' } = queryDto;
 
-    const where: Prisma.CreditWhereInput = {
-      organizationId,
-      deletedAt: null,
-    };
-
-    if (customerId) {
-      where.customerId = customerId;
-    }
-
-    if (status) {
-      where.status = status;
-    }
-
-    if (overdueOnly) {
-      where.status = CreditStatus.OVERDUE;
-    }
-
-    if (dueBefore || dueAfter) {
-      where.expectedDueDate = {};
-      if (dueBefore) {
-        where.expectedDueDate.lte = new Date(dueBefore);
-      }
-      if (dueAfter) {
-        where.expectedDueDate.gte = new Date(dueAfter);
-      }
-    }
-
-    if (creditDateFrom || creditDateTo) {
-      where.creditDate = {};
-      if (creditDateFrom) {
-        where.creditDate.gte = new Date(creditDateFrom);
-      }
-      if (creditDateTo) {
-        where.creditDate.lte = new Date(creditDateTo);
-      }
-    }
-
+    const where: any = { organizationId, deletedAt: null };
+    if (customerId) where.customerId = customerId;
+    if (status) where.status = status;
+    if (overdueOnly) where.status = CreditStatus.OVERDUE;
+    if (dueBefore) where.dueDate = { lte: new Date(dueBefore) };
+    if (dueAfter) where.dueDate = { ...where.dueDate, gte: new Date(dueAfter) };
+    
     if (search) {
       where.OR = [
-        { saleReference: { contains: search, mode: 'insensitive' } },
-        { itemSummary: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { customer: { fullName: { contains: search, mode: 'insensitive' } } },
+        { notes: { contains: search, mode: 'insensitive' } },
+        { ledgerEntry: { description: { contains: search, mode: 'insensitive' } } },
+        { customer: { fullName: { contains: search, mode: 'insensitive' } } }
       ];
     }
 
-    const skip = (page - 1) * limit;
-
-    const [credits, total] = await Promise.all([
-      this.prisma.credit.findMany({
+    const [data, total] = await Promise.all([
+      this.prisma.udharEntry.findMany({
         where,
-        include: {
-          customer: {
-            select: { id: true, fullName: true, customerCode: true },
-          },
-          _count: { select: { transactions: true } },
+        include: { 
+          ledgerEntry: true, 
+          customer: { select: { id: true, fullName: true, customerCode: true } } 
         },
-        orderBy: { [sortBy]: sortOrder },
-        skip,
+        orderBy: { createdAt: sortOrder },
+        skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.credit.count({ where }),
+      this.prisma.udharEntry.count({ where }),
     ]);
 
-    return {
-      data: credits,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    const mapped = data.map(u => ({
+      id: u.id,
+      customerId: u.customerId,
+      itemSummary: u.ledgerEntry?.description || 'Udhar',
+      description: u.ledgerEntry?.description || 'Udhar',
+      totalAmount: u.amount,
+      paidAmount: u.paidAmount,
+      creditDate: u.createdAt,
+      expectedDueDate: u.dueDate,
+      status: u.status,
+      customer: u.customer,
+      isNewSystem: true,
+      remainingBalance: Number(u.amount) - Number(u.paidAmount),
+    }));
+
+    return { data: mapped, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
   async findOne(id: string, organizationId: string) {
-    const credit = await this.prisma.credit.findFirst({
-      where: {
-        id,
-        organizationId,
-        deletedAt: null,
-      },
-      include: {
-        customer: {
-          select: { id: true, fullName: true, customerCode: true },
-        },
-        transactions: {
-          orderBy: { transactionDate: 'desc' },
-        },
-        createdBy: {
-          select: { id: true, fullName: true, email: true },
-        },
+    const udhar = await this.prisma.udharEntry.findFirst({
+      where: { id, organizationId, deletedAt: null },
+      include: { 
+        ledgerEntry: { include: { createdBy: { select: { id: true, fullName: true, email: true } } } }, 
+        customer: { select: { id: true, fullName: true, customerCode: true } } 
       },
     });
 
-    if (!credit) {
-      throw new NotFoundException('Credit not found');
-    }
+    if (!udhar) throw new NotFoundException('Udhar not found');
 
-    // Calculate remaining balance
-    const remainingBalance = Number(credit.totalAmount) - Number(credit.paidAmount);
-
+    const payments = await this.getUdharPayments(id, organizationId);
     return {
-      ...credit,
-      remainingBalance,
+      id: udhar.id,
+      customerId: udhar.customerId,
+      itemSummary: udhar.ledgerEntry.description,
+      totalAmount: udhar.amount,
+      paidAmount: udhar.paidAmount,
+      remainingBalance: Number(udhar.amount) - Number(udhar.paidAmount),
+      creditDate: udhar.createdAt,
+      expectedDueDate: udhar.dueDate,
+      status: udhar.status,
+      customer: udhar.customer,
+      transactions: payments.map((p: any) => ({
+        id: p.id,
+        amount: p.amount,
+        transactionDate: p.createdAt,
+        notes: p.description,
+        paymentMethod: p.paymentMethod || 'OTHER'
+      })),
+      createdBy: udhar.ledgerEntry.createdBy,
+      isNewSystem: true,
     };
   }
 
-  async update(id: string, updateCreditDto: UpdateCreditDto, user: CurrentUserData) {
-    const credit = await this.prisma.credit.findFirst({
-      where: {
-        id,
-        organizationId: user.organizationId,
-        deletedAt: null,
-      },
+  async update(id: string, dto: UpdateCreditDto, user: CurrentUserData) {
+    const udhar = await this.prisma.udharEntry.findFirst({ 
+      where: { id, organizationId: user.organizationId },
+      include: { ledgerEntry: true }
     });
+    if (!udhar) throw new NotFoundException('Udhar not found');
 
-    if (!credit) {
-      throw new NotFoundException('Credit not found');
-    }
+    const updateData: any = {
+      notes: dto.notes,
+      dueDate: dto.expectedDueDate ? new Date(dto.expectedDueDate) : undefined,
+    };
 
-    const updateData: Prisma.CreditUpdateInput = {};
-
-    if (updateCreditDto.saleReference !== undefined) {
-      updateData.saleReference = updateCreditDto.saleReference;
-    }
-    if (updateCreditDto.itemSummary !== undefined) {
-      updateData.itemSummary = updateCreditDto.itemSummary;
-    }
-    if (updateCreditDto.description !== undefined) {
-      updateData.description = updateCreditDto.description;
-    }
-    if (updateCreditDto.creditDate !== undefined) {
-      updateData.creditDate = new Date(updateCreditDto.creditDate);
-    }
-    if (updateCreditDto.expectedDueDate !== undefined) {
-      updateData.expectedDueDate = new Date(updateCreditDto.expectedDueDate);
-    }
-    if (updateCreditDto.reminderFrequency !== undefined) {
-      updateData.reminderFrequency = updateCreditDto.reminderFrequency;
-      // Recalculate next reminder if status is active/overdue
-      if (credit.status !== CreditStatus.PAID && credit.status !== CreditStatus.CANCELLED) {
-        updateData.nextReminderDate = this.calculateNextReminderDate(
-          new Date(),
-          updateCreditDto.reminderFrequency,
-        );
+    // Robust editing: if amount, description or date changes, update ledger too
+    return this.prisma.$transaction(async (tx) => {
+      const ledgerUpdate: any = {};
+      if (dto.description) ledgerUpdate.description = dto.description;
+      if (dto.totalAmount) {
+        ledgerUpdate.amount = new Decimal(dto.totalAmount);
+        updateData.amount = new Decimal(dto.totalAmount);
       }
-    }
-    if (updateCreditDto.nextReminderDate !== undefined) {
-      updateData.nextReminderDate = new Date(updateCreditDto.nextReminderDate);
-    }
-    if (updateCreditDto.status !== undefined) {
-      updateData.status = updateCreditDto.status;
-      // Clear reminder if paid/cancelled
-      if (
-        updateCreditDto.status === CreditStatus.PAID ||
-        updateCreditDto.status === CreditStatus.CANCELLED
-      ) {
-        updateData.nextReminderDate = null;
+      if (dto.creditDate) {
+        ledgerUpdate.createdAt = new Date(dto.creditDate);
+        updateData.createdAt = new Date(dto.creditDate);
       }
-    }
-    if (updateCreditDto.notes !== undefined) {
-      updateData.notes = updateCreditDto.notes;
-    }
-    if (updateCreditDto.totalAmount !== undefined) {
-      updateData.totalAmount = new Decimal(updateCreditDto.totalAmount);
-      // Recalculate status if total changed
-      const newTotalAmount = updateCreditDto.totalAmount;
-      const currentPaid = Number(credit.paidAmount);
-      if (currentPaid >= newTotalAmount) {
-        updateData.status = CreditStatus.PAID;
-        updateData.nextReminderDate = null;
-      } else if (credit.status === CreditStatus.PAID) {
-        // If was paid but now total increased, reactivate
-        updateData.status = CreditStatus.ACTIVE;
-      }
-    }
 
-    return this.prisma.credit.update({
-      where: {
-        id,
-        organizationId: user.organizationId, // Required for tenant-scoped model
-      },
-      data: updateData,
-      include: {
-        customer: {
-          select: { id: true, fullName: true, customerCode: true },
-        },
-      },
+      if (Object.keys(ledgerUpdate).length > 0) {
+        await tx.ledgerEntry.update({
+          where: { id: udhar.ledgerEntryId, organizationId: user.organizationId },
+          data: ledgerUpdate
+        });
+      }
+
+      // Sync status if amount changed and now matches paid
+      if (dto.totalAmount) {
+        const newTotal = new Decimal(dto.totalAmount);
+        updateData.status = udhar.paidAmount.gte(newTotal) ? CreditStatus.PAID : CreditStatus.ACTIVE;
+      }
+      
+      if (dto.status) updateData.status = dto.status;
+
+      return tx.udharEntry.update({
+        where: { id, organizationId: user.organizationId },
+        data: updateData,
+      });
     });
   }
 
-  async softDelete(id: string, user: CurrentUserData) {
-    const credit = await this.prisma.credit.findFirst({
-      where: {
-        id,
-        organizationId: user.organizationId,
-        deletedAt: null,
-      },
+  async softDelete(id: string, user: CurrentUserData, forceDelete: boolean = false) {
+    const udhar = await this.prisma.udharEntry.findFirst({ 
+      where: { id, organizationId: user.organizationId } 
     });
+    if (!udhar) throw new NotFoundException('Udhar not found');
 
-    if (!credit) {
-      throw new NotFoundException('Credit not found');
+    if (forceDelete) {
+      return this.prisma.$transaction([
+        this.prisma.udharEntry.delete({ where: { id, organizationId: user.organizationId } }),
+        this.prisma.ledgerEntry.delete({ where: { id: udhar.ledgerEntryId, organizationId: user.organizationId } }),
+      ]);
     }
 
-    return this.prisma.credit.update({
-      where: {
-        id,
-        organizationId: user.organizationId, // Required for tenant-scoped model
-      },
-      data: { deletedAt: new Date() },
-    });
+    return this.prisma.$transaction([
+      this.prisma.udharEntry.update({ 
+        where: { id, organizationId: user.organizationId }, 
+        data: { deletedAt: new Date(), status: CreditStatus.CANCELLED } 
+      }),
+      this.prisma.ledgerEntry.update({ 
+        where: { id: udhar.ledgerEntryId, organizationId: user.organizationId }, 
+        data: { deletedAt: new Date() } 
+      }),
+    ]);
   }
 
   // ===========================
   // TRANSACTIONS
   // ===========================
 
-  async addTransaction(
-    creditId: string,
-    createTransactionDto: CreateCreditTransactionDto,
-    user: CurrentUserData,
-  ) {
-    this.logger.log(
-      `Adding transaction to credit ${creditId}, amount: ${createTransactionDto.amount}`,
-    );
+  async addTransaction(udharId: string, dto: CreateCreditTransactionDto, user: CurrentUserData) {
+    return this.addUdharPayment(udharId, dto, user);
+  }
 
-    // Ensure organizationId is present
-    if (!user.organizationId) {
-      this.logger.error('Organization ID missing in user context');
-      throw new ForbiddenException('Organization ID is required');
-    }
+  async getTransactions(udharId: string, organizationId: string) {
+    return this.getUdharPayments(udharId, organizationId);
+  }
 
-    const organizationId = user.organizationId;
-
-    const credit = await this.prisma.credit.findFirst({
-      where: {
-        id: creditId,
-        organizationId: organizationId,
-        deletedAt: null,
-      },
+  async updateTransaction(udharId: string, transactionId: string, dto: UpdateCreditTransactionDto, user: CurrentUserData) {
+    const payment = await this.prisma.ledgerEntry.findFirst({
+      where: { id: transactionId, entityId: udharId, organizationId: user.organizationId, type: LedgerType.PAYMENT }
     });
+    if (!payment) throw new NotFoundException('Payment not found');
 
-    if (!credit) {
-      this.logger.warn(`Credit not found: ${creditId} for organization ${organizationId}`);
-      throw new NotFoundException('Credit not found');
-    }
+    const newAmount = dto.amount ? new Decimal(dto.amount) : payment.amount;
+    const diff = newAmount.sub(payment.amount);
+    
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.ledgerEntry.update({
+        where: { id: transactionId, organizationId: user.organizationId },
+        data: { 
+          amount: newAmount,
+          description: dto.notes || payment.description,
+          createdAt: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
+        }
+      });
 
-    if (credit.status === CreditStatus.CANCELLED) {
-      this.logger.warn(`Attempted to add payment to cancelled credit ${creditId}`);
-      throw new BadRequestException('Cannot add payment to cancelled credit');
-    }
+      const udhar = await tx.udharEntry.findUnique({ where: { id: udharId, organizationId: user.organizationId } });
+      const newPaid = udhar.paidAmount.add(diff);
 
-    const paymentAmount = new Decimal(createTransactionDto.amount);
-    const newPaidAmount = credit.paidAmount.add(paymentAmount);
-    const totalAmount = credit.totalAmount;
+      await tx.udharEntry.update({
+        where: { id: udharId, organizationId: user.organizationId },
+        data: { 
+          paidAmount: newPaid,
+          status: newPaid.gte(udhar.amount) ? CreditStatus.PAID : CreditStatus.ACTIVE
+        }
+      });
 
-    // Check for overpayment
-    if (newPaidAmount.greaterThan(totalAmount)) {
-      this.logger.warn(
-        `Overpayment attempted: ${createTransactionDto.amount} exceeds remaining balance for credit ${creditId}`,
-      );
-      throw new BadRequestException(
-        `Payment of ${createTransactionDto.amount} exceeds remaining balance of ${totalAmount.sub(credit.paidAmount)}`,
-      );
-    }
+      return updated;
+    });
+  }
 
-    const newStatus = newPaidAmount.greaterThanOrEqualTo(totalAmount)
-      ? CreditStatus.PAID
-      : CreditStatus.ACTIVE;
+  async deleteTransaction(udharId: string, transactionId: string, user: CurrentUserData) {
+    const payment = await this.prisma.ledgerEntry.findFirst({
+      where: { id: transactionId, entityId: udharId, organizationId: user.organizationId, type: LedgerType.PAYMENT }
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
 
     return this.prisma.$transaction(async (tx) => {
-      // Create transaction
-      const transaction = await tx.creditTransaction.create({
-        data: {
-          creditId,
-          organizationId: organizationId,
-          amount: paymentAmount,
-          transactionDate: createTransactionDto.transactionDate
-            ? new Date(createTransactionDto.transactionDate)
-            : new Date(),
-          paymentMethod: createTransactionDto.paymentMethod,
-          referenceNumber: createTransactionDto.referenceNumber,
-          collectedBy: createTransactionDto.collectedBy,
-          notes: createTransactionDto.notes,
-          createdById: user.userId,
-        },
-      });
+      await tx.ledgerEntry.delete({ where: { id: transactionId, organizationId: user.organizationId } });
+      const udhar = await tx.udharEntry.findUnique({ where: { id: udharId, organizationId: user.organizationId } });
+      const newPaid = udhar.paidAmount.sub(payment.amount);
 
-      // Update credit - ensure organizationId is explicitly in where clause
-      const updatedCredit = await tx.credit.update({
-        where: {
-          id: creditId,
-          organizationId: organizationId, // Required for tenant-scoped model
-        },
-        data: {
-          paidAmount: newPaidAmount,
-          lastPaymentDate: new Date(),
-          status: newStatus,
-          // Clear reminder if fully paid
-          nextReminderDate:
-            newStatus === CreditStatus.PAID
-              ? null
-              : credit.reminderFrequency
-                ? this.calculateNextReminderDate(new Date(), credit.reminderFrequency)
-                : credit.nextReminderDate,
-        },
-        include: {
-          customer: {
-            select: { id: true, fullName: true, customerCode: true },
-          },
-        },
-      });
-
-      const remainingBalance = Number(totalAmount) - Number(newPaidAmount);
-      this.logger.log(
-        `Transaction added: ${transaction.id} for credit ${creditId}, new status: ${newStatus}, remaining balance: ${remainingBalance}`,
-      );
-
-      return {
-        transaction,
-        credit: updatedCredit,
-        remainingBalance,
-      };
-    });
-  }
-
-  async getTransactions(creditId: string, organizationId: string) {
-    this.logger.debug(`Fetching transactions for credit ${creditId}`);
-    this.logger.debug(`Fetching transactions for credit ${creditId}`);
-
-    const credit = await this.prisma.credit.findFirst({
-      where: {
-        id: creditId,
-        organizationId,
-        deletedAt: null,
-      },
-    });
-
-    if (!credit) {
-      this.logger.warn(`Credit not found: ${creditId} for organization ${organizationId}`);
-      throw new NotFoundException('Credit not found');
-    }
-
-    const transactions = await this.prisma.creditTransaction.findMany({
-      where: {
-        creditId,
-        organizationId, // Required for tenant-scoped model
-      },
-      orderBy: { transactionDate: 'desc' },
-      include: {
-        createdBy: {
-          select: { id: true, fullName: true, email: true },
-        },
-      },
-    });
-
-    this.logger.debug(`Found ${transactions.length} transactions for credit ${creditId}`);
-    return transactions;
-  }
-
-  async updateTransaction(
-    creditId: string,
-    transactionId: string,
-    updateDto: UpdateCreditTransactionDto,
-    user: CurrentUserData,
-  ) {
-    const transaction = await this.prisma.creditTransaction.findFirst({
-      where: {
-        id: transactionId,
-        creditId,
-        organizationId: user.organizationId,
-      },
-      include: { credit: true },
-    });
-
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
-    }
-
-    if (transaction.credit.deletedAt) {
-      throw new BadRequestException('Cannot update transaction on deleted credit');
-    }
-
-    // If amount is being changed, recalculate credit totals
-    if (updateDto.amount !== undefined) {
-      const oldAmount = transaction.amount;
-      const newAmount = new Decimal(updateDto.amount);
-      const difference = newAmount.sub(oldAmount);
-      const newPaidAmount = transaction.credit.paidAmount.add(difference);
-
-      if (newPaidAmount.greaterThan(transaction.credit.totalAmount)) {
-        throw new BadRequestException('Updated amount would exceed total credit amount');
-      }
-
-      if (newPaidAmount.lessThan(0)) {
-        throw new BadRequestException('Updated amount would result in negative paid amount');
-      }
-
-      return this.prisma.$transaction(async (tx) => {
-        const updatedTransaction = await tx.creditTransaction.update({
-          where: {
-            id: transactionId,
-            organizationId: user.organizationId, // Required for tenant-scoped model
-          },
-          data: {
-            amount: newAmount,
-            transactionDate: updateDto.transactionDate
-              ? new Date(updateDto.transactionDate)
-              : undefined,
-            paymentMethod: updateDto.paymentMethod,
-            referenceNumber: updateDto.referenceNumber,
-            collectedBy: updateDto.collectedBy,
-            notes: updateDto.notes,
-          },
-        });
-
-        const newStatus = newPaidAmount.greaterThanOrEqualTo(transaction.credit.totalAmount)
-          ? CreditStatus.PAID
-          : CreditStatus.ACTIVE;
-
-        await tx.credit.update({
-          where: {
-            id: creditId,
-            organizationId: user.organizationId, // Required for tenant-scoped model
-          },
-          data: {
-            paidAmount: newPaidAmount,
-            status: newStatus,
-            nextReminderDate: newStatus === CreditStatus.PAID ? null : undefined,
-          },
-        });
-
-        return updatedTransaction;
-      });
-    }
-
-    // No amount change, simple update
-    return this.prisma.creditTransaction.update({
-      where: {
-        id: transactionId,
-        organizationId: user.organizationId, // Required for tenant-scoped model
-      },
-      data: {
-        transactionDate: updateDto.transactionDate
-          ? new Date(updateDto.transactionDate)
-          : undefined,
-        paymentMethod: updateDto.paymentMethod,
-        referenceNumber: updateDto.referenceNumber,
-        collectedBy: updateDto.collectedBy,
-        notes: updateDto.notes,
-      },
-    });
-  }
-
-  async deleteTransaction(creditId: string, transactionId: string, user: CurrentUserData) {
-    const transaction = await this.prisma.creditTransaction.findFirst({
-      where: {
-        id: transactionId,
-        creditId,
-        organizationId: user.organizationId,
-      },
-      include: { credit: true },
-    });
-
-    if (!transaction) {
-      throw new NotFoundException('Transaction not found');
-    }
-
-    if (transaction.credit.deletedAt) {
-      throw new BadRequestException('Cannot delete transaction on deleted credit');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.creditTransaction.delete({
-        where: {
-          id: transactionId,
-          organizationId: user.organizationId, // Required for tenant-scoped model
-        },
-      });
-
-      const newPaidAmount = transaction.credit.paidAmount.sub(transaction.amount);
-      const newStatus = newPaidAmount.greaterThanOrEqualTo(transaction.credit.totalAmount)
-        ? CreditStatus.PAID
-        : CreditStatus.ACTIVE;
-
-      // Find last remaining payment date
-      const lastTransaction = await tx.creditTransaction.findFirst({
-        where: {
-          creditId,
-          organizationId: user.organizationId, // Required for tenant-scoped model
-        },
-        orderBy: { transactionDate: 'desc' },
-      });
-
-      await tx.credit.update({
-        where: {
-          id: creditId,
-          organizationId: user.organizationId, // Required for tenant-scoped model
-        },
-        data: {
-          paidAmount: newPaidAmount,
-          status: newStatus,
-          lastPaymentDate: lastTransaction?.transactionDate || null,
-        },
+      await tx.udharEntry.update({
+        where: { id: udharId, organizationId: user.organizationId },
+        data: { 
+          paidAmount: newPaid,
+          status: CreditStatus.ACTIVE
+        }
       });
     });
   }
 
   // ===========================
-  // REMINDERS
+  // HELPERS & STATS
   // ===========================
 
   async getDueReminders(organizationId: string, daysAhead: number = 7) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const futureDate = new Date(today);
+    const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
-
-    // Skip credits that had a payment very recently (within 2 days)
-    // const recentPaymentThreshold = new Date(today);
-    // recentPaymentThreshold.setDate(recentPaymentThreshold.getDate() - 2);
-
-    const credits = await this.prisma.credit.findMany({
+    
+    return this.prisma.udharEntry.findMany({
       where: {
         organizationId,
         deletedAt: null,
         status: { in: [CreditStatus.ACTIVE, CreditStatus.OVERDUE] },
-        AND: [
-          {
-            OR: [
-              // Next reminder is due (has reminder date and it's due or past)
-              {
-                AND: [
-                  { nextReminderDate: { not: null } },
-                  { nextReminderDate: { lte: futureDate } },
-                ],
-              },
-              // Expected due date passed (overdue) - show even if no reminder date set
-              { expectedDueDate: { lte: today, not: null } },
-            ],
-          },
-          // {
-          //     // Exclude if paid recently (within 2 days)
-          //     // OR: [
-          //     //     { lastPaymentDate: null },
-          //     //     // { lastPaymentDate: { lt: recentPaymentThreshold } },
-          //     // ],
-          // },
-        ],
+        OR: [
+          { dueDate: { lte: futureDate } },
+          { nextReminderDate: { lte: futureDate, not: null } }
+        ]
       },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            fullName: true,
-            customerCode: true,
-            contactDetails: {
-              where: { deletedAt: null },
-              select: { primaryPhone: true },
-              take: 1,
-            },
-          },
-        },
-      },
-      orderBy: [{ expectedDueDate: 'asc' }, { nextReminderDate: 'asc' }],
+      include: { ledgerEntry: true, customer: { select: { id: true, fullName: true } } }
     });
-
-    this.logger.log(
-      `Found ${credits.length} credits with due reminders for organization ${organizationId}`,
-    );
-
-    return credits.map((credit) => ({
-      ...credit,
-      remainingBalance: Number(credit.totalAmount) - Number(credit.paidAmount),
-      daysOverdue: credit.expectedDueDate
-        ? Math.max(
-            0,
-            Math.floor(
-              (today.getTime() - credit.expectedDueDate.getTime()) / (1000 * 60 * 60 * 24),
-            ),
-          )
-        : null,
-    }));
   }
-
-  // ===========================
-  // STATS & REPORTING
-  // ===========================
 
   async getStats(organizationId: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const stats = await this.prisma.udharEntry.aggregate({
+      where: { organizationId, deletedAt: null },
+      _sum: { amount: true, paidAmount: true },
+      _count: true
+    });
 
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const startOfYear = new Date(today.getFullYear(), 0, 1);
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const sixtyDaysAgo = new Date(today);
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-    const ninetyDaysAgo = new Date(today);
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const totalIssued = Number(stats._sum.amount || 0);
+    const totalPaid = Number(stats._sum.paidAmount || 0);
 
-    const [
-      totalCredits,
-      activeCredits,
-      overdueCredits,
-      paidCredits,
-      creditsThisMonth,
-      creditsThisYear,
-      transactionsThisMonth,
-      overdue30,
-      overdue60,
-      overdue90,
-      topDebtors,
-    ] = await Promise.all([
-      // Total credits
-      this.prisma.credit.aggregate({
-        where: { organizationId, deletedAt: null },
-        _sum: { totalAmount: true, paidAmount: true },
-        _count: true,
-      }),
-      // Active credits
-      this.prisma.credit.aggregate({
-        where: { organizationId, deletedAt: null, status: CreditStatus.ACTIVE },
-        _sum: { totalAmount: true, paidAmount: true },
-        _count: true,
-      }),
-      // Overdue credits
-      this.prisma.credit.aggregate({
-        where: { organizationId, deletedAt: null, status: CreditStatus.OVERDUE },
-        _sum: { totalAmount: true, paidAmount: true },
-        _count: true,
-      }),
-      // Paid credits
-      this.prisma.credit.aggregate({
-        where: { organizationId, deletedAt: null, status: CreditStatus.PAID },
-        _sum: { totalAmount: true, paidAmount: true },
-        _count: true,
-      }),
-      // Credits this month
-      this.prisma.credit.aggregate({
-        where: {
-          organizationId,
-          deletedAt: null,
-          creditDate: { gte: startOfMonth },
-        },
-        _sum: { totalAmount: true },
-        _count: true,
-      }),
-      // Credits this year
-      this.prisma.credit.aggregate({
-        where: {
-          organizationId,
-          deletedAt: null,
-          creditDate: { gte: startOfYear },
-        },
-        _sum: { totalAmount: true },
-        _count: true,
-      }),
-      // Transactions (recovery) this month
-      this.prisma.creditTransaction.aggregate({
-        where: {
-          organizationId,
-          transactionDate: { gte: startOfMonth },
-        },
-        _sum: { amount: true },
-        _count: true,
-      }),
-      // Overdue by age buckets
-      this.prisma.credit.count({
-        where: {
-          organizationId,
-          deletedAt: null,
-          status: { in: [CreditStatus.ACTIVE, CreditStatus.OVERDUE] },
-          expectedDueDate: { lt: today, gte: thirtyDaysAgo },
-        },
-      }),
-      this.prisma.credit.count({
-        where: {
-          organizationId,
-          deletedAt: null,
-          status: { in: [CreditStatus.ACTIVE, CreditStatus.OVERDUE] },
-          expectedDueDate: { lt: thirtyDaysAgo, gte: sixtyDaysAgo },
-        },
-      }),
-      this.prisma.credit.count({
-        where: {
-          organizationId,
-          deletedAt: null,
-          status: { in: [CreditStatus.ACTIVE, CreditStatus.OVERDUE] },
-          expectedDueDate: { lt: sixtyDaysAgo },
-        },
-      }),
-      // Top 10 debtors by outstanding amount
-      this.prisma.$queryRaw`
-        SELECT 
-          c.id as "customerId",
-          c."fullName" as "customerName",
-          c."customerCode",
-          SUM(cr."totalAmount" - cr."paidAmount") as "outstandingAmount",
-          COUNT(cr.id) as "activeCreditsCount"
-        FROM "Credit" cr
-        JOIN "Customer" c ON cr."customerId" = c.id
-        WHERE cr."organizationId" = ${organizationId}
-          AND cr."deletedAt" IS NULL
-          AND cr.status IN ('ACTIVE', 'OVERDUE')
-        GROUP BY c.id, c."fullName", c."customerCode"
-        HAVING SUM(cr."totalAmount" - cr."paidAmount") > 0
-        ORDER BY SUM(cr."totalAmount" - cr."paidAmount") DESC
-        LIMIT 10
-      `,
-    ]);
-
-    const totalOutstanding =
-      Number(activeCredits._sum.totalAmount || 0) -
-      Number(activeCredits._sum.paidAmount || 0) +
-      Number(overdueCredits._sum.totalAmount || 0) -
-      Number(overdueCredits._sum.paidAmount || 0);
-
-    const recoveryThisMonth = Number(transactionsThisMonth._sum.amount || 0);
-    const issuedThisMonth = Number(creditsThisMonth._sum.totalAmount || 0);
-    const recoveryRate = issuedThisMonth > 0 ? (recoveryThisMonth / issuedThisMonth) * 100 : 0;
-
-    const stats = {
+    return {
       exposure: {
-        totalCreditsIssued: Number(totalCredits._sum.totalAmount || 0),
-        totalCreditsCount: totalCredits._count,
-        creditsIssuedThisMonth: issuedThisMonth,
-        creditsCountThisMonth: creditsThisMonth._count,
-        creditsIssuedThisYear: Number(creditsThisYear._sum.totalAmount || 0),
-        creditsCountThisYear: creditsThisYear._count,
-        totalOutstanding,
-      },
-      recovery: {
-        totalRecovered: Number(paidCredits._sum.paidAmount || 0),
-        recoveredThisMonth: recoveryThisMonth,
-        transactionsThisMonth: transactionsThisMonth._count,
-        recoveryRateThisMonth: Math.round(recoveryRate * 100) / 100,
+        totalCreditsIssued: totalIssued,
+        totalOutstanding: totalIssued - totalPaid
       },
       risk: {
-        activeCreditsCount: activeCredits._count,
-        overdueCreditsCount: overdueCredits._count,
-        overdueAmount:
-          Number(overdueCredits._sum.totalAmount || 0) -
-          Number(overdueCredits._sum.paidAmount || 0),
-        overdueBuckets: {
-          '0-30days': overdue30,
-          '30-60days': overdue60,
-          '60+days': overdue90,
-        },
-        topDebtors,
-      },
+        activeCreditsCount: stats._count
+      }
     };
-
-    this.logger.debug(
-      `Stats calculated for organization ${organizationId}: ${stats.exposure.totalOutstanding} outstanding, ${stats.risk.overdueCreditsCount} overdue`,
-    );
-    return stats;
   }
-
-  // ===========================
-  // CUSTOMER CREDIT SUMMARY
-  // ===========================
 
   async getCustomerCreditSummary(customerId: string, organizationId: string) {
-    const credits = await this.prisma.credit.findMany({
-      where: {
-        customerId,
-        organizationId,
-        deletedAt: null,
-      },
-      include: {
-        transactions: true,
-      },
+    const udhars = await this.prisma.udharEntry.findMany({
+      where: { customerId, organizationId, deletedAt: null }
     });
-
-    if (credits.length === 0) {
-      return {
-        totalActiveUdhar: 0,
-        openCreditsCount: 0,
-        totalCreditsEver: 0,
-        totalRepaid: 0,
-        oldestUnpaidDays: null,
-        lastPaymentDate: null,
-        overdueCount: 0,
-        behaviorTag: 'CLEAR' as const,
-        riskLevel: 'LOW' as const,
-      };
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Active credits: ACTIVE or OVERDUE status, and not fully paid
-    const activeCredits = credits.filter((c) => {
-      const isActiveStatus = c.status === CreditStatus.ACTIVE || c.status === CreditStatus.OVERDUE;
-      const isNotFullyPaid = Number(c.totalAmount) > Number(c.paidAmount);
-      return isActiveStatus && isNotFullyPaid;
-    });
-
-    // Overdue credits: either status is OVERDUE, OR expectedDueDate has passed and not fully paid
-    const overdueCredits = credits.filter((c) => {
-      const isOverdueStatus = c.status === CreditStatus.OVERDUE;
-      const isPastDueDate = c.expectedDueDate && new Date(c.expectedDueDate) < today;
-      const isNotFullyPaid = Number(c.totalAmount) > Number(c.paidAmount);
-      return isOverdueStatus || (isPastDueDate && isNotFullyPaid);
-    });
-
-    const totalActiveUdhar = activeCredits.reduce(
-      (sum, c) => sum + Number(c.totalAmount) - Number(c.paidAmount),
-      0,
-    );
-
-    const totalRepaid = credits.reduce((sum, c) => sum + Number(c.paidAmount), 0);
-    const totalCreditsEver = credits.reduce((sum, c) => sum + Number(c.totalAmount), 0);
-
-    // Find oldest unpaid credit (check both status and due date)
-    let oldestUnpaidDays: number | null = null;
-    for (const credit of activeCredits) {
-      // Check if credit is overdue by due date
-      if (credit.expectedDueDate) {
-        const dueDate = new Date(credit.expectedDueDate);
-        dueDate.setHours(0, 0, 0, 0);
-        if (dueDate < today) {
-          const days = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-          if (oldestUnpaidDays === null || days > oldestUnpaidDays) {
-            oldestUnpaidDays = days;
-          }
-        }
-      }
-    }
-
-    // Find last payment date
-    let lastPaymentDate: Date | null = null;
-    for (const credit of credits) {
-      if (credit.lastPaymentDate) {
-        if (!lastPaymentDate || credit.lastPaymentDate > lastPaymentDate) {
-          lastPaymentDate = credit.lastPaymentDate;
-        }
-      }
-    }
-
-    // Calculate behavior tag
-    let behaviorTag: 'CLEAR' | 'REGULAR' | 'DELAYED' | 'RISKY';
-    if (activeCredits.length === 0) {
-      behaviorTag = 'CLEAR';
-    } else if (overdueCredits.length === 0) {
-      behaviorTag = 'REGULAR';
-    } else if (oldestUnpaidDays && oldestUnpaidDays > 30) {
-      behaviorTag = 'RISKY';
-    } else {
-      behaviorTag = 'DELAYED';
-    }
-
-    // Calculate risk level (LOW / MEDIUM / HIGH / VERY_HIGH)
-    let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'VERY_HIGH';
-    if (activeCredits.length === 0) {
-      // No active credits - low risk
-      riskLevel = 'LOW';
-    } else if (overdueCredits.length === 0) {
-      // Active credits but none overdue - low to medium risk
-      // Consider multiple open credits as medium risk
-      riskLevel = activeCredits.length > 2 ? 'MEDIUM' : 'LOW';
-    } else {
-      // Has overdue credits - assess severity
-      const overdueRatio = overdueCredits.length / activeCredits.length;
-      const totalOverdueAmount = overdueCredits.reduce(
-        (sum, c) => sum + Number(c.totalAmount) - Number(c.paidAmount),
-        0,
-      );
-      const overdueRatioOfTotal = totalCreditsEver > 0 ? totalOverdueAmount / totalCreditsEver : 0;
-
-      if (oldestUnpaidDays && oldestUnpaidDays > 90) {
-        // Very old overdue (>90 days) - very high risk
-        riskLevel = 'VERY_HIGH';
-      } else if (oldestUnpaidDays && oldestUnpaidDays > 60) {
-        // Old overdue (60-90 days) - high risk
-        riskLevel = 'HIGH';
-      } else if (oldestUnpaidDays && oldestUnpaidDays > 30) {
-        // Moderate overdue (30-60 days) - medium to high risk
-        riskLevel = overdueRatio > 0.5 || overdueRatioOfTotal > 0.3 ? 'HIGH' : 'MEDIUM';
-      } else {
-        // Recent overdue (<30 days) - medium risk
-        riskLevel = overdueRatio > 0.5 ? 'MEDIUM' : 'LOW';
-      }
-    }
-
-    const summary = {
-      totalActiveUdhar,
-      openCreditsCount: activeCredits.length,
-      totalCreditsEver,
-      totalRepaid,
-      oldestUnpaidDays,
-      lastPaymentDate,
-      overdueCount: overdueCredits.length,
-      behaviorTag,
-      riskLevel,
+    const outstanding = udhars.reduce((s, u) => s + Number(u.amount) - Number(u.paidAmount), 0);
+    return {
+      totalActiveUdhar: outstanding,
+      riskLevel: outstanding > 50000 ? 'HIGH' : 'LOW'
     };
-
-    this.logger.debug(
-      `Customer credit summary: riskLevel=${summary.riskLevel}, activeUdhar=${summary.totalActiveUdhar}, overdueCount=${summary.overdueCount}`,
-    );
-    return summary;
   }
 
-  // ===========================
-  // HELPERS
-  // ===========================
+  async getCustomerLedger(customerId: string, organizationId: string) {
+    return this.prisma.ledgerEntry.findMany({
+      where: { customerId, organizationId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      include: { udharEntry: true }
+    });
+  }
+
+  async getCustomerUdharEntries(customerId: string, organizationId: string) {
+    return this.prisma.udharEntry.findMany({
+      where: { customerId, organizationId, deletedAt: null },
+      include: { ledgerEntry: true }
+    });
+  }
+
+  async addUdharPayment(udharId: string, dto: CreateCreditTransactionDto, user: CurrentUserData) {
+    const udhar = await this.prisma.udharEntry.findFirst({
+      where: { id: udharId, organizationId: user.organizationId, status: { not: CreditStatus.CANCELLED }, deletedAt: null }
+    });
+    if (!udhar) throw new NotFoundException('Udhar not found or inactive');
+
+    const amount = new Decimal(dto.amount);
+    const totalPaid = udhar.paidAmount.add(amount);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.udharEntry.update({
+        where: { id: udharId, organizationId: user.organizationId },
+        data: {
+          paidAmount: totalPaid,
+          status: totalPaid.gte(udhar.amount) ? CreditStatus.PAID : CreditStatus.ACTIVE
+        }
+      });
+
+      return tx.ledgerEntry.create({
+        data: {
+          organizationId: user.organizationId,
+          customerId: udhar.customerId,
+          amount,
+          type: LedgerType.PAYMENT,
+          description: dto.notes || 'Payment',
+          entityId: udharId,
+          createdById: user.userId
+        }
+      });
+    });
+  }
+
+  async getUdharPayments(udharId: string, organizationId: string) {
+    return this.prisma.ledgerEntry.findMany({
+      where: { organizationId, entityId: udharId, type: LedgerType.PAYMENT, deletedAt: null }
+    });
+  }
 
   private calculateNextReminderDate(fromDate: Date, frequency: string): Date {
     const next = new Date(fromDate);
-    switch (frequency) {
-      case 'WEEKLY':
-        next.setDate(next.getDate() + 7);
-        break;
-      case 'BIWEEKLY':
-        next.setDate(next.getDate() + 14);
-        break;
-      case 'MONTHLY':
-        next.setMonth(next.getMonth() + 1);
-        break;
-      case 'CUSTOM':
-      default:
-        next.setDate(next.getDate() + 7); // Default to weekly
-        break;
-    }
+    if (frequency === 'WEEKLY') next.setDate(next.getDate() + 7);
+    else if (frequency === 'MONTHLY') next.setMonth(next.getMonth() + 1);
+    else next.setDate(next.getDate() + 7);
     return next;
   }
 
-  // Update overdue statuses (can be called by a cron job)
   async updateOverdueStatuses(organizationId?: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const where: Prisma.CreditWhereInput = {
-      deletedAt: null,
-      status: CreditStatus.ACTIVE,
-      expectedDueDate: { lt: today },
-    };
-
-    if (organizationId) {
-      where.organizationId = organizationId;
-    }
-
-    return this.prisma.credit.updateMany({
-      where,
-      data: { status: CreditStatus.OVERDUE },
-    });
+    const where: any = { status: CreditStatus.ACTIVE, dueDate: { lt: new Date() } };
+    if (organizationId) where.organizationId = organizationId;
+    return this.prisma.udharEntry.updateMany({ where, data: { status: CreditStatus.OVERDUE } });
   }
 }

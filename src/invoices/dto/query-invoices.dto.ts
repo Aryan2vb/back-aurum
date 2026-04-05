@@ -1,5 +1,5 @@
-import { IsEnum, IsOptional, IsString, IsDateString, IsInt, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsEnum, IsOptional, IsString, IsDateString, IsInt, Min, Max, IsBoolean } from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 import { InvoiceStatus } from '@prisma/client';
 
 export class QueryInvoicesDto {
@@ -22,6 +22,11 @@ export class QueryInvoicesDto {
   @IsString()
   @IsOptional()
   search?: string; // matches invoiceNumber or customer name
+
+  @IsBoolean()
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  includeItems?: boolean;
 
   @Type(() => Number)
   @IsInt()

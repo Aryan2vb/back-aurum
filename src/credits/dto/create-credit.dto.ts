@@ -53,4 +53,8 @@ export class CreateCreditDto {
   @Min(0, { message: 'Initial payment cannot be negative' })
   @Type(() => Number)
   initialPayment?: number;
+
+  @IsOptional()
+  @IsString()
+  invoiceId?: string;
 }

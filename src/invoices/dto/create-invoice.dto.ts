@@ -9,9 +9,10 @@ import {
   Min,
   IsDateString,
   IsPositive,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { TaxType } from '@prisma/client';
+import { TaxType, MetalType } from '@prisma/client';
 
 export class CreateInvoiceItemDto {
   @IsString()
@@ -57,6 +58,10 @@ export class CreateInvoiceItemDto {
   @IsString()
   @IsOptional()
   huid?: string;
+
+  @IsEnum(MetalType)
+  @IsOptional()
+  metalType?: MetalType;
 }
 
 export class CreateInvoiceDto {
@@ -141,4 +146,9 @@ export class CreateInvoiceDto {
   @IsString()
   @IsOptional()
   buyerStateCode?: string;
+
+  /** Whether to automatically create an UdharEntry for unpaid balance. Defaults to true. */
+  @IsOptional()
+  @IsBoolean()
+  autoCreateUdhar?: boolean;
 }

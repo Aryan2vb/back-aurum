@@ -19,8 +19,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     'Document',
     'MetaTracking',
     'AuditLog',
-    'Credit',
-    'CreditTransaction',
+    'LedgerEntry',
+    'UdharEntry',
+    'Invoice',
+    'InvoiceItem',
   ]);
 
   private static readonly ACTIONS_REQUIRING_WHERE = new Set<string>([

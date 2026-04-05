@@ -120,8 +120,67 @@ export class CreditsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Roles(OrganizationRole.OWNER)
-  softDelete(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
-    return this.creditsService.softDelete(id, user);
+  softDelete(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserData,
+    @Query('force') force?: string,
+  ) {
+    const isForce = force === 'true';
+    return this.creditsService.softDelete(id, user, isForce);
+  }
+
+  // ===========================
+  // LEDGER & UDHAR
+  // ===========================
+
+  @Get('customer/:customerId/ledger')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getCustomerLedger(@Param('customerId') customerId: string, @CurrentUser() user: CurrentUserData) {
+    return this.creditsService.getCustomerLedger(customerId, user.organizationId);
+  }
+
+  @Get('customer/:customerId/udhar')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getCustomerUdharEntries(
+    @Param('customerId') customerId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.creditsService.getCustomerUdharEntries(customerId, user.organizationId);
+  }
+
+  @Post('udhar/:udharId/payment')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  addUdharPayment(
+    @Param('udharId') udharId: string,
+    @Body() dto: CreateCreditTransactionDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.creditsService.addUdharPayment(udharId, dto, user);
+  }
+
+  @Get('udhar/:udharId/payments')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getUdharPayments(
+    @Param('udharId') udharId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.creditsService.getUdharPayments(udharId, user.organizationId);
   }
 
   // ===========================

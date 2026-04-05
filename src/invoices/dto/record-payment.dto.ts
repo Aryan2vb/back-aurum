@@ -1,5 +1,13 @@
 import { IsNumber, IsPositive, IsOptional, IsEnum, IsString, IsDateString } from 'class-validator';
-import { PaymentMethod } from '@prisma/client';
+
+export enum PaymentMethod {
+  CASH = 'CASH',
+  UPI = 'UPI',
+  BANK_TRANSFER = 'BANK_TRANSFER',
+  CHEQUE = 'CHEQUE',
+  CARD = 'CARD',
+  OTHER = 'OTHER',
+}
 
 export class RecordPaymentDto {
   @IsNumber()

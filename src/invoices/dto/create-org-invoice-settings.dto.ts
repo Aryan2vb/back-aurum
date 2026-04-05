@@ -98,4 +98,13 @@ export class CreateOrgInvoiceSettingsDto {
   @IsString()
   @IsOptional()
   termsOfDelivery?: string;
+
+  @IsString()
+  @IsOptional()
+  invoiceNumberPrefix?: string;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  startingSequence?: number;
 }

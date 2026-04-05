@@ -5,10 +5,6 @@ import { ReminderFrequency, CreditStatus } from '@prisma/client';
 export class UpdateCreditDto {
   @IsOptional()
   @IsString()
-  saleReference?: string;
-
-  @IsOptional()
-  @IsString()
   itemSummary?: string;
 
   @IsOptional()
@@ -39,6 +35,7 @@ export class UpdateCreditDto {
   @IsString()
   notes?: string;
 
+  /** Debt correction: allows changing the original amount of the udhar. */
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01, { message: 'Total amount must be greater than 0' })

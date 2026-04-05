@@ -21,6 +21,8 @@ import { CreateOrgInvoiceSettingsDto } from './dto/create-org-invoice-settings.d
 import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { SendInvoiceDto } from './dto/send-invoice.dto';
+import { FinalizeInvoiceDto } from './dto/finalize-invoice.dto';
+import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -58,6 +60,22 @@ export class InvoicesController {
     return this.invoicesService.getSettings(user.organizationId);
   }
 
+  @Get('settings/preview')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  async previewSettings(@CurrentUser() user: CurrentUserData, @Res() res: Response) {
+    this.logger.log(`GET /invoices/settings/preview for org ${user.organizationId}`);
+    const html = await this.invoicesService.generatePreviewHtml(user.organizationId);
+    res.set({
+      'Content-Type': 'text/html',
+    });
+    res.send(html);
+  }
+
   // ===========================
   // DRAFT
   // NOTE: /draft before /:id
@@ -69,6 +87,18 @@ export class InvoicesController {
   createDraft(@Body() dto: CreateInvoiceDto, @CurrentUser() user: CurrentUserData) {
     this.logger.log(`POST /invoices/draft for customer ${dto.customerId}`);
     return this.invoicesService.createDraft(dto, user);
+  }
+
+  @Post(':id/finalize')
+  @HttpCode(HttpStatus.OK)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  finalize(
+    @Param('id') id: string,
+    @Body() dto: FinalizeInvoiceDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    this.logger.log(`POST /invoices/${id}/finalize`);
+    return this.invoicesService.finalize(id, user, dto);
   }
 
   // ===========================
@@ -103,6 +133,17 @@ export class InvoicesController {
   )
   findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.invoicesService.findOne(id, user.organizationId);
+  }
+
+  @Patch(':id')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateInvoiceDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    this.logger.log(`PATCH /invoices/${id}`);
+    return this.invoicesService.update(id, dto, user);
   }
 
   // ===========================

@@ -19,10 +19,9 @@ model User {
   fullName                  String?
   accountsCreated           Account[]
   auditLogsPerformed        AuditLog[]
-  creditsCreated            Credit[]
-  creditTransactionsCreated CreditTransaction[]
   customersCreated          Customer[]
   invoicesCreated           Invoice[]
+  ledgerEntriesCreated      LedgerEntry[]            @relation("LedgerCreatedBy")
   invitationsCreated        OrganizationInvitation[]
   members                   OrganizationMember[]
   sessions                  Session[]
@@ -41,8 +40,6 @@ model Organization {
   accounts           Account[]
   auditLogs          AuditLog[]
   contactDetails     ContactDetail[]
-  credits            Credit[]
-  creditTransactions CreditTransaction[]
   customers          Customer[]
   documents          Document[]
   invoices           Invoice[]
@@ -55,6 +52,7 @@ model Organization {
   members            OrganizationMember[]
   sessions           Session[]
   socialContexts     SocialContext[]
+  ledgerEntries      LedgerEntry[]
 
   @@index([status])
   @@index([deletedAt])
@@ -133,14 +131,15 @@ model Customer {
   status         CustomerStatus  @default(ACTIVE)
   accounts       Account[]
   contactDetails ContactDetail[]
-  credits        Credit[]
   createdBy      User?           @relation(fields: [createdById], references: [id])
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   documents      Document[]
   invoices       Invoice[]
-  locations      Location[]
+  ledgers        LedgerEntry[]
+  udharEntries   UdharEntry[]
   metaTrackings  MetaTracking[]
   socialContexts SocialContext[]
+  locations      Location[]
 
   @@unique([organizationId, customerCode])
   @@index([organizationId])
@@ -298,63 +297,58 @@ model AuditLog {
   @@index([entityType, entityId])
 }
 
-model Credit {
-  id                String              @id @default(uuid())
-  organizationId    String
-  customerId        String
-  saleReference     String?
-  itemSummary       String?
-  description       String?
-  totalAmount       Decimal             @db.Decimal(12, 2)
-  paidAmount        Decimal             @default(0) @db.Decimal(12, 2)
-  creditDate        DateTime            @default(now())
-  expectedDueDate   DateTime?
-  lastPaymentDate   DateTime?
-  reminderFrequency ReminderFrequency?
-  nextReminderDate  DateTime?
-  status            CreditStatus        @default(ACTIVE)
-  notes             String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  createdById       String?
-  deletedAt         DateTime?
-  createdBy         User?               @relation(fields: [createdById], references: [id])
-  customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  transactions      CreditTransaction[]
-  invoice           Invoice?            @relation("InvoiceCredit")
+
+
+model LedgerEntry {
+  id             String       @id @default(uuid())
+  organizationId String
+  customerId     String
+  amount         Decimal      @db.Decimal(12, 2)
+  type           LedgerType
+  description    String?
+  entityId       String?      /// ID of the related entity (Invoice ID, Payment ID, etc.)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+  createdById    String?
+  
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User?        @relation("LedgerCreatedBy", fields: [createdById], references: [id])
+  udharEntry     UdharEntry?
 
   @@index([organizationId])
   @@index([customerId])
   @@index([organizationId, customerId])
-  @@index([organizationId, status])
-  @@index([organizationId, nextReminderDate])
-  @@index([organizationId, expectedDueDate])
-  @@index([createdById])
-  @@index([deletedAt])
+  @@index([type])
+  @@index([createdAt])
 }
 
-model CreditTransaction {
-  id              String         @id @default(uuid())
-  creditId        String
-  organizationId  String
-  amount          Decimal        @db.Decimal(12, 2)
-  transactionDate DateTime       @default(now())
-  paymentMethod   PaymentMethod?
-  referenceNumber String?
-  collectedBy     String?
-  notes           String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  createdById     String?
-  createdBy       User?          @relation(fields: [createdById], references: [id])
-  credit          Credit         @relation(fields: [creditId], references: [id], onDelete: Cascade)
-  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+model UdharEntry {
+  id             String       @id @default(uuid())
+  organizationId String
+  customerId     String
+  ledgerEntryId  String       @unique
+  invoiceId      String?      /// Optional link to an invoice
+  amount         Decimal      @db.Decimal(12, 2)
+  paidAmount     Decimal      @default(0) @db.Decimal(12, 2)
+  dueDate        DateTime?
+  status         CreditStatus @default(ACTIVE)
+  notes          String?
+  reminderFrequency ReminderFrequency?
+  nextReminderDate  DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
 
-  @@index([creditId])
+  invoice        Invoice?     @relation(fields: [invoiceId], references: [id])
+  ledgerEntry    LedgerEntry  @relation(fields: [ledgerEntryId], references: [id], onDelete: Cascade)
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
   @@index([organizationId])
-  @@index([organizationId, transactionDate])
-  @@index([createdById])
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([status])
 }
 
 /// One-time GST + company details per organisation.
@@ -383,6 +377,8 @@ model OrgInvoiceSettings {
   defaultSgstRate   Decimal      @default(1.5) @db.Decimal(5, 2)
   defaultIgstRate   Decimal      @default(0) @db.Decimal(5, 2)
   defaultTemplate   String       @default("standard")
+  invoiceNumberPrefix String?    @default("INV")
+  startingSequence  Int          @default(1)
   declaration       String?
   termsOfDelivery   String?
   createdAt         DateTime     @default(now())
@@ -415,7 +411,6 @@ model Invoice {
   destination     String?
   termsOfDelivery String?
   templateType    String        @default("standard")
-  creditId        String?       @unique
   invoiceDate     DateTime      @default(now())
   financialYear   String?
   notes           String?
@@ -425,10 +420,10 @@ model Invoice {
   deletedAt       DateTime?
   sequence        Int?
   createdBy       User?         @relation(fields: [createdById], references: [id])
-  credit          Credit?       @relation("InvoiceCredit", fields: [creditId], references: [id])
   customer        Customer      @relation(fields: [customerId], references: [id])
   organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   items           InvoiceItem[]
+  udharEntries    UdharEntry[]
 
   @@unique([organizationId, invoiceNumber])
   @@unique([organizationId, financialYear, sequence])
@@ -457,6 +452,7 @@ model InvoiceItem {
   netWeight      Decimal?     @db.Decimal(10, 3)
   purity         String?
   huid           String?
+  metalType      MetalType    @default(GOLD)
   invoice        Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -580,4 +576,16 @@ enum TaxType {
   CGST_SGST
   IGST
   NONE
+}
+
+enum MetalType {
+  GOLD
+  SILVER
+}
+
+enum LedgerType {
+  UDHAR
+  PAYMENT
+  ADJUSTMENT
+  RETURN
 }
