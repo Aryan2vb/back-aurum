@@ -1,7 +1,6 @@
 import {
   Injectable,
   NotFoundException,
-  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,7 +10,7 @@ import { CreateCreditTransactionDto } from './dto/create-credit-transaction.dto'
 import { UpdateCreditTransactionDto } from './dto/update-credit-transaction.dto';
 import { QueryCreditsDto } from './dto/query-credits.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
-import { CreditStatus, LedgerType, Prisma } from '@prisma/client';
+import { CreditStatus, LedgerType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()

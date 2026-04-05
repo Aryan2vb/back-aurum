@@ -1,9 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+  BadRequestException,
+} from '@nestjs/common';
 import * as crypto from 'crypto';
+import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditsService } from '../credits/credits.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
-import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { CreateOrgInvoiceSettingsDto } from './dto/create-org-invoice-settings.dto';
 import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
@@ -11,7 +16,7 @@ import { SendInvoiceDto } from './dto/send-invoice.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
 import { CreditStatus, InvoiceStatus, LedgerType, Prisma, TaxType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { calculateInvoiceData, getFinancialYear } from './utils/invoice-calculations';
+import { getFinancialYear } from './utils/invoice-calculations';
 import { FinalizeInvoiceDto } from './dto/finalize-invoice.dto';
 import { generateInvoiceHtml } from './utils/generate-invoice-html';
 import { generateJewelleryInvoiceHtml } from './utils/generate-jewellery-html';
@@ -738,7 +743,7 @@ export class InvoicesService {
   }
 
   async update(id: string, dto: UpdateInvoiceDto, user: CurrentUserData) {
-    const { organizationId, userId } = user;
+    const { organizationId } = user;
     const existing = await this.prisma.invoice.findFirst({
       where: { id, organizationId, deletedAt: null },
       include: { items: true },
