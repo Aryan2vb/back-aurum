@@ -693,7 +693,7 @@ export class InvoicesService {
   }
 
   async cancel(id: string, user: CurrentUserData) {
-    const { organizationId, userId } = user;
+    const { organizationId } = user;
     const inv = await this.prisma.invoice.findFirst({
       where: { id, organizationId, deletedAt: null },
     });
