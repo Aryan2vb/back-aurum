@@ -39,7 +39,6 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
             <td class="ctr">${item.quantity}</td>
             <td class="ctr">${item.hsnSac}</td>
             <td class="ctr">${item.grossWeight ? fmt(item.grossWeight) + ' GM' : item.quantity + ' ' + item.unit}</td>
-            <td class="ctr">${item.purity || '-'}</td>
             <td class="rgt">${fmt(item.rate)}</td>
             <td class="rgt">${item.makingCharges ? fmt(item.makingCharges) : '-'}</td>
             <td class="rgt">${item.huid ? '45.00' : '-'}</td>
@@ -50,7 +49,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 
   const emptyRows = Array(Math.max(0, 6 - items.length))
     .fill(
-      '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>',
+      '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>',
     )
     .join('');
 
@@ -149,11 +148,10 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         </div>
         <table class="items-table">
             <thead><tr>
-                <th class="lft" style="width:120px;">PROD DESC</th>
+                <th class="lft" style="width:180px;">PROD DESC</th>
                 <th style="width:40px;">QTY</th>
                 <th style="width:70px;">HSN</th>
                 <th style="width:85px;">GS WT</th>
-                <th style="width:60px;">PURITY</th>
                 <th style="width:80px;">RATE</th>
                 <th style="width:65px;">MKG</th>
                 <th style="width:50px;">HMC</th>

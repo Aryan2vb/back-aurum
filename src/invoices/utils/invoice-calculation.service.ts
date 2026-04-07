@@ -55,9 +55,9 @@ export class InvoiceCalculationService {
     // 1. Calculate weights
     const netWeight = Decimal.max(0, grossWeight.minus(stoneWeight));
 
-    // 2. Calculate effective rate based on purity
-    // effectiveRate = metalRate at 24K * (purityValue / 24)
-    const effectiveRate = metalRate.mul(purityValue.div(purityBasis)).toDecimalPlaces(4);
+    // 2. Calculate effective rate
+    // Per user request: Metal rate is already for the specific carat, so no conversion needed.
+    const effectiveRate = metalRate;
 
     // 3. Calculate metal value
     const metalValue = effectiveRate.mul(netWeight).toDecimalPlaces(4);

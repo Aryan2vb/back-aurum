@@ -7,6 +7,7 @@ import {
   Min,
   IsDateString,
   IsEnum,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TaxType } from '@prisma/client';
@@ -28,9 +29,6 @@ export class UpdateInvoiceDto {
   @IsOptional()
   paidAmount?: number;
 
-  @IsString()
-  @IsOptional()
-  placeOfSupply?: string;
 
   @IsString()
   @IsOptional()
@@ -56,9 +54,6 @@ export class UpdateInvoiceDto {
   @IsOptional()
   termsOfDelivery?: string;
 
-  @IsString()
-  @IsOptional()
-  notes?: string;
 
   @IsDateString()
   @IsOptional()
@@ -76,22 +71,7 @@ export class UpdateInvoiceDto {
   @IsOptional()
   buyerStateCode?: string;
 
-  @IsEnum(TaxType)
   @IsOptional()
-  taxType?: TaxType;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  cgstRate?: number;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  sgstRate?: number;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  igstRate?: number;
+  @IsBoolean()
+  autoCreateUdhar?: boolean;
 }

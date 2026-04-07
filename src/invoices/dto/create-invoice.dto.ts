@@ -89,21 +89,6 @@ export class CreateInvoiceItemDto {
   @IsOptional()
   huid?: string;
 
-  @IsEnum(TaxType)
-  @IsOptional()
-  taxType?: TaxType;
-
-  @IsNumber()
-  @IsOptional()
-  cgstRate?: number;
-
-  @IsNumber()
-  @IsOptional()
-  sgstRate?: number;
-
-  @IsNumber()
-  @IsOptional()
-  igstRate?: number;
 }
 
 export class CreateInvoiceDto {
@@ -115,10 +100,6 @@ export class CreateInvoiceDto {
   @ValidateNested({ each: true })
   @Type(() => CreateInvoiceItemDto)
   items: CreateInvoiceItemDto[];
-
-  @IsString()
-  @IsNotEmpty()
-  placeOfSupply: string; // State Code e.g. "07" for Delhi
 
   @IsString()
   @IsOptional()
@@ -137,7 +118,8 @@ export class CreateInvoiceDto {
   /** "standard" or "jewellery" — defaults to "jewellery" for this module. */
   @IsString()
   @IsOptional()
-  templateType?: string = 'jewellery';
+  templateType?: string;
+
 
   // Dispatch / delivery fields
   @IsString()
@@ -160,10 +142,6 @@ export class CreateInvoiceDto {
   @IsOptional()
   termsOfDelivery?: string;
 
-  @IsString()
-  @IsOptional()
-  notes?: string;
-
   @IsDateString()
   @IsOptional()
   invoiceDate?: string;
@@ -185,20 +163,4 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsBoolean()
   autoCreateUdhar?: boolean;
-
-  @IsEnum(TaxType)
-  @IsOptional()
-  taxType?: TaxType;
-
-  @IsNumber()
-  @IsOptional()
-  cgstRate?: number;
-
-  @IsNumber()
-  @IsOptional()
-  sgstRate?: number;
-
-  @IsNumber()
-  @IsOptional()
-  igstRate?: number;
 }

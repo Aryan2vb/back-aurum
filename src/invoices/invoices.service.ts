@@ -255,6 +255,7 @@ export class InvoicesService {
       lineItems,
       needsCredit,
       placeOfSupply,
+      templateType,
       metalRateSource,
       metalRateDate,
       totalHallmarkingCharges,
@@ -332,7 +333,7 @@ export class InvoicesService {
           templateType: dto.templateType ?? 'jewellery',
           invoiceDate,
           financialYear,
-          notes: dto.notes,
+          notes: financials.notes,
           createdById: userId,
           invoiceNumber,
           sequence: sequenceVal,
@@ -379,7 +380,7 @@ export class InvoicesService {
           balance: totalAmount.minus(paidAmount).toNumber(),
           items: lineItems as any,
           userId,
-          notes: dto.notes,
+          notes: financials.notes,
         });
       }
 
@@ -664,7 +665,17 @@ export class InvoicesService {
         igstRate: new Decimal(invoice.igstRate || 0).toNumber(),
         igstAmount: new Decimal(invoice.igstAmount || 0).toNumber(),
       },
-      hsnSummary: [],
+      hsnSummary: this._calculateHsnSummary(
+        invoice.items.map((item: any) => ({
+          hsnSac: item.hsnSac || '',
+          amount: new Decimal(item.taxableAmount).toNumber(),
+        })),
+        {
+          cgstRate: new Decimal(invoice.cgstRate).toNumber(),
+          sgstRate: new Decimal(invoice.sgstRate).toNumber(),
+          igstRate: new Decimal(invoice.igstRate || 0).toNumber(),
+        },
+      ),
       roundOff: new Decimal(invoice.roundOff).toNumber(),
       totalQuantity: invoice.items.reduce(
         (sum: number, item: any) => sum + new Decimal(item.quantity).toNumber(),
@@ -804,6 +815,13 @@ export class InvoicesService {
     if (inv.status === InvoiceStatus.PAID) {
       throw new BadRequestException('Cannot cancel a fully paid invoice. Refund items first.');
     }
+    if (inv.status === InvoiceStatus.DRAFT) {
+      return this.prisma.$transaction(async (tx) => {
+        await tx.invoiceItem.deleteMany({ where: { invoiceId: id, organizationId } });
+        await tx.invoice.delete({ where: { id, organizationId } });
+        return { deleted: true, message: 'Draft invoice permanently deleted' };
+      });
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.invoice.update({
@@ -866,20 +884,14 @@ export class InvoicesService {
       items: dto.items ?? (existing.items as any),
       paidAmount:
         dto.paidAmount !== undefined ? dto.paidAmount : new Decimal(existing.paidAmount).toNumber(),
-      placeOfSupply: dto.placeOfSupply ?? existing.placeOfSupply,
       templateType: dto.templateType ?? existing.templateType,
       modeOfPayment: dto.modeOfPayment ?? existing.modeOfPayment,
       deliveryNote: dto.deliveryNote ?? existing.deliveryNote,
       dispatchDocNo: dto.dispatchDocNo ?? existing.dispatchDocNo,
       destination: dto.destination ?? existing.destination,
-      termsOfDelivery: dto.termsOfDelivery ?? existing.termsOfDelivery,
-      notes: dto.notes ?? existing.notes ?? undefined,
       invoiceDate: dto.invoiceDate ?? existing.invoiceDate?.toISOString(),
       buyerAddress: dto.buyerAddress,
-      taxType: (dto.taxType as any) ?? (existing.taxType as any),
-      cgstRate: dto.cgstRate ?? new Decimal(existing.cgstRate).toNumber(),
-      sgstRate: dto.sgstRate ?? new Decimal(existing.sgstRate).toNumber(),
-      igstRate: dto.igstRate ?? new Decimal(existing.igstRate).toNumber(),
+      autoCreateUdhar: dto.autoCreateUdhar ?? (existing as any).autoCreateUdhar,
     };
 
     const financials = await this._calculateInvoiceFinancials(dummyDto, user, true);
@@ -964,10 +976,9 @@ export class InvoicesService {
           dispatchDocNo: dummyDto.dispatchDocNo,
           destination: dummyDto.destination,
           termsOfDelivery: dummyDto.termsOfDelivery,
-          templateType: dummyDto.templateType ?? 'jewellery',
           invoiceDate: financials.invoiceDate,
           financialYear: financials.financialYear,
-          notes: dummyDto.notes,
+          notes: financials.notes,
           updatedAt: new Date(),
         },
         include: {
@@ -1095,35 +1106,14 @@ export class InvoicesService {
     const config = Object.fromEntries(configItems.map((c) => [c.key, c.value]));
     const hallmarkingChargePerItem = new Decimal(config['HALLMARKING_CHARGE_PER_ITEM'] || '45.00');
 
-    // 2. Tax classification based on placeOfSupply
-    const placeOfSupply = dto.placeOfSupply;
-    const isInterState = placeOfSupply !== settings.stateCode;
-    const taxType = dto.taxType || (isInterState ? TaxType.IGST : TaxType.CGST_SGST);
+    // 2. Tax classification based on settings ONLY
+    const placeOfSupply = settings.stateCode || '';
+    const taxType = settings.defaultTaxType || TaxType.CGST_SGST;
 
-    // GST rates from config (defaulting to 3% total if missing)
-    const goldGstRate = new Decimal(config['GOLD_GST_RATE'] || '3.00');
-
-    // Rates overrides
-    const igstRate =
-      dto.igstRate !== undefined
-        ? new Decimal(dto.igstRate)
-        : taxType === TaxType.IGST
-          ? goldGstRate
-          : new Decimal(0);
-
-    const cgstRate =
-      dto.cgstRate !== undefined
-        ? new Decimal(dto.cgstRate)
-        : taxType === TaxType.CGST_SGST
-          ? goldGstRate.div(2)
-          : new Decimal(0);
-
-    const sgstRate =
-      dto.sgstRate !== undefined
-        ? new Decimal(dto.sgstRate)
-        : taxType === TaxType.CGST_SGST
-          ? goldGstRate.div(2)
-          : new Decimal(0);
+    // GST rates from settings
+    const cgstRate = settings.defaultCgstRate ?? new Decimal(0);
+    const sgstRate = settings.defaultSgstRate ?? new Decimal(0);
+    const igstRate = settings.defaultIgstRate ?? new Decimal(0);
 
     // 3. Process Line Items
     const lineItems = dto.items.map((item, index) => {
@@ -1220,10 +1210,53 @@ export class InvoicesService {
       companySnapshot,
       buyerSnapshot,
       placeOfSupply,
+      notes: settings.declaration || '',
+      templateType: dto.templateType || settings.defaultTemplate || 'jewellery',
       metalRateSource: dto.metalRateSource || 'MANUAL',
       metalRateDate: dto.metalRateDate ? new Date(dto.metalRateDate) : invoiceDate,
       totalHallmarkingCharges,
     };
+  }
+
+  private _calculateHsnSummary(
+    items: any[],
+    taxes: { cgstRate: number; sgstRate: number; igstRate: number },
+  ): any[] {
+    const summaryMap = new Map<string, any>();
+
+    for (const item of items) {
+      const hsn = item.hsnSac || 'N/A';
+      const taxableValue = item.amount || 0;
+
+      if (!summaryMap.has(hsn)) {
+        summaryMap.set(hsn, {
+          hsnSac: hsn,
+          taxableValue: 0,
+          cgstRate: taxes.cgstRate,
+          sgstRate: taxes.sgstRate,
+          igstRate: taxes.igstRate,
+          cgstAmount: 0,
+          sgstAmount: 0,
+          igstAmount: 0,
+          totalTaxAmount: 0,
+        });
+      }
+
+      const summary = summaryMap.get(hsn)!;
+      summary.taxableValue += taxableValue;
+    }
+
+    // Now calculate taxes for each HSN group
+    const result: any[] = [];
+    summaryMap.forEach((summary) => {
+      summary.cgstAmount = Math.round(((summary.taxableValue * summary.cgstRate) / 100) * 100) / 100;
+      summary.sgstAmount = Math.round(((summary.taxableValue * summary.sgstRate) / 100) * 100) / 100;
+      summary.igstAmount = Math.round(((summary.taxableValue * summary.igstRate) / 100) * 100) / 100;
+      summary.totalTaxAmount = summary.cgstAmount + summary.sgstAmount + summary.igstAmount;
+      result.push(summary);
+    });
+
+    return result;
   }
 
   private numberToWords(num: number): string {
@@ -1396,7 +1429,10 @@ export class InvoicesService {
         igstRate,
         igstAmount,
       },
-      hsnSummary: [],
+      hsnSummary: this._calculateHsnSummary(
+        sampleItems.map((i) => ({ hsnSac: i.hsnSac, amount: i.amount })),
+        { cgstRate, sgstRate, igstRate },
+      ),
       roundOff,
       totalQuantity: sampleItems.reduce((sum, i) => sum + i.quantity, 0),
       totalAmount,
