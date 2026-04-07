@@ -1,7 +1,6 @@
 import {
   IsString,
   IsOptional,
-  IsEnum,
   IsNumber,
   IsArray,
   ValidateNested,
@@ -10,7 +9,8 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TaxType } from '@prisma/client';
-import { CreateInvoiceItemDto } from './create-invoice.dto';
+import { CreateInvoiceItemDto, CreateInvoiceDto } from './create-invoice.dto';
+import { IsEnum } from 'class-validator';
 
 export class UpdateInvoiceDto {
   @IsString()
@@ -28,24 +28,9 @@ export class UpdateInvoiceDto {
   @IsOptional()
   paidAmount?: number;
 
-  @IsEnum(TaxType)
+  @IsString()
   @IsOptional()
-  taxType?: TaxType;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  cgstRate?: number;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  sgstRate?: number;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  igstRate?: number;
+  placeOfSupply?: string;
 
   @IsString()
   @IsOptional()
@@ -90,4 +75,24 @@ export class UpdateInvoiceDto {
   @IsString()
   @IsOptional()
   buyerStateCode?: string;
+
+  @IsEnum(TaxType)
+  @IsOptional()
+  taxType?: TaxType;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  cgstRate?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  sgstRate?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  igstRate?: number;
 }
+

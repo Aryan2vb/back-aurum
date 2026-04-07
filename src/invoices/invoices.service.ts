@@ -14,7 +14,7 @@ import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { SendInvoiceDto } from './dto/send-invoice.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
-import { CreditStatus, InvoiceStatus, LedgerType, Prisma, TaxType } from '@prisma/client';
+import { CreditStatus, InvoiceStatus, LedgerType, Prisma, TaxType, MakingChargesType, PaymentMethod } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { getFinancialYear } from './utils/invoice-calculations';
 import { FinalizeInvoiceDto } from './dto/finalize-invoice.dto';
@@ -23,6 +23,7 @@ import { generateJewelleryInvoiceHtml } from './utils/generate-jewellery-html';
 import { generateModernInvoiceHtml } from './utils/generate-modern-html';
 import { PdfService } from './utils/pdf.service';
 import { CompanyDetails, BuyerDetails } from './utils/invoice-types';
+import { InvoiceCalculationService } from './utils/invoice-calculation.service';
 
 @Injectable()
 export class InvoicesService {
@@ -32,6 +33,7 @@ export class InvoicesService {
     private readonly prisma: PrismaService,
     private readonly creditsService: CreditsService,
     private readonly pdfService: PdfService,
+    private readonly calcService: InvoiceCalculationService,
   ) {}
 
   // ===========================
@@ -161,19 +163,33 @@ export class InvoicesService {
       let sequenceVal = draft.sequence;
 
       if (!invoiceNumber) {
-        const seqRec = await tx.invoiceSequence.upsert({
-          where: { organizationId_financialYear: { organizationId, financialYear } },
-          create: {
-            organizationId,
-            financialYear,
-            nextSequence: (settings.startingSequence ?? 1) + 1,
-          },
-          update: { nextSequence: { increment: 1 } },
-        });
+        // Retry loop to handle race condition on first sequence creation
+        let attempts = 0;
+        const maxAttempts = 3;
+        while (attempts < maxAttempts) {
+          try {
+            const seqRec = await tx.invoiceSequence.upsert({
+              where: { organizationId_financialYear: { organizationId, financialYear } },
+              create: {
+                organizationId,
+                financialYear,
+                nextSequence: (settings.startingSequence ?? 1) + 1,
+              },
+              update: { nextSequence: { increment: 1 } },
+            });
 
-        sequenceVal = seqRec.nextSequence - 1;
-        const prefix = settings.invoiceNumberPrefix ?? 'INV';
-        invoiceNumber = `${prefix}/${sequenceVal}/${financialYear}`;
+            sequenceVal = seqRec.nextSequence - 1;
+            const prefix = settings.invoiceNumberPrefix ?? 'INV';
+            invoiceNumber = `${prefix}/${sequenceVal}/${financialYear}`;
+            break;
+          } catch (error: any) {
+            attempts++;
+            if (attempts >= maxAttempts || !error.code || error.code !== 'P2002') {
+              throw error;
+            }
+            await new Promise(resolve => setTimeout(resolve, 50 * attempts));
+          }
+        }
       } else {
         const existing = await tx.invoice.findFirst({
           where: { organizationId, invoiceNumber },
@@ -217,7 +233,7 @@ export class InvoicesService {
     const financials = await this._calculateInvoiceFinancials(dto, user, isDraft);
     const {
       status,
-      totalAmount,
+      grandTotal: totalAmount,
       paidAmount,
       taxType,
       cgstRate,
@@ -226,7 +242,8 @@ export class InvoicesService {
       cgstAmount,
       sgstAmount,
       igstAmount,
-      roundedSubtotal,
+      subtotal,
+      taxableAmount,
       roundOff,
       companySnapshot,
       buyerSnapshot,
@@ -234,109 +251,136 @@ export class InvoicesService {
       invoiceDate,
       lineItems,
       needsCredit,
-      creditAmount,
-      templateType,
+      placeOfSupply,
+      metalRateSource,
+      metalRateDate,
+      totalHallmarkingCharges,
     } = financials;
 
-    const settings = await this.getSettings(organizationId);
+    // Get settings for invoice number generation
+    const settings = await this.prisma.orgInvoiceSettings.findUnique({
+      where: { organizationId },
+    });
+    if (!settings) throw new BadRequestException('Invoice settings not found');
 
     return this.prisma.$transaction(async (tx) => {
-      let invoiceNumber: string | undefined;
-      let sequenceVal: number | undefined;
+      let invoiceNumber: string | null = null;
+      let sequenceVal: number | null = null;
 
+      // Generate invoice number for non-draft invoices
       if (!isDraft) {
-        const seqRec = await tx.invoiceSequence.upsert({
-          where: { organizationId_financialYear: { organizationId, financialYear } },
-          create: {
-            organizationId,
-            financialYear,
-            nextSequence: (settings.startingSequence ?? 1) + 1,
-          },
-          update: { nextSequence: { increment: 1 } },
-        });
+        let attempts = 0;
+        const maxAttempts = 3;
+        while (attempts < maxAttempts) {
+          try {
+            const seqRec = await tx.invoiceSequence.upsert({
+              where: { organizationId_financialYear: { organizationId, financialYear } },
+              create: {
+                organizationId,
+                financialYear,
+                nextSequence: (settings.startingSequence ?? 1) + 1,
+              },
+              update: { nextSequence: { increment: 1 } },
+            });
 
-        sequenceVal = seqRec.nextSequence - 1;
-        const prefix = settings.invoiceNumberPrefix ?? 'INV';
-        invoiceNumber = `${prefix}/${sequenceVal}/${financialYear}`;
+            sequenceVal = seqRec.nextSequence - 1;
+            const prefix = settings.invoiceNumberPrefix ?? 'INV';
+            invoiceNumber = `${prefix}/${sequenceVal}/${financialYear}`;
+            break;
+          } catch (error: any) {
+            attempts++;
+            if (attempts >= maxAttempts || !error.code || error.code !== 'P2002') {
+              throw error;
+            }
+            await new Promise(resolve => setTimeout(resolve, 50 * attempts));
+          }
+        }
       }
 
+      // 1. Create Invoice
       const invoice = await tx.invoice.create({
         data: {
           organizationId,
           customerId: dto.customerId,
-          invoiceNumber,
-          sequence: sequenceVal,
           status,
           taxType,
-          subtotal: new Decimal(roundedSubtotal),
-          cgstRate: new Decimal(cgstRate),
-          sgstRate: new Decimal(sgstRate),
-          igstRate: new Decimal(igstRate),
-          cgstAmount: new Decimal(cgstAmount),
-          sgstAmount: new Decimal(sgstAmount),
-          igstAmount: new Decimal(igstAmount),
-          roundOff: new Decimal(roundOff),
-          totalAmount: new Decimal(totalAmount),
-          paidAmount: new Decimal(paidAmount),
-          companySnapshot: { version: 1, data: companySnapshot } as any,
-          buyerSnapshot: { version: 1, data: buyerSnapshot } as any,
+          placeOfSupply,
+          subtotal,
+          taxableAmount,
+          cgstRate,
+          sgstRate,
+          igstRate,
+          cgstAmount,
+          sgstAmount,
+          igstAmount,
+          totalHallmarkingCharges,
+          roundOff,
+          totalAmount,
+          paidAmount,
+          metalRateSource,
+          metalRateDate,
+          companySnapshot: companySnapshot as any,
+          buyerSnapshot: buyerSnapshot as any,
           modeOfPayment: dto.modeOfPayment,
           deliveryNote: dto.deliveryNote,
           dispatchDocNo: dto.dispatchDocNo,
           destination: dto.destination,
-          termsOfDelivery: dto.termsOfDelivery ?? settings.termsOfDelivery,
-          templateType,
+          termsOfDelivery: dto.termsOfDelivery,
+          templateType: dto.templateType ?? 'jewellery',
           invoiceDate,
           financialYear,
           notes: dto.notes,
           createdById: userId,
+          invoiceNumber,
+          sequence: sequenceVal,
+          items: {
+            create: lineItems.map((item) => ({
+              organizationId,
+              slNo: item.slNo,
+              description: item.description,
+              hsnSac: item.hsnSac,
+              quantity: item.quantity,
+              unit: item.unit,
+              metalType: item.metalType,
+              metalRate: item.metalRate,
+              purityLabel: item.purityLabel,
+              purityValue: item.purityValue,
+              purityBasis: item.purityBasis,
+              effectiveRate: item.effectiveRate,
+              grossWeight: item.grossWeight,
+              stoneWeight: item.stoneWeight,
+              netWeight: item.netWeight,
+              makingCharges: item.makingCharges,
+              makingChargesType: item.makingChargesType,
+              makingChargesAmount: item.makingChargesAmount,
+              stoneCharges: item.stoneCharges,
+              isHallmarked: item.isHallmarked,
+              hallmarkingCharge: item.hallmarkingCharge,
+              huid: item.huid,
+              taxableAmount: item.itemAmount,
+              totalAmount: item.itemAmount, // for backward compat
+              unitPrice: item.effectiveRate, // for backward compat
+            })),
+          },
         },
+        include: { items: true },
       });
 
-      await tx.invoiceItem.createMany({
-        data: lineItems.map((item) => ({
-          invoiceId: invoice.id,
-          organizationId,
-          slNo: item.slNo,
-          description: item.description,
-          hsnSac: item.hsnSac,
-          quantity: new Decimal(item.quantity),
-          unit: item.unit,
-          unitPrice: new Decimal(item.unitPrice),
-          makingCharges:
-            item.makingCharges !== undefined ? new Decimal(item.makingCharges) : undefined,
-          taxableAmount: new Decimal(item.taxableAmount),
-          totalAmount: new Decimal(item.totalAmount),
-          grossWeight: item.grossWeight !== undefined ? new Decimal(item.grossWeight) : undefined,
-          netWeight: item.netWeight !== undefined ? new Decimal(item.netWeight) : undefined,
-          purity: item.purity,
-          huid: item.huid,
-          metalType: item.metalType,
-        })),
-      });
-
-      const shouldCreateUdhar = dto.autoCreateUdhar !== false;
-      if (needsCredit && !isDraft && shouldCreateUdhar) {
+      // 2. Automated credit management
+      if (needsCredit && dto.autoCreateUdhar !== false) {
         await this._createInvoiceBalanceRecord(tx, {
           organizationId,
           customerId: dto.customerId,
           invoiceId: invoice.id,
-          invoiceNumber: invoiceNumber!,
-          balance: creditAmount,
-          items: dto.items,
+          invoiceNumber: invoiceNumber || 'DRAFT',
+          balance: totalAmount.minus(paidAmount).toNumber(),
+          items: lineItems as any,
           userId,
           notes: dto.notes,
         });
       }
 
-      return tx.invoice.findUnique({
-        where: { id: invoice.id, organizationId },
-        include: {
-          items: { orderBy: { slNo: 'asc' } },
-          customer: { select: { id: true, fullName: true, customerCode: true } },
-          udharEntries: { where: { deletedAt: null } },
-        },
-      });
+      return invoice;
     });
   }
 
@@ -473,6 +517,17 @@ export class InvoicesService {
         },
       });
 
+      await tx.invoicePayment.create({
+        data: {
+          invoiceId: id,
+          organizationId: user.organizationId,
+          mode: dto.paymentMethod ?? PaymentMethod.CASH,
+          amount: paymentAmount,
+          reference: dto.reference,
+          notes: dto.notes,
+        },
+      });
+
       const udhar = await tx.udharEntry.findFirst({
         where: { invoiceId: id, organizationId: user.organizationId, status: CreditStatus.ACTIVE },
       });
@@ -512,6 +567,7 @@ export class InvoicesService {
 
       return {
         ...updatedInvoice,
+        paidAmount: newPaidAmount,
         remainingBalance: Number(invoice.totalAmount) - Number(newPaidAmount),
       };
     });
@@ -619,7 +675,7 @@ export class InvoicesService {
   }
 
   generateSignature(invoiceId: string, organizationId: string): string {
-    const secret = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+    const secret = process.env.JWT_SECRET!;
     const expiry = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7; // 7 days
     const payload = `${invoiceId}:${organizationId}:${expiry}`;
     const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
@@ -637,14 +693,7 @@ export class InvoicesService {
     // Try all possible organizationIds by brute-forcing the signature validation.
     // Since the signature is HMAC-SHA256, we verify by checking which secret combination works.
     // First, get all unique organizationIds from invoices that match the invoiceId pattern
-    const secret = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-    
-    // Query to find the invoice - use findFirst with no org filter (middleware bypass via raw query)
-    // Actually, let's change approach: query by trying different orgIds from a known set
-    // But we don't have a set... so let's use a raw query that bypasses the middleware
-    
-    // Alternative: use findFirst with a dummy orgId that fails, then iterate
-    // The cleanest approach: use prisma.$queryRaw to bypass middleware
+    const secret = process.env.JWT_SECRET!;
     const invoices = await this.prisma.$queryRaw<{ id: string; organizationId: string }[]>`
       SELECT id, "organizationId" FROM "Invoice" WHERE id = ${invoiceId} LIMIT 1
     `;
@@ -671,6 +720,18 @@ export class InvoicesService {
 
     if (!invoice.invoiceNumber) {
       throw new BadRequestException('Cannot send an invoice without an invoice number (Drafts cannot be sent)');
+    }
+
+    if (invoice.status === InvoiceStatus.CANCELLED) {
+      throw new BadRequestException('Cannot send a cancelled invoice');
+    }
+
+    // Mark as SENT only if currently UNPAID (don't downgrade PARTIAL/PAID)
+    if (invoice.status === InvoiceStatus.UNPAID) {
+      await this.prisma.invoice.update({
+        where: { id, organizationId: user.organizationId },
+        data: { status: InvoiceStatus.SENT },
+      });
     }
 
     return { success: true, message: `Invoice ${invoice.invoiceNumber} sent to ${dto.recipientEmails.join(', ')}` };
@@ -724,6 +785,11 @@ export class InvoicesService {
           where: { id: udhar.ledgerEntryId, organizationId },
           data: { deletedAt: new Date() },
         });
+        // Soft-delete all payment ledger entries linked to this udhar
+        await tx.ledgerEntry.updateMany({
+          where: { entityId: udhar.id, organizationId, type: LedgerType.PAYMENT, deletedAt: null },
+          data: { deletedAt: new Date() },
+        });
       }
 
       return updated;
@@ -758,20 +824,26 @@ export class InvoicesService {
       customerId: dto.customerId ?? existing.customerId,
       items: dto.items ?? (existing.items as any),
       paidAmount: dto.paidAmount !== undefined ? dto.paidAmount : Number(existing.paidAmount),
-      taxType: dto.taxType ?? existing.taxType,
-      cgstRate: dto.cgstRate ?? Number(existing.cgstRate),
-      sgstRate: dto.sgstRate ?? Number(existing.sgstRate),
-      igstRate: dto.igstRate ?? Number(existing.igstRate),
+      placeOfSupply: dto.placeOfSupply ?? existing.placeOfSupply,
       templateType: dto.templateType ?? existing.templateType,
+      modeOfPayment: dto.modeOfPayment ?? existing.modeOfPayment,
+      deliveryNote: dto.deliveryNote ?? existing.deliveryNote,
+      dispatchDocNo: dto.dispatchDocNo ?? existing.dispatchDocNo,
+      destination: dto.destination ?? existing.destination,
+      termsOfDelivery: dto.termsOfDelivery ?? existing.termsOfDelivery,
       notes: dto.notes ?? existing.notes ?? undefined,
       invoiceDate: dto.invoiceDate ?? existing.invoiceDate?.toISOString(),
       buyerAddress: dto.buyerAddress,
+      taxType: dto.taxType as any ?? (existing.taxType as any),
+      cgstRate: dto.cgstRate ?? Number(existing.cgstRate),
+      sgstRate: dto.sgstRate ?? Number(existing.sgstRate),
+      igstRate: dto.igstRate ?? Number(existing.igstRate),
     };
 
     const financials = await this._calculateInvoiceFinancials(dummyDto, user, true);
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
+      await tx.invoiceItem.deleteMany({ where: { invoiceId: id, organizationId } });
 
       await tx.invoiceItem.createMany({
         data: financials.lineItems.map((item) => ({
@@ -780,18 +852,27 @@ export class InvoicesService {
           slNo: item.slNo,
           description: item.description,
           hsnSac: item.hsnSac,
-          quantity: new Decimal(item.quantity),
+          quantity: item.quantity,
           unit: item.unit,
-          unitPrice: new Decimal(item.unitPrice),
-          makingCharges:
-            item.makingCharges !== undefined ? new Decimal(item.makingCharges) : undefined,
-          taxableAmount: new Decimal(item.taxableAmount),
-          totalAmount: new Decimal(item.totalAmount),
-          grossWeight: item.grossWeight !== undefined ? new Decimal(item.grossWeight) : undefined,
-          netWeight: item.netWeight !== undefined ? new Decimal(item.netWeight) : undefined,
-          purity: item.purity,
-          huid: item.huid,
           metalType: item.metalType,
+          metalRate: item.metalRate,
+          purityLabel: item.purityLabel,
+          purityValue: item.purityValue,
+          purityBasis: item.purityBasis,
+          effectiveRate: item.effectiveRate,
+          grossWeight: item.grossWeight,
+          stoneWeight: item.stoneWeight,
+          netWeight: item.netWeight,
+          makingCharges: item.makingCharges,
+          makingChargesType: item.makingChargesType,
+          makingChargesAmount: item.makingChargesAmount,
+          stoneCharges: item.stoneCharges,
+          isHallmarked: item.isHallmarked,
+          hallmarkingCharge: item.hallmarkingCharge,
+          huid: item.huid,
+          taxableAmount: item.itemAmount,
+          totalAmount: item.itemAmount, // for backward compat
+          unitPrice: item.effectiveRate, // for backward compat
         })),
       });
 
@@ -800,19 +881,28 @@ export class InvoicesService {
         data: {
           customerId: dummyDto.customerId,
           taxType: financials.taxType,
-          subtotal: new Decimal(financials.roundedSubtotal),
+          placeOfSupply: financials.placeOfSupply,
+          subtotal: new Decimal(financials.subtotal),
           cgstRate: new Decimal(financials.cgstRate),
           sgstRate: new Decimal(financials.sgstRate),
           igstRate: new Decimal(financials.igstRate),
           cgstAmount: new Decimal(financials.cgstAmount),
           sgstAmount: new Decimal(financials.sgstAmount),
           igstAmount: new Decimal(financials.igstAmount),
+          totalHallmarkingCharges: new Decimal(financials.totalHallmarkingCharges),
           roundOff: new Decimal(financials.roundOff),
-          totalAmount: new Decimal(financials.totalAmount),
+          totalAmount: new Decimal(financials.grandTotal),
           paidAmount: new Decimal(financials.paidAmount),
+          metalRateSource: financials.metalRateSource,
+          metalRateDate: financials.metalRateDate,
           companySnapshot: { version: 1, data: financials.companySnapshot } as any,
           buyerSnapshot: { version: 1, data: financials.buyerSnapshot } as any,
-          templateType: financials.templateType,
+          modeOfPayment: dummyDto.modeOfPayment,
+          deliveryNote: dummyDto.deliveryNote,
+          dispatchDocNo: dummyDto.dispatchDocNo,
+          destination: dummyDto.destination,
+          termsOfDelivery: dummyDto.termsOfDelivery,
+          templateType: dummyDto.templateType ?? 'jewellery',
           invoiceDate: financials.invoiceDate,
           financialYear: financials.financialYear,
           notes: dummyDto.notes,
@@ -890,102 +980,148 @@ export class InvoicesService {
   private async _calculateInvoiceFinancials(dto: CreateInvoiceDto, user: CurrentUserData, isDraft: boolean) {
     const { organizationId } = user;
 
-    const customer = await this.prisma.customer.findFirst({
-      where: { id: dto.customerId, organizationId, deletedAt: null },
-      include: {
-        contactDetails: { where: { deletedAt: null }, take: 1 },
-        locations: { where: { deletedAt: null }, take: 1 },
-      },
-    });
-    if (!customer) throw new NotFoundException('Customer not found');
+    // 1. Fetch dependencies context
+    const [settings, customer, configItems] = await Promise.all([
+      this.prisma.orgInvoiceSettings.findUnique({ where: { organizationId } }),
+      this.prisma.customer.findUnique({
+        where: { id: dto.customerId, organizationId },
+        include: { contactDetails: true, locations: true },
+      }),
+      this.prisma.systemConfig.findMany({
+        where: { key: { in: ['HALLMARKING_CHARGE_PER_ITEM', 'GOLD_GST_RATE', 'SILVER_GST_RATE'] } },
+      }),
+    ]);
 
-    const settings = await this.prisma.orgInvoiceSettings.findUnique({ where: { organizationId }});
     if (!settings) throw new BadRequestException('Invoice settings not found');
+    if (!customer) throw new BadRequestException('Customer not found');
 
-    const taxType = dto.taxType ?? settings.defaultTaxType;
-    const isIgst = taxType === TaxType.IGST;
-    const isNone = taxType === TaxType.NONE;
+    const config = Object.fromEntries(configItems.map((c) => [c.key, c.value]));
+    const hallmarkingChargePerItem = new Decimal(config['HALLMARKING_CHARGE_PER_ITEM'] || '45.00');
 
-    const cgstRate = isIgst || isNone ? 0 : (dto.cgstRate ?? Number(settings.defaultCgstRate));
-    const sgstRate = isIgst || isNone ? 0 : (dto.sgstRate ?? Number(settings.defaultSgstRate));
-    const igstRate = isIgst ? (dto.igstRate ?? Number(settings.defaultIgstRate)) : 0;
+    // 2. Tax classification based on placeOfSupply
+    const placeOfSupply = dto.placeOfSupply;
+    const isInterState = placeOfSupply !== settings.stateCode;
+    const taxType = dto.taxType || (isInterState ? TaxType.IGST : TaxType.CGST_SGST);
 
-    const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
-    const financialYear = getFinancialYear(invoiceDate);
+    // GST rates from config (defaulting to 3% total if missing)
+    const goldGstRate = new Decimal(config['GOLD_GST_RATE'] || '3.00');
+    
+    // Rates overrides
+    const igstRate = dto.igstRate !== undefined 
+      ? new Decimal(dto.igstRate) 
+      : (taxType === TaxType.IGST ? goldGstRate : new Decimal(0));
+      
+    const cgstRate = dto.cgstRate !== undefined 
+      ? new Decimal(dto.cgstRate) 
+      : (taxType === TaxType.CGST_SGST ? goldGstRate.div(2) : new Decimal(0));
+      
+    const sgstRate = dto.sgstRate !== undefined 
+      ? new Decimal(dto.sgstRate) 
+      : (taxType === TaxType.CGST_SGST ? goldGstRate.div(2) : new Decimal(0));
 
-    const companySnapshot: CompanyDetails = {
-      name: settings.companyName, address: settings.address, gstin: settings.gstin,
-      state: settings.state, stateCode: settings.stateCode, phone: settings.phone ?? undefined,
-      email: settings.email ?? undefined, pan: settings.pan ?? undefined,
-      mantra: settings.mantra ?? undefined, logo: settings.logoUrl ?? undefined,
-      bisLogo: settings.bisLogoUrl ?? undefined,
-      bankDetails: settings.bankName ? {
-        bankName: settings.bankName, branch: settings.bankBranch ?? '',
-        accountName: settings.bankAccountName ?? '', accountNumber: settings.bankAccountNumber ?? '',
-        ifsc: settings.bankIfsc ?? '',
-      } : undefined,
-    };
+    // 3. Process Line Items
+    const lineItems = dto.items.map((item, index) => {
+      const computed = this.calcService.computeItem({
+        metalRate: item.metalRate,
+        purityValue: item.purityValue,
+        purityBasis: item.purityBasis,
+        grossWeight: item.grossWeight,
+        stoneWeight: item.stoneWeight ?? 0,
+        makingCharges: item.makingCharges ?? 0,
+        makingChargesType: item.makingChargesType ?? MakingChargesType.PER_GRAM,
+        stoneCharges: item.stoneCharges ?? 0,
+        isHallmarked: !!item.isHallmarked,
+        hallmarkingCharge: hallmarkingChargePerItem,
+      });
 
-    if (!dto.items || dto.items.length === 0) throw new BadRequestException('Invoice missing items');
-
-    const lineItems = dto.items.map((item, idx) => {
-      const making = item.makingCharges ?? 0;
-      const taxableAmount = Math.round(item.quantity * (item.unitPrice + making) * 100) / 100;
       return {
-        slNo: idx + 1, description: item.description, hsnSac: item.hsnSac,
-        quantity: item.quantity, unit: item.unit ?? 'PCS', unitPrice: item.unitPrice,
-        makingCharges: item.makingCharges, taxableAmount, totalAmount: taxableAmount,
-        grossWeight: item.grossWeight, netWeight: item.netWeight, purity: item.purity, huid: item.huid,
-        metalType: item.metalType,
+        ...item,
+        slNo: index + 1,
+        ...computed,
+        hallmarkingCharge: item.isHallmarked ? hallmarkingChargePerItem : new Decimal(0),
       };
     });
 
-    const subtotal = lineItems.reduce((sum, i) => sum + i.taxableAmount, 0);
-    const roundedSubtotal = Math.round(subtotal * 100) / 100;
+    // 4. Aggregate Totals
+    const totals = this.calcService.computeInvoiceTotals(
+      lineItems,
+      taxType,
+      {
+        cgst: cgstRate.toString(),
+        sgst: sgstRate.toString(),
+        igst: igstRate.toString(),
+      },
+      hallmarkingChargePerItem,
+    );
 
-    const cgstAmount = Math.round(((roundedSubtotal * cgstRate) / 100) * 100) / 100;
-    const sgstAmount = Math.round(((roundedSubtotal * sgstRate) / 100) * 100) / 100;
-    const igstAmount = Math.round(((roundedSubtotal * igstRate) / 100) * 100) / 100;
+    const totalHallmarkingCharges = lineItems.reduce(
+      (sum, item) => sum.plus(item.hallmarkingCharge),
+      new Decimal(0),
+    );
 
-    const totalBeforeRound = roundedSubtotal + cgstAmount + sgstAmount + igstAmount;
-    const totalAmount = Math.round(totalBeforeRound);
+    // 5. Build Snapshots
+    const companySnapshot: CompanyDetails = {
+      name: settings.companyName,
+      address: settings.address,
+      gstin: settings.gstin,
+      state: settings.state,
+      stateCode: settings.stateCode,
+      phone: settings.phone ?? '',
+      email: settings.email ?? '',
+      pan: settings.pan ?? '',
+      mantra: settings.mantra ?? '',
+      logo: settings.logoUrl ?? '',
+      bisLogo: settings.bisLogoUrl ?? '',
+      bankDetails: settings.bankName
+        ? {
+            bankName: settings.bankName,
+            branch: settings.bankBranch ?? '',
+            accountName: settings.bankAccountName ?? '',
+            accountNumber: settings.bankAccountNumber ?? '',
+            ifsc: settings.bankIfsc ?? '',
+          }
+        : undefined,
+    };
 
-    if (totalAmount <= 0) throw new BadRequestException('Total must be > 0');
-    if (dto.paidAmount !== undefined && dto.paidAmount > totalAmount) {
-      throw new BadRequestException(`Paid amount ${dto.paidAmount} > total ${totalAmount}`);
-    }
-
-    const roundOff = Math.round((totalAmount - totalBeforeRound) * 100) / 100;
-    const paidAmount = dto.paidAmount ?? 0;
-
-    let status: InvoiceStatus;
-    if (isDraft) status = InvoiceStatus.DRAFT;
-    else if (paidAmount >= totalAmount) status = InvoiceStatus.PAID;
-    else if (paidAmount > 0) status = InvoiceStatus.PARTIAL;
-    else status = InvoiceStatus.UNPAID;
-
-    const needsCredit = !isDraft && paidAmount < totalAmount;
-    const creditAmount = totalAmount - paidAmount;
-    const templateType = dto.templateType ?? settings.defaultTemplate;
-
-    const loc = customer.locations && customer.locations.length > 0 ? customer.locations[0] : null;
+    const loc = customer.locations?.[0] || null;
     const buyerSnapshot: BuyerDetails = {
       name: customer.fullName,
       address: dto.buyerAddress || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
       phone: customer.contactDetails?.[0]?.primaryPhone ?? '',
-      state: dto.buyerState ?? loc?.state ?? companySnapshot.state,
-      stateCode: dto.buyerStateCode ?? companySnapshot.stateCode,
+      state: dto.buyerState || loc?.state || '',
+      stateCode: dto.buyerStateCode || loc?.district || '', // district often used for local codes if state matches
     };
 
+    const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
+    const financialYear = getFinancialYear(invoiceDate);
+    const paidAmount = new Decimal(dto.paidAmount || 0);
+
+    let status: InvoiceStatus;
+    if (isDraft) status = InvoiceStatus.DRAFT;
+    else if (paidAmount.greaterThanOrEqualTo(totals.grandTotal)) status = InvoiceStatus.PAID;
+    else if (paidAmount.greaterThan(0)) status = InvoiceStatus.PARTIAL;
+    else status = InvoiceStatus.UNPAID;
+
+    const needsCredit = !isDraft && paidAmount.lessThan(totals.grandTotal);
+
     return {
-      taxType, cgstRate, sgstRate, igstRate, 
-      financialYear, invoiceDate,
-      lineItems, 
-      roundedSubtotal, cgstAmount, sgstAmount, igstAmount, 
-      totalAmount, roundOff, paidAmount, 
-      status, creditAmount, needsCredit,
-      companySnapshot, buyerSnapshot,
-      templateType
+      ...totals,
+      status,
+      paidAmount,
+      taxType,
+      cgstRate,
+      sgstRate,
+      igstRate,
+      financialYear,
+      invoiceDate,
+      lineItems,
+      needsCredit,
+      companySnapshot,
+      buyerSnapshot,
+      placeOfSupply,
+      metalRateSource: dto.metalRateSource || 'MANUAL',
+      metalRateDate: dto.metalRateDate ? new Date(dto.metalRateDate) : invoiceDate,
+      totalHallmarkingCharges,
     };
   }
 

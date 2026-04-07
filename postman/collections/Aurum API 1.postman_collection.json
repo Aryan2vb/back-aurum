@@ -1764,6 +1764,32 @@
                 }
               },
               "response": []
+            },
+            {
+              "name": "GET Get Invoice Settings Preview",
+              "id": "a1b2c3d4-e5f6-4789-ab01-cd23ef456789",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/settings/preview",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    "settings",
+                    "preview"
+                  ]
+                },
+                "description": "Returns an HTML preview of the invoice template using current org settings."
+              },
+              "response": []
             }
           ],
           "id": "3f52e62c-60e7-4604-9ccb-ad4b360ed6dd"
@@ -1788,7 +1814,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"customerId\": \"dd14396b-807f-4ad5-bb9b-17b4f5432307\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"unitPrice\": 50000,\n      \"makingCharges\": 2000,\n      \"grossWeight\": 10.5,\n      \"netWeight\": 9.8,\n      \"purity\": \"22K\",\n      \"huid\": \"HUID123456\",\n      \"metalType\": \"GOLD\"\n    }\n  ],\n  \"paidAmount\": 0,\n  \"taxType\": \"CGST_SGST\",\n  \"cgstRate\": 1.5,\n  \"sgstRate\": 1.5,\n  \"igstRate\": 0,\n  \"templateType\": \"jewellery\",\n  \"modeOfPayment\": \"CASH\",\n  \"deliveryNote\": \"\",\n  \"dispatchDocNo\": \"\",\n  \"destination\": \"\",\n  \"termsOfDelivery\": \"\",\n  \"notes\": \"Thank you for your purchase\",\n  \"invoiceDate\": \"2024-01-15\",\n  \"buyerAddress\": \"\",\n  \"buyerState\": \"\",\n  \"buyerStateCode\": \"\",\n  \"autoCreateUdhar\": true\n}",
+                  "raw": "{\n  \"customerId\": \"37eea2f4-3d3e-4034-b9ac-ad0bd1e14618\",\n  \"placeOfSupply\": \"07\",\n  \"metalRateSource\": \"manual\",\n  \"metalRateDate\": \"2026-04-05T00:00:00.000Z\",\n  \"autoCreateUdhar\": false,\n  \"buyerAddress\": \"\",\n  \"buyerState\": \"\",\n  \"buyerStateCode\": \"\",\n  \"paidAmount\": 0,\n  \"modeOfPayment\": \"CASH\",\n  \"notes\": \"Thank you for your purchase\",\n  \"invoiceDate\": \"2026-04-05\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"metalType\": \"GOLD\",\n      \"metalRate\": 7200,\n      \"purityLabel\": \"22K\",\n      \"purityValue\": 22,\n      \"purityBasis\": 24,\n      \"grossWeight\": 10.5,\n      \"stoneWeight\": 2,\n      \"makingCharges\": 500,\n      \"makingChargesType\": \"PER_GRAM\",\n      \"stoneCharges\": 0,\n      \"isHallmarked\": true,\n      \"huid\": \"AB1234\"\n    }\n  ],\n  \"templateType\": \"jewellery\",\n  \"deliveryNote\": \"\",\n  \"dispatchDocNo\": \"\",\n  \"destination\": \"\",\n  \"termsOfDelivery\": \"\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1825,7 +1851,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"customerId\": \"customer-id-here\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"unitPrice\": 50000,\n      \"makingCharges\": 2000,\n      \"grossWeight\": 10.5,\n      \"netWeight\": 9.8,\n      \"purity\": \"22K\",\n      \"huid\": \"HUID123456\"\n    }\n  ],\n  \"paidAmount\": 10000,\n  \"taxType\": \"CGST_SGST\",\n  \"cgstRate\": 1.5,\n  \"sgstRate\": 1.5,\n  \"igstRate\": 0,\n  \"templateType\": \"jewellery\",\n  \"modeOfPayment\": \"CASH\",\n  \"deliveryNote\": \"\",\n  \"dispatchDocNo\": \"\",\n  \"destination\": \"\",\n  \"termsOfDelivery\": \"\",\n  \"notes\": \"Thank you for your purchase\",\n  \"invoiceDate\": \"2024-01-15\",\n  \"buyerAddress\": \"\",\n  \"buyerState\": \"\",\n  \"buyerStateCode\": \"\",\n  \"autoCreateUdhar\": true\n}",
+                  "raw": "{\n  \"customerId\": \"customer-id-here\",\n  \"placeOfSupply\": \"07\",\n  \"metalRateSource\": \"manual\",\n  \"metalRateDate\": \"2026-04-05T00:00:00.000Z\",\n  \"autoCreateUdhar\": true,\n  \"buyerAddress\": \"\",\n  \"buyerState\": \"\",\n  \"buyerStateCode\": \"\",\n  \"paidAmount\": 10000,\n  \"modeOfPayment\": \"CASH\",\n  \"notes\": \"Thank you for your purchase\",\n  \"invoiceDate\": \"2026-04-05\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"metalType\": \"GOLD\",\n      \"metalRate\": 7200,\n      \"purityLabel\": \"22K\",\n      \"purityValue\": 22.0,\n      \"purityBasis\": 24,\n      \"grossWeight\": 10.5,\n      \"stoneWeight\": 2,\n      \"makingCharges\": 500,\n      \"makingChargesType\": \"PER_GRAM\",\n      \"stoneCharges\": 0,\n      \"isHallmarked\": true,\n      \"huid\": \"AB1234\",\n      \"taxType\": \"CGST_SGST\",\n      \"cgstRate\": 1.5,\n      \"sgstRate\": 1.5,\n      \"igstRate\": 0\n    }\n  ],\n  \"taxType\": \"CGST_SGST\",\n  \"cgstRate\": 1.5,\n  \"sgstRate\": 1.5,\n  \"igstRate\": 0,\n  \"templateType\": \"jewellery\",\n  \"deliveryNote\": \"\",\n  \"dispatchDocNo\": \"\",\n  \"destination\": \"\",\n  \"termsOfDelivery\": \"\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1932,7 +1958,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"customerId\": \"customer-id-here\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K Updated\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"unitPrice\": 55000,\n      \"makingCharges\": 2500,\n      \"grossWeight\": 11.0,\n      \"netWeight\": 10.2,\n      \"purity\": \"22K\",\n      \"huid\": \"HUID123456\"\n    }\n  ],\n  \"paidAmount\": 15000,\n  \"taxType\": \"CGST_SGST\",\n  \"cgstRate\": 1.5,\n  \"sgstRate\": 1.5,\n  \"igstRate\": 0,\n  \"templateType\": \"jewellery\",\n  \"modeOfPayment\": \"CASH\",\n  \"deliveryNote\": \"\",\n  \"dispatchDocNo\": \"\",\n  \"destination\": \"\",\n  \"termsOfDelivery\": \"\",\n  \"notes\": \"Updated invoice notes\",\n  \"invoiceDate\": \"2024-01-20\",\n  \"buyerAddress\": \"\",\n  \"buyerState\": \"\",\n  \"buyerStateCode\": \"\"\n}",
+                  "raw": "{\n  \"customerId\": \"customer-id-here\",\n  \"placeOfSupply\": \"07\",\n  \"paidAmount\": 15000,\n  \"templateType\": \"jewellery\",\n  \"modeOfPayment\": \"CASH\",\n  \"deliveryNote\": \"\",\n  \"dispatchDocNo\": \"\",\n  \"destination\": \"\",\n  \"termsOfDelivery\": \"\",\n  \"notes\": \"Updated invoice notes\",\n  \"invoiceDate\": \"2026-04-05\",\n  \"buyerAddress\": \"\",\n  \"buyerState\": \"\",\n  \"buyerStateCode\": \"\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K Updated\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"metalType\": \"GOLD\",\n      \"metalRate\": 7200,\n      \"purityLabel\": \"22K\",\n      \"purityValue\": 22.0,\n      \"purityBasis\": 24,\n      \"grossWeight\": 11.0,\n      \"stoneWeight\": 2,\n      \"makingCharges\": 500,\n      \"makingChargesType\": \"PER_GRAM\",\n      \"stoneCharges\": 0,\n      \"isHallmarked\": true,\n      \"huid\": \"AB1234\"\n    }\n  ]\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2007,7 +2033,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"amount\": 5000,\n  \"paymentMethod\": \"CASH\",\n  \"referenceNumber\": \"REF123\",\n  \"collectedBy\": \"Staff Name\",\n  \"notes\": \"Partial payment\",\n  \"transactionDate\": \"2024-01-15\"\n}",
+                  "raw": "{\n  \"amount\": 15000,\n  \"paymentMethod\": \"UPI\",\n  \"reference\": \"TXN9988776655\",\n  \"notes\": \"Balance payment for Gold Chain\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2212,6 +2238,91 @@
                     }
                   ]
                 }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Negotiate Invoice Preview",
+              "id": "b2c3d4e5-f6a7-4890-bc12-de34fa567890",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/negotiate/preview?targetAmount=50000",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id",
+                    "negotiate",
+                    "preview"
+                  ],
+                  "query": [
+                    {
+                      "key": "targetAmount",
+                      "value": "50000"
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "invoice-id-here"
+                    }
+                  ]
+                },
+                "description": "Preview the effect of negotiating an invoice to a target amount. Returns adjusted item prices."
+              },
+              "response": []
+            },
+            {
+              "name": "POST Negotiate Invoice Commit",
+              "id": "c3d4e5f6-a7b8-4901-cd23-ef45ab678901",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetAmount\": 50000,\n  \"negotiationNote\": \"Customer requested discount\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/negotiate/commit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id",
+                    "negotiate",
+                    "commit"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "invoice-id-here"
+                    }
+                  ]
+                },
+                "description": "Commit a negotiated price for an invoice. Adjusts item prices proportionally to reach the target amount."
               },
               "response": []
             }
@@ -2508,6 +2619,18 @@
                 }
               },
               "response": []
+            },
+            {
+              "name": "New Request",
+              "id": "05293ca3-00d1-46f5-a2d5-c3cbe3652e8b",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": ""
+                }
+              },
+              "response": []
             }
           ],
           "id": "cf70816c-2cb5-4118-9f92-f5b363f63b6b"
@@ -2797,6 +2920,48 @@
       "id": "796936e7-b0b8-421f-b590-1988be0e4957"
     },
     {
+      "name": "reports",
+      "item": [
+        {
+          "name": "sales",
+          "id": "5ced471f-464a-4c2c-bb62-32dca4310358",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": ""
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "gst",
+          "id": "565a99e7-e7a9-4665-8de2-52da04675b8f",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": ""
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "collections",
+          "id": "d315362a-087d-4c7e-9316-841c25746493",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": ""
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "bb55e673-0234-4033-b789-9d455a203073"
+    },
+    {
       "name": "GET Udhar Payments",
       "id": "0ca41341-261f-4d87-82bc-a593a0c7a5d4",
       "request": {
@@ -2824,6 +2989,18 @@
               "value": ""
             }
           ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "New Request",
+      "id": "087b15a0-89e2-4978-a155-568a226159d5",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": ""
         }
       },
       "response": []

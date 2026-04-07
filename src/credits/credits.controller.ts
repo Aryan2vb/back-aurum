@@ -23,6 +23,7 @@ import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { OrganizationRole } from '@prisma/client';
+import { deprecate } from 'util';
 
 @Controller('credits')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -158,30 +159,6 @@ export class CreditsController {
     return this.creditsService.getCustomerUdharEntries(customerId, user.organizationId);
   }
 
-  @Post('udhar/:udharId/payment')
-  @HttpCode(HttpStatus.CREATED)
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
-  addUdharPayment(
-    @Param('udharId') udharId: string,
-    @Body() dto: CreateCreditTransactionDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
-    return this.creditsService.addUdharPayment(udharId, dto, user);
-  }
-
-  @Get('udhar/:udharId/payments')
-  @Roles(
-    OrganizationRole.OWNER,
-    OrganizationRole.ADMIN,
-    OrganizationRole.STAFF,
-    OrganizationRole.VIEWER,
-  )
-  getUdharPayments(
-    @Param('udharId') udharId: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
-    return this.creditsService.getUdharPayments(udharId, user.organizationId);
-  }
 
   // ===========================
   // TRANSACTIONS

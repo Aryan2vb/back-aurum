@@ -23,6 +23,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     'UdharEntry',
     'Invoice',
     'InvoiceItem',
+    'OrgInvoiceSettings',
   ]);
 
   private static readonly ACTIONS_REQUIRING_WHERE = new Set<string>([
@@ -65,9 +66,22 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         }
 
         if (PrismaService.ACTIONS_REQUIRING_DATA.has(params.action)) {
-          const dataArg = params.args?.data;
-          const entries = Array.isArray(dataArg) ? dataArg : [dataArg];
-          const allEntriesScoped = entries.every((entry) => this.containsOrganizationId(entry));
+          const args = params.args || {};
+          let allEntriesScoped = true;
+
+          if (params.action === 'upsert') {
+            // For upsert, we need to check both 'create' and 'update' arguments
+            const createScoped = this.containsOrganizationId(args.create);
+            // 'update' is optional for enforcement if 'where' already has organizationId,
+            // but for upsert we enforce organizationId in the 'create' block at minimum.
+            if (!createScoped) {
+              allEntriesScoped = false;
+            }
+          } else {
+            const dataArg = args.data;
+            const entries = Array.isArray(dataArg) ? dataArg : [dataArg];
+            allEntriesScoped = entries.every((entry) => this.containsOrganizationId(entry));
+          }
 
           if (!allEntriesScoped) {
             throw new ForbiddenException(

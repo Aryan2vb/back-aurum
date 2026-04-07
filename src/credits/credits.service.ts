@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCreditDto } from './dto/create-credit.dto';
@@ -180,8 +181,14 @@ export class CreditsService {
       const ledgerUpdate: any = {};
       if (dto.description) ledgerUpdate.description = dto.description;
       if (dto.totalAmount) {
-        ledgerUpdate.amount = new Decimal(dto.totalAmount);
-        updateData.amount = new Decimal(dto.totalAmount);
+        const newTotal = new Decimal(dto.totalAmount);
+        if (newTotal.lessThan(udhar.paidAmount)) {
+          throw new BadRequestException(
+            `Cannot set total amount (${dto.totalAmount}) below already paid amount (${udhar.paidAmount})`
+          );
+        }
+        ledgerUpdate.amount = newTotal;
+        updateData.amount = newTotal;
       }
       if (dto.creditDate) {
         ledgerUpdate.createdAt = new Date(dto.creditDate);
@@ -288,15 +295,25 @@ export class CreditsService {
     if (!payment) throw new NotFoundException('Payment not found');
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.ledgerEntry.delete({ where: { id: transactionId, organizationId: user.organizationId } });
       const udhar = await tx.udharEntry.findUnique({ where: { id: udharId, organizationId: user.organizationId } });
+      if (!udhar) throw new NotFoundException('Udhar not found');
+
       const newPaid = udhar.paidAmount.sub(payment.amount);
+      if (newPaid.lessThan(0)) {
+        throw new BadRequestException('Cannot delete payment: would result in negative paid amount');
+      }
+
+      await tx.ledgerEntry.delete({ where: { id: transactionId, organizationId: user.organizationId } });
+
+      const newStatus = newPaid.greaterThanOrEqualTo(udhar.amount) 
+        ? CreditStatus.PAID 
+        : (udhar.status === CreditStatus.OVERDUE ? CreditStatus.OVERDUE : CreditStatus.ACTIVE);
 
       await tx.udharEntry.update({
         where: { id: udharId, organizationId: user.organizationId },
         data: { 
           paidAmount: newPaid,
-          status: CreditStatus.ACTIVE
+          status: newStatus
         }
       });
     });
@@ -331,6 +348,10 @@ export class CreditsService {
       _count: true
     });
 
+    const activeCount = await this.prisma.udharEntry.count({
+      where: { organizationId, deletedAt: null, status: { in: [CreditStatus.ACTIVE, CreditStatus.OVERDUE] } }
+    });
+
     const totalIssued = Number(stats._sum.amount || 0);
     const totalPaid = Number(stats._sum.paidAmount || 0);
 
@@ -340,7 +361,7 @@ export class CreditsService {
         totalOutstanding: totalIssued - totalPaid
       },
       risk: {
-        activeCreditsCount: stats._count
+        activeCreditsCount: activeCount
       }
     };
   }

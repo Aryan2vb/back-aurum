@@ -23,23 +23,27 @@ import { RecordPaymentDto } from './dto/record-payment.dto';
 import { SendInvoiceDto } from './dto/send-invoice.dto';
 import { FinalizeInvoiceDto } from './dto/finalize-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
+import { NegotiatePreviewQueryDto, NegotiateCommitDto } from './dto/negotiate-invoice.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { OrganizationRole } from '@prisma/client';
 import { Public } from '../auth/public.decorator';
+import { InvoiceNegotiationService } from './utils/invoice-negotiation.service';
 
 @Controller('invoices')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class InvoicesController {
   private readonly logger = new Logger(InvoicesController.name);
 
-  constructor(private readonly invoicesService: InvoicesService) {}
+  constructor(
+    private readonly invoicesService: InvoicesService,
+    private readonly negotiationService: InvoiceNegotiationService,
+  ) {}
 
   // ===========================
   // ORG INVOICE SETTINGS
-  // NOTE: /settings routes declared before /:id to avoid routing conflicts
   // ===========================
 
   @Post('settings')
@@ -50,35 +54,22 @@ export class InvoicesController {
   }
 
   @Get('settings')
-  @Roles(
-    OrganizationRole.OWNER,
-    OrganizationRole.ADMIN,
-    OrganizationRole.STAFF,
-    OrganizationRole.VIEWER,
-  )
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   getSettings(@CurrentUser() user: CurrentUserData) {
     return this.invoicesService.getSettings(user.organizationId);
   }
 
   @Get('settings/preview')
-  @Roles(
-    OrganizationRole.OWNER,
-    OrganizationRole.ADMIN,
-    OrganizationRole.STAFF,
-    OrganizationRole.VIEWER,
-  )
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   async previewSettings(@CurrentUser() user: CurrentUserData, @Res() res: Response) {
     this.logger.log(`GET /invoices/settings/preview for org ${user.organizationId}`);
     const html = await this.invoicesService.generatePreviewHtml(user.organizationId);
-    res.set({
-      'Content-Type': 'text/html',
-    });
+    res.set({ 'Content-Type': 'text/html' });
     res.send(html);
   }
 
   // ===========================
   // DRAFT
-  // NOTE: /draft before /:id
   // ===========================
 
   @Post('draft')
@@ -114,23 +105,13 @@ export class InvoicesController {
   }
 
   @Get()
-  @Roles(
-    OrganizationRole.OWNER,
-    OrganizationRole.ADMIN,
-    OrganizationRole.STAFF,
-    OrganizationRole.VIEWER,
-  )
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   findAll(@Query() query: QueryInvoicesDto, @CurrentUser() user: CurrentUserData) {
     return this.invoicesService.findAll(query, user.organizationId);
   }
 
   @Get(':id')
-  @Roles(
-    OrganizationRole.OWNER,
-    OrganizationRole.ADMIN,
-    OrganizationRole.STAFF,
-    OrganizationRole.VIEWER,
-  )
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.invoicesService.findOne(id, user.organizationId);
   }
@@ -144,6 +125,39 @@ export class InvoicesController {
   ) {
     this.logger.log(`PATCH /invoices/${id}`);
     return this.invoicesService.update(id, dto, user);
+  }
+
+  // ===========================
+  // NEGOTIATION
+  // ===========================
+
+  @Get(':id/negotiate/preview')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
+  negotiatePreview(
+    @Param('id') id: string,
+    @Query() query: NegotiatePreviewQueryDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    this.logger.log(`GET /invoices/${id}/negotiate/preview — target: ${query.targetAmount}`);
+    return this.negotiationService.preview(id, user.organizationId, query.targetAmount);
+  }
+
+  @Post(':id/negotiate/commit')
+  @HttpCode(HttpStatus.OK)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
+  negotiateCommit(
+    @Param('id') id: string,
+    @Body() dto: NegotiateCommitDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    this.logger.log(`POST /invoices/${id}/negotiate/commit — target: ${dto.targetAmount}`);
+    return this.negotiationService.commit(
+      id,
+      user.organizationId,
+      dto.targetAmount,
+      user.userId,
+      dto.negotiationNote,
+    );
   }
 
   // ===========================
@@ -175,12 +189,10 @@ export class InvoicesController {
   ) {
     this.logger.log(`GET /invoices/${id}/pdf`);
     let orgId = user?.organizationId;
-
     if (!orgId) {
       if (!signature) throw new ForbiddenException('Missing authorization');
       orgId = await this.invoicesService.verifySignature(id, signature);
     }
-
     const buffer = await this.invoicesService.generatePdf(id, orgId);
     res.set({
       'Content-Type': 'application/pdf',
@@ -200,33 +212,24 @@ export class InvoicesController {
   ) {
     this.logger.log(`GET /invoices/${id}/html`);
     let orgId = user?.organizationId;
-
     if (!orgId) {
       if (!signature) throw new ForbiddenException('Missing authorization');
       orgId = await this.invoicesService.verifySignature(id, signature);
     }
-
     const html = await this.invoicesService.generateHtml(id, orgId);
-    res.set({
-      'Content-Type': 'text/html',
-    });
+    res.set({ 'Content-Type': 'text/html' });
     res.send(html);
   }
 
   @Get(':id/sign')
-  @Roles(
-    OrganizationRole.OWNER,
-    OrganizationRole.ADMIN,
-    OrganizationRole.STAFF,
-    OrganizationRole.VIEWER,
-  )
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
   signUrl(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const signature = this.invoicesService.generateSignature(id, user.organizationId);
     return { signature };
   }
 
   // ===========================
-  // SEND (PLACEHOLDER)
+  // SEND
   // ===========================
 
   @Post(':id/send')

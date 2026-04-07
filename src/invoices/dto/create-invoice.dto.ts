@@ -12,7 +12,7 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { TaxType, MetalType } from '@prisma/client';
+import { TaxType, MetalType, MakingChargesType } from '@prisma/client';
 
 export class CreateInvoiceItemDto {
   @IsString()
@@ -31,37 +31,79 @@ export class CreateInvoiceItemDto {
   @IsOptional()
   unit?: string; // defaults to 'PCS'
 
-  @IsNumber()
-  @Min(0)
-  unitPrice: number;
+  // Metal Details (Raw Inputs)
+  @IsEnum(MetalType)
+  @IsNotEmpty()
+  metalType: MetalType;
 
   @IsNumber()
   @Min(0)
-  @IsOptional()
-  makingCharges?: number; // display-only, per-unit making charge
-
-  // Jewellery extras
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  grossWeight?: number;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  netWeight?: number;
+  @IsNotEmpty()
+  metalRate: number; // ₹/gm at 24K or 999 fine
 
   @IsString()
+  @IsNotEmpty()
+  purityLabel: string; // e.g. "22K", "18K", "925"
+
+  @IsNumber()
+  @Min(0)
+  @IsNotEmpty()
+  purityValue: number; // e.g. 22.00, 18.00, 92.50
+
+  @IsNumber()
+  @IsNotEmpty()
+  purityBasis: number; // 24 or 1000
+
+  // Weight Details
+  @IsNumber()
+  @Min(0)
+  @IsNotEmpty()
+  grossWeight: number;
+
+  @IsNumber()
+  @Min(0)
   @IsOptional()
-  purity?: string;
+  stoneWeight?: number = 0;
+
+  // Making Charges
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  makingCharges?: number;
+
+  @IsEnum(MakingChargesType)
+  @IsOptional()
+  makingChargesType?: MakingChargesType = MakingChargesType.PER_GRAM;
+
+  // Additional Charges
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  stoneCharges?: number = 0;
+
+  @IsBoolean()
+  @IsOptional()
+  isHallmarked?: boolean = false;
 
   @IsString()
   @IsOptional()
   huid?: string;
 
-  @IsEnum(MetalType)
+  @IsEnum(TaxType)
   @IsOptional()
-  metalType?: MetalType;
+  taxType?: TaxType;
+
+  @IsNumber()
+  @IsOptional()
+  cgstRate?: number;
+
+  @IsNumber()
+  @IsOptional()
+  sgstRate?: number;
+
+  @IsNumber()
+  @IsOptional()
+  igstRate?: number;
 }
 
 export class CreateInvoiceDto {
@@ -74,36 +116,28 @@ export class CreateInvoiceDto {
   @Type(() => CreateInvoiceItemDto)
   items: CreateInvoiceItemDto[];
 
+  @IsString()
+  @IsNotEmpty()
+  placeOfSupply: string; // State Code e.g. "07" for Delhi
+
+  @IsString()
+  @IsOptional()
+  metalRateSource?: string; // "IBJA" | "MCX" | "MANUAL"
+
+  @IsDateString()
+  @IsOptional()
+  metalRateDate?: string;
+
   /** Amount already paid at time of sale. Defaults to 0 (full Udhar). */
   @IsNumber()
   @Min(0)
   @IsOptional()
   paidAmount?: number;
 
-  @IsEnum(TaxType)
-  @IsOptional()
-  taxType?: TaxType;
-
-  /** GST rates — if omitted, defaults from OrgInvoiceSettings are used. */
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  cgstRate?: number;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  sgstRate?: number;
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  igstRate?: number;
-
-  /** "standard" or "jewellery" — defaults from OrgInvoiceSettings if omitted. */
+  /** "standard" or "jewellery" — defaults to "jewellery" for this module. */
   @IsString()
   @IsOptional()
-  templateType?: string;
+  templateType?: string = 'jewellery';
 
   // Dispatch / delivery fields
   @IsString()
@@ -151,4 +185,22 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsBoolean()
   autoCreateUdhar?: boolean;
+
+  @IsEnum(TaxType)
+  @IsOptional()
+  taxType?: TaxType;
+
+  @IsNumber()
+  @IsOptional()
+  cgstRate?: number;
+
+  @IsNumber()
+  @IsOptional()
+  sgstRate?: number;
+
+  @IsNumber()
+  @IsOptional()
+  igstRate?: number;
 }
+
+
