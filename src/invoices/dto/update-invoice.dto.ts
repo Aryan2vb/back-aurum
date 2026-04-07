@@ -6,11 +6,9 @@ import {
   ValidateNested,
   Min,
   IsDateString,
-  IsEnum,
   IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { TaxType } from '@prisma/client';
 import { CreateInvoiceItemDto } from './create-invoice.dto';
 
 export class UpdateInvoiceDto {

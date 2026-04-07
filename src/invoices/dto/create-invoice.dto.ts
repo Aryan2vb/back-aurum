@@ -12,7 +12,7 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { TaxType, MetalType, MakingChargesType } from '@prisma/client';
+import { MetalType, MakingChargesType } from '@prisma/client';
 
 export class CreateInvoiceItemDto {
   @IsString()

@@ -255,7 +255,6 @@ export class InvoicesService {
       lineItems,
       needsCredit,
       placeOfSupply,
-      templateType,
       metalRateSource,
       metalRateDate,
       totalHallmarkingCharges,

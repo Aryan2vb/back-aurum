@@ -42,8 +42,6 @@ export class InvoiceCalculationService {
    */
   computeItem(input: ItemInput): ComputedItem {
     const metalRate = new Decimal(input.metalRate);
-    const purityValue = new Decimal(input.purityValue);
-    const purityBasis = new Decimal(input.purityBasis);
     const grossWeight = new Decimal(input.grossWeight);
     const stoneWeight = new Decimal(input.stoneWeight || 0);
     const makingCharges = new Decimal(input.makingCharges || 0);
