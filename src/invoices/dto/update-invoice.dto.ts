@@ -6,11 +6,11 @@ import {
   ValidateNested,
   Min,
   IsDateString,
+  IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TaxType } from '@prisma/client';
-import { CreateInvoiceItemDto, CreateInvoiceDto } from './create-invoice.dto';
-import { IsEnum } from 'class-validator';
+import { CreateInvoiceItemDto } from './create-invoice.dto';
 
 export class UpdateInvoiceDto {
   @IsString()
@@ -95,4 +95,3 @@ export class UpdateInvoiceDto {
   @IsOptional()
   igstRate?: number;
 }
-

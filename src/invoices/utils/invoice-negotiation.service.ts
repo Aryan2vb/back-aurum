@@ -28,7 +28,11 @@ export interface AdjustmentPreview {
 export class InvoiceNegotiationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async preview(invoiceId: string, organizationId: string, targetAmount: number): Promise<AdjustmentPreview> {
+  async preview(
+    invoiceId: string,
+    organizationId: string,
+    targetAmount: number,
+  ): Promise<AdjustmentPreview> {
     const target = new Decimal(targetAmount);
 
     const invoice = await this.prisma.invoice.findFirst({
@@ -250,7 +254,9 @@ export class InvoiceNegotiationService {
           igstAmount: newIgst,
           roundOff: preview.roundOff,
           totalAmount: preview.newGrandTotal,
-          discountAmount: new Decimal(invoice.isNegotiated ? invoice.originalGrandTotal! : invoice.totalAmount)
+          discountAmount: new Decimal(
+            invoice.isNegotiated ? invoice.originalGrandTotal! : invoice.totalAmount,
+          )
             .minus(preview.newGrandTotal)
             .toDecimalPlaces(2),
         },

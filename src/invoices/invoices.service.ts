@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  Logger,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,7 +9,15 @@ import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { SendInvoiceDto } from './dto/send-invoice.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
-import { CreditStatus, InvoiceStatus, LedgerType, Prisma, TaxType, MakingChargesType, PaymentMethod } from '@prisma/client';
+import {
+  CreditStatus,
+  InvoiceStatus,
+  LedgerType,
+  Prisma,
+  TaxType,
+  MakingChargesType,
+  PaymentMethod,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { getFinancialYear } from './utils/invoice-calculations';
 import { FinalizeInvoiceDto } from './dto/finalize-invoice.dto';
@@ -149,13 +152,13 @@ export class InvoicesService {
 
     const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
     const financialYear = getFinancialYear(invoiceDate);
-    const paidAmount = dto.paidAmount ?? Number(draft.paidAmount);
-    const totalAmount = Number(draft.totalAmount);
-    const balance = totalAmount - paidAmount;
+    const paidAmount = new Decimal(dto.paidAmount ?? draft.paidAmount);
+    const totalAmount = new Decimal(draft.totalAmount);
+    const balance = totalAmount.minus(paidAmount);
 
     let status: InvoiceStatus = InvoiceStatus.PAID;
-    if (balance > 0) {
-      status = paidAmount > 0 ? InvoiceStatus.PARTIAL : InvoiceStatus.UNPAID;
+    if (balance.gt(0)) {
+      status = paidAmount.gt(0) ? InvoiceStatus.PARTIAL : InvoiceStatus.UNPAID;
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -187,7 +190,7 @@ export class InvoicesService {
             if (attempts >= maxAttempts || !error.code || error.code !== 'P2002') {
               throw error;
             }
-            await new Promise(resolve => setTimeout(resolve, 50 * attempts));
+            await new Promise((resolve) => setTimeout(resolve, 50 * attempts));
           }
         }
       } else {
@@ -211,13 +214,13 @@ export class InvoicesService {
       });
 
       const shouldCreateUdhar = dto.autoCreateUdhar !== false;
-      if (balance > 0 && shouldCreateUdhar) {
+      if (balance.gt(0) && shouldCreateUdhar) {
         await this._createInvoiceBalanceRecord(tx, {
           organizationId,
           customerId: draft.customerId,
           invoiceId: updatedInvoice.id,
           invoiceNumber: updatedInvoice.invoiceNumber!,
-          balance,
+          balance: balance.toNumber(),
           items: draft.items as any,
           userId,
           notes: updatedInvoice.notes || undefined,
@@ -292,7 +295,7 @@ export class InvoicesService {
             if (attempts >= maxAttempts || !error.code || error.code !== 'P2002') {
               throw error;
             }
-            await new Promise(resolve => setTimeout(resolve, 50 * attempts));
+            await new Promise((resolve) => setTimeout(resolve, 50 * attempts));
           }
         }
       }
@@ -447,7 +450,9 @@ export class InvoicesService {
     return {
       data: invoices.map((inv) => ({
         ...inv,
-        remainingBalance: Number(inv.totalAmount) - Number(inv.paidAmount),
+        remainingBalance: new Decimal(inv.totalAmount)
+          .minus(new Decimal(inv.paidAmount))
+          .toNumber(),
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -476,7 +481,9 @@ export class InvoicesService {
 
     return {
       ...invoice,
-      remainingBalance: Number(invoice.totalAmount) - Number(invoice.paidAmount),
+      remainingBalance: new Decimal(invoice.totalAmount)
+        .minus(new Decimal(invoice.paidAmount))
+        .toNumber(),
     };
   }
 
@@ -501,7 +508,7 @@ export class InvoicesService {
 
     if (newPaidAmount.greaterThan(invoice.totalAmount)) {
       throw new BadRequestException(
-        `Payment of ${dto.amount} would exceed remaining balance of ${Number(invoice.totalAmount) - Number(invoice.paidAmount)}`,
+        `Payment of ${dto.amount} would exceed remaining balance of ${new Decimal(invoice.totalAmount).minus(new Decimal(invoice.paidAmount)).toNumber()}`,
       );
     }
 
@@ -568,7 +575,7 @@ export class InvoicesService {
       return {
         ...updatedInvoice,
         paidAmount: newPaidAmount,
-        remainingBalance: Number(invoice.totalAmount) - Number(newPaidAmount),
+        remainingBalance: new Decimal(invoice.totalAmount).minus(newPaidAmount).toNumber(),
       };
     });
   }
@@ -620,7 +627,8 @@ export class InvoicesService {
       },
       buyer: {
         name: buyerSnapshot.name || customer.fullName || '',
-        address: buyerSnapshot.address || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
+        address:
+          buyerSnapshot.address || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
         phone: buyerSnapshot.phone || customer.contactDetails?.[0]?.primaryPhone || '',
         state: buyerSnapshot.state || companySnapshot.state || '',
         stateCode: buyerSnapshot.stateCode || companySnapshot.stateCode || '',
@@ -629,40 +637,52 @@ export class InvoicesService {
       },
       metadata: {
         invoiceNo: invoice.invoiceNumber || 'DRAFT',
-        date: invoice.invoiceDate?.toLocaleDateString('en-IN') || new Date().toLocaleDateString('en-IN'),
+        date:
+          invoice.invoiceDate?.toLocaleDateString('en-IN') ||
+          new Date().toLocaleDateString('en-IN'),
         financialYear: invoice.financialYear || '',
       },
       items: invoice.items.map((item: any) => ({
         slNo: item.slNo,
         description: item.description,
         hsnSac: item.hsnSac || '',
-        quantity: Number(item.quantity),
+        quantity: new Decimal(item.quantity).toNumber(),
         unit: item.unit || 'PCS',
-        rate: Number(item.unitPrice),
-        makingCharges: item.makingCharges ? Number(item.makingCharges) : undefined,
+        rate: new Decimal(item.unitPrice).toNumber(),
+        makingCharges: item.makingCharges ? new Decimal(item.makingCharges).toNumber() : undefined,
         purity: item.purity || undefined,
-        netWeight: item.netWeight ? Number(item.netWeight) : undefined,
-        grossWeight: item.grossWeight ? Number(item.grossWeight) : undefined,
+        netWeight: item.netWeight ? new Decimal(item.netWeight).toNumber() : undefined,
+        grossWeight: item.grossWeight ? new Decimal(item.grossWeight).toNumber() : undefined,
         huid: item.huid || undefined,
-        amount: Number(item.taxableAmount),
+        amount: new Decimal(item.taxableAmount).toNumber(),
       })),
       taxes: {
-        cgstRate: Number(invoice.cgstRate),
-        cgstAmount: Number(invoice.cgstAmount),
-        sgstRate: Number(invoice.sgstRate),
-        sgstAmount: Number(invoice.sgstAmount),
-        igstRate: Number(invoice.igstRate) || 0,
-        igstAmount: Number(invoice.igstAmount) || 0,
+        cgstRate: new Decimal(invoice.cgstRate).toNumber(),
+        cgstAmount: new Decimal(invoice.cgstAmount).toNumber(),
+        sgstRate: new Decimal(invoice.sgstRate).toNumber(),
+        sgstAmount: new Decimal(invoice.sgstAmount).toNumber(),
+        igstRate: new Decimal(invoice.igstRate || 0).toNumber(),
+        igstAmount: new Decimal(invoice.igstAmount || 0).toNumber(),
       },
       hsnSummary: [],
-      roundOff: Number(invoice.roundOff),
-      totalQuantity: invoice.items.reduce((sum: number, item: any) => sum + Number(item.quantity), 0),
-      totalAmount: Number(invoice.totalAmount),
-      amountInWords: this.numberToWords(Number(invoice.totalAmount)),
-      taxAmountInWords: this.numberToWords(Number(invoice.cgstAmount) + Number(invoice.sgstAmount) + Number(invoice.igstAmount)),
+      roundOff: new Decimal(invoice.roundOff).toNumber(),
+      totalQuantity: invoice.items.reduce(
+        (sum: number, item: any) => sum + new Decimal(item.quantity).toNumber(),
+        0,
+      ),
+      totalAmount: new Decimal(invoice.totalAmount).toNumber(),
+      amountInWords: this.numberToWords(new Decimal(invoice.totalAmount).toNumber()),
+      taxAmountInWords: this.numberToWords(
+        new Decimal(invoice.cgstAmount)
+          .plus(new Decimal(invoice.sgstAmount))
+          .plus(new Decimal(invoice.igstAmount))
+          .toNumber(),
+      ),
       declaration: invoice.notes || undefined,
-      cashReceived: Number(invoice.paidAmount),
-      amtBalance: Number(invoice.totalAmount) - Number(invoice.paidAmount),
+      cashReceived: new Decimal(invoice.paidAmount).toNumber(),
+      amtBalance: new Decimal(invoice.totalAmount)
+        .minus(new Decimal(invoice.paidAmount))
+        .toNumber(),
     };
 
     if (invoice.templateType === 'jewellery') {
@@ -675,7 +695,12 @@ export class InvoicesService {
   }
 
   generateSignature(invoiceId: string, organizationId: string): string {
-    const secret = process.env.JWT_SECRET!;
+    const secret = process.env.INVOICE_SIGNING_SECRET || process.env.JWT_SECRET!;
+    if (!process.env.INVOICE_SIGNING_SECRET) {
+      this.logger.warn(
+        'INVOICE_SIGNING_SECRET is not set, falling back to JWT_SECRET for invoice signatures',
+      );
+    }
     const expiry = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7; // 7 days
     const payload = `${invoiceId}:${organizationId}:${expiry}`;
     const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
@@ -686,26 +711,35 @@ export class InvoicesService {
     const [expiry, signature] = signatureParam.split('.');
     if (!expiry || !signature) throw new BadRequestException('Invalid signature format');
 
-    if (Date.now() / 1000 > Number(expiry)) {
+    if (Date.now() / 1000 > new Decimal(expiry).toNumber()) {
       throw new BadRequestException('Signature expired');
     }
 
-    // Try all possible organizationIds by brute-forcing the signature validation.
-    // Since the signature is HMAC-SHA256, we verify by checking which secret combination works.
-    // First, get all unique organizationIds from invoices that match the invoiceId pattern
-    const secret = process.env.JWT_SECRET!;
+    const secret = process.env.INVOICE_SIGNING_SECRET || process.env.JWT_SECRET!;
+    if (!process.env.INVOICE_SIGNING_SECRET) {
+      this.logger.warn(
+        'INVOICE_SIGNING_SECRET is not set, falling back to JWT_SECRET for invoice signatures',
+      );
+    }
+
     const invoices = await this.prisma.$queryRaw<{ id: string; organizationId: string }[]>`
       SELECT id, "organizationId" FROM "Invoice" WHERE id = ${invoiceId} LIMIT 1
     `;
-    
+
     if (!invoices || invoices.length === 0) throw new NotFoundException('Invoice not found');
-    
+
     const invoice = invoices[0];
-    
+
     const payload = `${invoiceId}:${invoice.organizationId}:${expiry}`;
     const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
 
-    if (signature !== expected) {
+    const signatureBuffer = Buffer.from(signature, 'hex');
+    const expectedBuffer = Buffer.from(expected, 'hex');
+
+    if (
+      signatureBuffer.length !== expectedBuffer.length ||
+      !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+    ) {
       throw new BadRequestException('Invalid signature');
     }
 
@@ -719,7 +753,9 @@ export class InvoicesService {
     if (!invoice) throw new NotFoundException('Invoice not found');
 
     if (!invoice.invoiceNumber) {
-      throw new BadRequestException('Cannot send an invoice without an invoice number (Drafts cannot be sent)');
+      throw new BadRequestException(
+        'Cannot send an invoice without an invoice number (Drafts cannot be sent)',
+      );
     }
 
     if (invoice.status === InvoiceStatus.CANCELLED) {
@@ -734,7 +770,10 @@ export class InvoicesService {
       });
     }
 
-    return { success: true, message: `Invoice ${invoice.invoiceNumber} sent to ${dto.recipientEmails.join(', ')}` };
+    return {
+      success: true,
+      message: `Invoice ${invoice.invoiceNumber} sent to ${dto.recipientEmails.join(', ')}`,
+    };
   }
 
   async findByNumber(invoiceNumber: string, organizationId: string) {
@@ -749,7 +788,7 @@ export class InvoicesService {
     if (!inv) throw new NotFoundException('Invoice not found');
     return {
       ...inv,
-      remainingBalance: Number(inv.totalAmount) - Number(inv.paidAmount),
+      remainingBalance: new Decimal(inv.totalAmount).minus(new Decimal(inv.paidAmount)).toNumber(),
     };
   }
 
@@ -817,13 +856,16 @@ export class InvoicesService {
     if (!existing) throw new NotFoundException('Invoice not found');
 
     if (existing.status !== InvoiceStatus.DRAFT) {
-      throw new BadRequestException('Currently, only DRAFT invoices can be modified. For finalized invoices, please cancel and recreate.');
+      throw new BadRequestException(
+        'Currently, only DRAFT invoices can be modified. For finalized invoices, please cancel and recreate.',
+      );
     }
 
     const dummyDto: CreateInvoiceDto = {
       customerId: dto.customerId ?? existing.customerId,
       items: dto.items ?? (existing.items as any),
-      paidAmount: dto.paidAmount !== undefined ? dto.paidAmount : Number(existing.paidAmount),
+      paidAmount:
+        dto.paidAmount !== undefined ? dto.paidAmount : new Decimal(existing.paidAmount).toNumber(),
       placeOfSupply: dto.placeOfSupply ?? existing.placeOfSupply,
       templateType: dto.templateType ?? existing.templateType,
       modeOfPayment: dto.modeOfPayment ?? existing.modeOfPayment,
@@ -834,47 +876,67 @@ export class InvoicesService {
       notes: dto.notes ?? existing.notes ?? undefined,
       invoiceDate: dto.invoiceDate ?? existing.invoiceDate?.toISOString(),
       buyerAddress: dto.buyerAddress,
-      taxType: dto.taxType as any ?? (existing.taxType as any),
-      cgstRate: dto.cgstRate ?? Number(existing.cgstRate),
-      sgstRate: dto.sgstRate ?? Number(existing.sgstRate),
-      igstRate: dto.igstRate ?? Number(existing.igstRate),
+      taxType: (dto.taxType as any) ?? (existing.taxType as any),
+      cgstRate: dto.cgstRate ?? new Decimal(existing.cgstRate).toNumber(),
+      sgstRate: dto.sgstRate ?? new Decimal(existing.sgstRate).toNumber(),
+      igstRate: dto.igstRate ?? new Decimal(existing.igstRate).toNumber(),
     };
 
     const financials = await this._calculateInvoiceFinancials(dummyDto, user, true);
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.invoiceItem.deleteMany({ where: { invoiceId: id, organizationId } });
+      const existingItems = existing.items;
+      const existingItemIds = new Set(existingItems.map((i) => i.id));
 
-      await tx.invoiceItem.createMany({
-        data: financials.lineItems.map((item) => ({
-          invoiceId: id,
-          organizationId,
-          slNo: item.slNo,
-          description: item.description,
-          hsnSac: item.hsnSac,
-          quantity: item.quantity,
-          unit: item.unit,
-          metalType: item.metalType,
-          metalRate: item.metalRate,
-          purityLabel: item.purityLabel,
-          purityValue: item.purityValue,
-          purityBasis: item.purityBasis,
-          effectiveRate: item.effectiveRate,
-          grossWeight: item.grossWeight,
-          stoneWeight: item.stoneWeight,
-          netWeight: item.netWeight,
-          makingCharges: item.makingCharges,
-          makingChargesType: item.makingChargesType,
-          makingChargesAmount: item.makingChargesAmount,
-          stoneCharges: item.stoneCharges,
-          isHallmarked: item.isHallmarked,
-          hallmarkingCharge: item.hallmarkingCharge,
-          huid: item.huid,
-          taxableAmount: item.itemAmount,
-          totalAmount: item.itemAmount, // for backward compat
-          unitPrice: item.effectiveRate, // for backward compat
-        })),
-      });
+      const itemsToCreate = [];
+      const itemsToUpdate = [];
+      const incomingItemIds = new Set();
+
+      for (const item of financials.lineItems) {
+        const originalItem = dto.items?.find((oi: any) => oi.slNo === item.slNo);
+
+        if (
+          originalItem &&
+          (originalItem as any).id &&
+          existingItemIds.has((originalItem as any).id)
+        ) {
+          itemsToUpdate.push({
+            id: (originalItem as any).id,
+            ...this._mapFinancialItemToDb(item, id, organizationId),
+          });
+          incomingItemIds.add((originalItem as any).id);
+        } else {
+          itemsToCreate.push(this._mapFinancialItemToDb(item, id, organizationId));
+        }
+      }
+
+      // Delete items that are not in the updated list
+      const itemsToDelete = existingItems.filter((i) => !incomingItemIds.has(i.id));
+      if (itemsToDelete.length > 0) {
+        await tx.invoiceItem.deleteMany({
+          where: {
+            id: { in: itemsToDelete.map((i) => i.id) },
+            organizationId,
+          },
+        });
+      }
+
+      if (itemsToUpdate.length > 0) {
+        await Promise.all(
+          itemsToUpdate.map((item) =>
+            tx.invoiceItem.update({
+              where: { id: item.id, organizationId },
+              data: item,
+            }),
+          ),
+        );
+      }
+
+      if (itemsToCreate.length > 0) {
+        await tx.invoiceItem.createMany({
+          data: itemsToCreate,
+        });
+      }
 
       return tx.invoice.update({
         where: { id, organizationId },
@@ -913,6 +975,37 @@ export class InvoicesService {
         },
       });
     });
+  }
+
+  private _mapFinancialItemToDb(item: any, invoiceId: string, organizationId: string) {
+    return {
+      invoiceId,
+      organizationId,
+      slNo: item.slNo,
+      description: item.description,
+      hsnSac: item.hsnSac,
+      quantity: item.quantity,
+      unit: item.unit,
+      metalType: item.metalType,
+      metalRate: item.metalRate,
+      purityLabel: item.purityLabel,
+      purityValue: item.purityValue,
+      purityBasis: item.purityBasis,
+      effectiveRate: item.effectiveRate,
+      grossWeight: item.grossWeight,
+      stoneWeight: item.stoneWeight,
+      netWeight: item.netWeight,
+      makingCharges: item.makingCharges,
+      makingChargesType: item.makingChargesType,
+      makingChargesAmount: item.makingChargesAmount,
+      stoneCharges: item.stoneCharges,
+      isHallmarked: item.isHallmarked,
+      hallmarkingCharge: item.hallmarkingCharge,
+      huid: item.huid,
+      taxableAmount: item.itemAmount,
+      totalAmount: item.itemAmount,
+      unitPrice: item.effectiveRate,
+    };
   }
 
   private async _createInvoiceBalanceRecord(
@@ -977,7 +1070,11 @@ export class InvoicesService {
     return ledger;
   }
 
-  private async _calculateInvoiceFinancials(dto: CreateInvoiceDto, user: CurrentUserData, isDraft: boolean) {
+  private async _calculateInvoiceFinancials(
+    dto: CreateInvoiceDto,
+    user: CurrentUserData,
+    isDraft: boolean,
+  ) {
     const { organizationId } = user;
 
     // 1. Fetch dependencies context
@@ -1005,19 +1102,28 @@ export class InvoicesService {
 
     // GST rates from config (defaulting to 3% total if missing)
     const goldGstRate = new Decimal(config['GOLD_GST_RATE'] || '3.00');
-    
+
     // Rates overrides
-    const igstRate = dto.igstRate !== undefined 
-      ? new Decimal(dto.igstRate) 
-      : (taxType === TaxType.IGST ? goldGstRate : new Decimal(0));
-      
-    const cgstRate = dto.cgstRate !== undefined 
-      ? new Decimal(dto.cgstRate) 
-      : (taxType === TaxType.CGST_SGST ? goldGstRate.div(2) : new Decimal(0));
-      
-    const sgstRate = dto.sgstRate !== undefined 
-      ? new Decimal(dto.sgstRate) 
-      : (taxType === TaxType.CGST_SGST ? goldGstRate.div(2) : new Decimal(0));
+    const igstRate =
+      dto.igstRate !== undefined
+        ? new Decimal(dto.igstRate)
+        : taxType === TaxType.IGST
+          ? goldGstRate
+          : new Decimal(0);
+
+    const cgstRate =
+      dto.cgstRate !== undefined
+        ? new Decimal(dto.cgstRate)
+        : taxType === TaxType.CGST_SGST
+          ? goldGstRate.div(2)
+          : new Decimal(0);
+
+    const sgstRate =
+      dto.sgstRate !== undefined
+        ? new Decimal(dto.sgstRate)
+        : taxType === TaxType.CGST_SGST
+          ? goldGstRate.div(2)
+          : new Decimal(0);
 
     // 3. Process Line Items
     const lineItems = dto.items.map((item, index) => {
@@ -1043,16 +1149,11 @@ export class InvoicesService {
     });
 
     // 4. Aggregate Totals
-    const totals = this.calcService.computeInvoiceTotals(
-      lineItems,
-      taxType,
-      {
-        cgst: cgstRate.toString(),
-        sgst: sgstRate.toString(),
-        igst: igstRate.toString(),
-      },
-      hallmarkingChargePerItem,
-    );
+    const totals = this.calcService.computeInvoiceTotals(lineItems, taxType, {
+      cgst: cgstRate.toString(),
+      sgst: sgstRate.toString(),
+      igst: igstRate.toString(),
+    });
 
     const totalHallmarkingCharges = lineItems.reduce(
       (sum, item) => sum.plus(item.hallmarkingCharge),
@@ -1127,50 +1228,77 @@ export class InvoicesService {
 
   private numberToWords(num: number): string {
     if (num === 0) return 'Zero';
-    
+
     const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
-    const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-    
+    const teens = [
+      'Ten',
+      'Eleven',
+      'Twelve',
+      'Thirteen',
+      'Fourteen',
+      'Fifteen',
+      'Sixteen',
+      'Seventeen',
+      'Eighteen',
+      'Nineteen',
+    ];
+    const tens = [
+      '',
+      '',
+      'Twenty',
+      'Thirty',
+      'Forty',
+      'Fifty',
+      'Sixty',
+      'Seventy',
+      'Eighty',
+      'Ninety',
+    ];
+
     const convertLessThanThousand = (n: number): string => {
       if (n === 0) return '';
       if (n < 10) return ones[n];
       if (n < 20) return teens[n - 10];
       if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 !== 0 ? ' ' + ones[n % 10] : '');
-      return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 !== 0 ? ' and ' + convertLessThanThousand(n % 100) : '');
+      return (
+        ones[Math.floor(n / 100)] +
+        ' Hundred' +
+        (n % 100 !== 0 ? ' and ' + convertLessThanThousand(n % 100) : '')
+      );
     };
-    
+
     const convert = (n: number): string => {
       if (n === 0) return 'Zero';
-      
+
       const crore = Math.floor(n / 10000000);
       const lakh = Math.floor((n % 10000000) / 100000);
       const thousand = Math.floor((n % 100000) / 1000);
       const remainder = n % 1000;
-      
+
       let result = '';
       if (crore > 0) result += convertLessThanThousand(crore) + ' Crore ';
       if (lakh > 0) result += convertLessThanThousand(lakh) + ' Lakh ';
       if (thousand > 0) result += convertLessThanThousand(thousand) + ' Thousand ';
       if (remainder > 0) result += convertLessThanThousand(remainder);
-      
+
       return result.trim();
     };
-    
+
     const rupees = Math.floor(num);
     const paise = Math.round((num - rupees) * 100);
-    
+
     let result = convert(rupees) + ' Rupees';
     if (paise > 0) {
       result += ' and ' + convertLessThanThousand(paise) + ' Paise';
     }
-    
+
     return result;
   }
 
   async generatePreviewHtml(organizationId: string): Promise<string> {
     const settings = await this.prisma.orgInvoiceSettings.findUnique({ where: { organizationId } });
-    if (!settings) throw new NotFoundException('Invoice settings not found. Please configure settings first.');
+    if (!settings)
+      throw new NotFoundException('Invoice settings not found. Please configure settings first.');
 
     const companySnapshot = {
       name: settings.companyName,
@@ -1184,13 +1312,15 @@ export class InvoicesService {
       mantra: settings.mantra ?? '',
       logo: settings.logoUrl ?? '',
       bisLogo: settings.bisLogoUrl ?? '',
-      bankDetails: settings.bankName ? {
-        bankName: settings.bankName,
-        branch: settings.bankBranch ?? '',
-        accountName: settings.bankAccountName ?? '',
-        accountNumber: settings.bankAccountNumber ?? '',
-        ifsc: settings.bankIfsc ?? '',
-      } : undefined,
+      bankDetails: settings.bankName
+        ? {
+            bankName: settings.bankName,
+            branch: settings.bankBranch ?? '',
+            accountName: settings.bankAccountName ?? '',
+            accountNumber: settings.bankAccountNumber ?? '',
+            ifsc: settings.bankIfsc ?? '',
+          }
+        : undefined,
     };
 
     const buyerSnapshot = {
@@ -1202,17 +1332,43 @@ export class InvoicesService {
     };
 
     const sampleItems = [
-      { slNo: 1, description: 'Gold Ring 22K', hsnSac: '7113', quantity: 1, unit: 'PCS', rate: 25000, makingCharges: 500, purity: '22K', grossWeight: 10, netWeight: 9.5, huid: 'A12345', amount: 25500 },
-      { slNo: 2, description: 'Silver Chain', hsnSac: '7113', quantity: 2, unit: 'PCS', rate: 2000, makingCharges: 100, purity: '925', grossWeight: 50, netWeight: 48, huid: '', amount: 4200 },
+      {
+        slNo: 1,
+        description: 'Gold Ring 22K',
+        hsnSac: '7113',
+        quantity: 1,
+        unit: 'PCS',
+        rate: 25000,
+        makingCharges: 500,
+        purity: '22K',
+        grossWeight: 10,
+        netWeight: 9.5,
+        huid: 'A12345',
+        amount: 25500,
+      },
+      {
+        slNo: 2,
+        description: 'Silver Chain',
+        hsnSac: '7113',
+        quantity: 2,
+        unit: 'PCS',
+        rate: 2000,
+        makingCharges: 100,
+        purity: '925',
+        grossWeight: 50,
+        netWeight: 48,
+        huid: '',
+        amount: 4200,
+      },
     ];
 
     const taxType = settings.defaultTaxType;
     const isIgst = taxType === TaxType.IGST;
     const isNone = taxType === TaxType.NONE;
-    
-    const cgstRate = isIgst || isNone ? 0 : Number(settings.defaultCgstRate);
-    const sgstRate = isIgst || isNone ? 0 : Number(settings.defaultSgstRate);
-    const igstRate = isIgst ? Number(settings.defaultIgstRate) : 0;
+
+    const cgstRate = isIgst || isNone ? 0 : new Decimal(settings.defaultCgstRate).toNumber();
+    const sgstRate = isIgst || isNone ? 0 : new Decimal(settings.defaultSgstRate).toNumber();
+    const igstRate = isIgst ? new Decimal(settings.defaultIgstRate).toNumber() : 0;
 
     const subtotal = sampleItems.reduce((sum, i) => sum + i.amount, 0);
     const cgstAmount = Math.round(((subtotal * cgstRate) / 100) * 100) / 100;

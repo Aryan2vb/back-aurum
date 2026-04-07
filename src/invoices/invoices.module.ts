@@ -14,4 +14,3 @@ import { CreditsModule } from '../credits/credits.module';
   exports: [InvoicesService],
 })
 export class InvoicesModule {}
-

@@ -23,7 +23,6 @@ import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { OrganizationRole } from '@prisma/client';
-import { deprecate } from 'util';
 
 @Controller('credits')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -158,7 +157,6 @@ export class CreditsController {
   ) {
     return this.creditsService.getCustomerUdharEntries(customerId, user.organizationId);
   }
-
 
   // ===========================
   // TRANSACTIONS

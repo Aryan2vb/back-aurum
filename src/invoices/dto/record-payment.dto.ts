@@ -18,4 +18,3 @@ export class RecordPaymentDto {
   @IsOptional()
   notes?: string;
 }
-

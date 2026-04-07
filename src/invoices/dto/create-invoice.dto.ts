@@ -202,5 +202,3 @@ export class CreateInvoiceDto {
   @IsOptional()
   igstRate?: number;
 }
-
-

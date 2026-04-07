@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportFiltersDto } from './dto/report-filters.dto';
-import { InvoiceStatus, Prisma, CreditStatus } from '@prisma/client';
+import { InvoiceStatus, CreditStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
@@ -90,7 +90,10 @@ export class ReportsService {
         acc.totalCgst = acc.totalCgst.plus(inv.cgstAmount || 0);
         acc.totalSgst = acc.totalSgst.plus(inv.sgstAmount || 0);
         acc.totalIgst = acc.totalIgst.plus(inv.igstAmount || 0);
-        acc.totalTax = acc.totalTax.plus(inv.cgstAmount || 0).plus(inv.sgstAmount || 0).plus(inv.igstAmount || 0);
+        acc.totalTax = acc.totalTax
+          .plus(inv.cgstAmount || 0)
+          .plus(inv.sgstAmount || 0)
+          .plus(inv.igstAmount || 0);
         acc.totalTaxable = acc.totalTaxable.plus(inv.taxableAmount || 0);
         return acc;
       },
@@ -115,7 +118,7 @@ export class ReportsService {
     // Add customer filter through invoice relationship if needed
     if (filters.customerId) {
       where.invoice = {
-        customerId: filters.customerId
+        customerId: filters.customerId,
       };
     }
 
@@ -203,15 +206,21 @@ export class ReportsService {
       (acc, item) => {
         if (!item.metalType) return acc;
         const mt = item.metalType.toUpperCase();
-        
+
         if (!acc[mt]) {
-          acc[mt] = { count: 0, totalGrossWeight: new Decimal(0), totalNetWeight: new Decimal(0), purities: {} };
+          acc[mt] = {
+            count: 0,
+            totalGrossWeight: new Decimal(0),
+            totalNetWeight: new Decimal(0),
+            purities: {},
+          };
         }
-        
+
         acc[mt].count += 1;
-        if (item.grossWeight) acc[mt].totalGrossWeight = acc[mt].totalGrossWeight.plus(item.grossWeight);
+        if (item.grossWeight)
+          acc[mt].totalGrossWeight = acc[mt].totalGrossWeight.plus(item.grossWeight);
         if (item.netWeight) acc[mt].totalNetWeight = acc[mt].totalNetWeight.plus(item.netWeight);
-        
+
         const purity = item.purityLabel || 'UNKNOWN';
         acc[mt].purities[purity] = (acc[mt].purities[purity] || 0) + 1;
 

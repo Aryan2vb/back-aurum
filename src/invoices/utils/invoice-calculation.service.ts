@@ -20,6 +20,7 @@ export interface ComputedItem {
   effectiveRate: Decimal;
   metalValue: Decimal;
   makingChargesAmount: Decimal;
+  hallmarkingCharge: Decimal;
   itemAmount: Decimal; // Pre-tax amount (taxable amount)
 }
 
@@ -47,7 +48,9 @@ export class InvoiceCalculationService {
     const stoneWeight = new Decimal(input.stoneWeight || 0);
     const makingCharges = new Decimal(input.makingCharges || 0);
     const stoneCharges = new Decimal(input.stoneCharges || 0);
-    const hallmarkingCharge = input.isHallmarked ? new Decimal(input.hallmarkingCharge || 0) : new Decimal(0);
+    const hallmarkingCharge = input.isHallmarked
+      ? new Decimal(input.hallmarkingCharge || 0)
+      : new Decimal(0);
 
     // 1. Calculate weights
     const netWeight = Decimal.max(0, grossWeight.minus(stoneWeight));
@@ -87,6 +90,7 @@ export class InvoiceCalculationService {
       effectiveRate,
       metalValue,
       makingChargesAmount,
+      hallmarkingCharge,
       itemAmount,
     };
   }
@@ -98,14 +102,13 @@ export class InvoiceCalculationService {
     items: ComputedItem[],
     taxType: TaxType,
     gstRates: { cgst: string; sgst: string; igst: string },
-    hallmarkingChargePerItem: Decimal,
   ): InvoiceTotals {
     let subtotal = new Decimal(0);
     let totalHallmarkingCharges = new Decimal(0);
 
     for (const item of items) {
       subtotal = subtotal.plus(item.itemAmount);
-      // We assume itemAmount already includes individual hallmarking charges if isHallmarked is true
+      totalHallmarkingCharges = totalHallmarkingCharges.plus(item.hallmarkingCharge);
     }
 
     const taxableAmount = subtotal; // Assuming all pre-tax is taxable

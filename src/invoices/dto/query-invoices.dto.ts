@@ -1,4 +1,13 @@
-import { IsEnum, IsOptional, IsString, IsDateString, IsInt, Min, Max, IsBoolean } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsDateString,
+  IsInt,
+  Min,
+  Max,
+  IsBoolean,
+} from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { InvoiceStatus } from '@prisma/client';
 

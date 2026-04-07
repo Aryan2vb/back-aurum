@@ -54,13 +54,23 @@ export class InvoicesController {
   }
 
   @Get('settings')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
   getSettings(@CurrentUser() user: CurrentUserData) {
     return this.invoicesService.getSettings(user.organizationId);
   }
 
   @Get('settings/preview')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
   async previewSettings(@CurrentUser() user: CurrentUserData, @Res() res: Response) {
     this.logger.log(`GET /invoices/settings/preview for org ${user.organizationId}`);
     const html = await this.invoicesService.generatePreviewHtml(user.organizationId);
@@ -105,13 +115,23 @@ export class InvoicesController {
   }
 
   @Get()
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
   findAll(@Query() query: QueryInvoicesDto, @CurrentUser() user: CurrentUserData) {
     return this.invoicesService.findAll(query, user.organizationId);
   }
 
   @Get(':id')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
   findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.invoicesService.findOne(id, user.organizationId);
   }
@@ -222,7 +242,12 @@ export class InvoicesController {
   }
 
   @Get(':id/sign')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
   signUrl(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const signature = this.invoicesService.generateSignature(id, user.organizationId);
     return { signature };
