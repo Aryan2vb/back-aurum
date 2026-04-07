@@ -36,21 +36,24 @@ import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { OrganizationRole } from '@prisma/client';
+import { InvoicesService } from '../invoices/invoices.service';
+import { QueryInvoicesDto } from '../invoices/dto/query-invoices.dto';
 
 @Controller('customers')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CustomersController {
   private readonly logger = new Logger(CustomersController.name);
 
-  constructor(private readonly customersService: CustomersService) {
+  constructor(
+    private readonly customersService: CustomersService,
+    private readonly invoicesService: InvoicesService,
+  ) {
     this.logger.log('CustomersController initialized');
   }
 
   // ===========================
   // CUSTOMER CRUD
   // ===========================
-
-
 
   @Post('bulk')
   @HttpCode(HttpStatus.CREATED)
@@ -65,48 +68,61 @@ export class CustomersController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
-  create(
-    @Body() createCustomerDto: CreateCustomerDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  create(@Body() createCustomerDto: CreateCustomerDto, @CurrentUser() user: CurrentUserData) {
     return this.customersService.create(createCustomerDto, user);
   }
 
   @Get()
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
-  findAll(
-    @Query() paginationDto: PaginationQueryDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  findAll(@Query() paginationDto: PaginationQueryDto, @CurrentUser() user: CurrentUserData) {
     return this.customersService.findAll(paginationDto, user.organizationId);
   }
 
   @Get('search')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
-  search(
-    @Query() searchDto: SearchCustomerDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  search(@Query() searchDto: SearchCustomerDto, @CurrentUser() user: CurrentUserData) {
     return this.customersService.search(searchDto, user.organizationId);
   }
 
   @Get('stats')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
   getStats(@CurrentUser() user: CurrentUserData) {
     return this.customersService.getStats(user.organizationId);
   }
 
   @Get('code/:customerCode')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
-  findByCode(
-    @Param('customerCode') customerCode: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  findByCode(@Param('customerCode') customerCode: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.findByCode(customerCode, user.organizationId);
   }
 
   @Get(':id')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
   findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.findOne(id, user.organizationId);
   }
@@ -128,6 +144,25 @@ export class CustomersController {
     return this.customersService.remove(id, user);
   }
 
+  // ===========================
+  // INVOICES (customer profile view)
+  // ===========================
+
+  @Get(':id/invoices')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getCustomerInvoices(
+    @Param('id') id: string,
+    @Query() query: QueryInvoicesDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.invoicesService.findAll({ ...query, customerId: id }, user.organizationId);
+  }
+
   @Patch('bulk/status')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   bulkUpdateStatus(
@@ -142,11 +177,13 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/contact-details')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
-  getContactDetails(
-    @Param('customerId') customerId: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getContactDetails(@Param('customerId') customerId: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.getContactDetails(customerId, user.organizationId);
   }
 
@@ -193,11 +230,13 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/locations')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
-  getLocations(
-    @Param('customerId') customerId: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getLocations(@Param('customerId') customerId: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.getLocations(customerId, user.organizationId);
   }
 
@@ -220,12 +259,7 @@ export class CustomersController {
     @Body() updateLocationDto: UpdateLocationDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.customersService.updateLocation(
-      customerId,
-      locationId,
-      updateLocationDto,
-      user,
-    );
+    return this.customersService.updateLocation(customerId, locationId, updateLocationDto, user);
   }
 
   @Delete(':customerId/locations/:locationId')
@@ -244,11 +278,13 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/social-contexts')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
-  getSocialContexts(
-    @Param('customerId') customerId: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getSocialContexts(@Param('customerId') customerId: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.getSocialContexts(customerId, user.organizationId);
   }
 
@@ -295,11 +331,13 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/documents')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
-  getDocuments(
-    @Param('customerId') customerId: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getDocuments(@Param('customerId') customerId: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.getDocuments(customerId, user.organizationId);
   }
 
@@ -322,12 +360,7 @@ export class CustomersController {
     @Body() updateDocumentDto: UpdateDocumentDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.customersService.updateDocument(
-      customerId,
-      documentId,
-      updateDocumentDto,
-      user,
-    );
+    return this.customersService.updateDocument(customerId, documentId, updateDocumentDto, user);
   }
 
   @Delete(':customerId/documents/:documentId')
@@ -346,11 +379,13 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/accounts')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
-  getAccounts(
-    @Param('customerId') customerId: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getAccounts(@Param('customerId') customerId: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.getAccounts(customerId, user.organizationId);
   }
 
@@ -373,12 +408,7 @@ export class CustomersController {
     @Body() updateAccountDto: UpdateAccountDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.customersService.updateAccount(
-      customerId,
-      accountId,
-      updateAccountDto,
-      user,
-    );
+    return this.customersService.updateAccount(customerId, accountId, updateAccountDto, user);
   }
 
   @Delete(':customerId/accounts/:accountId')
@@ -397,11 +427,13 @@ export class CustomersController {
   // ===========================
 
   @Get(':customerId/meta-tracking')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
-  getMetaTrackings(
-    @Param('customerId') customerId: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getMetaTrackings(@Param('customerId') customerId: string, @CurrentUser() user: CurrentUserData) {
     return this.customersService.getMetaTrackings(customerId, user.organizationId);
   }
 

@@ -13,7 +13,3 @@ export class SignupWithoutUserDto {
   @IsNotEmpty()
   organizationName: string;
 }
-
-
-
-

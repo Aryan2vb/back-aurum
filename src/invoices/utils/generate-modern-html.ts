@@ -1,0 +1,237 @@
+import { InvoiceData } from './invoice-types';
+
+/**
+ * Generates a modern/clean themed HTML invoice
+ */
+export function generateModernInvoiceHtml(data: InvoiceData): string {
+  const {
+    company,
+    buyer,
+    metadata,
+    items,
+    taxes,
+    hsnSummary,
+    roundOff,
+    totalAmount,
+    amountInWords,
+    taxAmountInWords,
+    declaration = 'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.',
+  } = data;
+
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+      n,
+    );
+
+  const totalTaxableValue = hsnSummary.reduce((s, h) => s + h.taxableValue, 0);
+  const totalCgst = hsnSummary.reduce((s, h) => s + h.cgstAmount, 0);
+  const totalSgst = hsnSummary.reduce((s, h) => s + h.sgstAmount, 0);
+  const totalTax = hsnSummary.reduce((s, h) => s + h.totalTaxAmount, 0);
+
+  const itemRows = items
+    .map(
+      (item) => `
+        <tr>
+            <td style="text-align:center;padding:10px 8px;border-bottom:1px solid #eee;">${item.slNo}</td>
+            <td style="padding:10px 8px;border-bottom:1px solid #eee;font-weight:500;">${item.description}</td>
+            <td style="text-align:center;padding:10px 8px;border-bottom:1px solid #eee;color:#666;">${item.hsnSac}</td>
+            <td style="text-align:center;padding:10px 8px;border-bottom:1px solid #eee;">${item.quantity} ${item.unit}</td>
+            <td style="text-align:right;padding:10px 8px;border-bottom:1px solid #eee;">₹${fmt(item.rate)}</td>
+            <td style="text-align:right;padding:10px 8px;border-bottom:1px solid #eee;font-weight:600;">₹${fmt(item.amount)}</td>
+        </tr>
+    `,
+    )
+    .join('');
+
+  const hsnRows = hsnSummary
+    .map(
+      (h) => `
+        <tr>
+            <td style="padding:6px 10px;border-bottom:1px solid #eee;">${h.hsnSac}</td>
+            <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.taxableValue)}</td>
+            <td style="text-align:center;padding:6px 10px;border-bottom:1px solid #eee;">${h.cgstRate}%</td>
+            <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.cgstAmount)}</td>
+            <td style="text-align:center;padding:6px 10px;border-bottom:1px solid #eee;">${h.sgstRate}%</td>
+            <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.sgstAmount)}</td>
+            <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;font-weight:600;">₹${fmt(h.totalTaxAmount)}</td>
+        </tr>
+    `,
+    )
+    .join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice ${metadata.invoiceNo}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 13px; color: #1a1a2e; background: #fff; }
+        .invoice { max-width: 800px; margin: 0 auto; padding: 40px; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 3px solid #2563eb; }
+        .company-name { font-size: 22px; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
+        .company-info { color: #64748b; font-size: 12px; line-height: 1.6; }
+        .invoice-badge { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; padding: 8px 20px; border-radius: 6px; font-size: 14px; font-weight: 600; letter-spacing: 1px; }
+        .invoice-meta { text-align: right; margin-top: 8px; }
+        .invoice-meta div { font-size: 12px; color: #64748b; margin-top: 3px; }
+        .invoice-meta strong { color: #1e293b; }
+        .section { margin-bottom: 24px; }
+        .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: #2563eb; margin-bottom: 10px; }
+        .buyer-card { background: #f8fafc; border-radius: 8px; padding: 16px; border: 1px solid #e2e8f0; }
+        .buyer-name { font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 4px; }
+        .buyer-info { font-size: 12px; color: #64748b; line-height: 1.6; }
+        .meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .meta-item { background: #f8fafc; border-radius: 6px; padding: 8px 12px; border: 1px solid #e2e8f0; }
+        .meta-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+        .meta-value { font-size: 12px; font-weight: 500; color: #1e293b; margin-top: 2px; }
+        table { width: 100%; border-collapse: collapse; }
+        .items-table th { background: #f1f5f9; padding: 10px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #475569; border-bottom: 2px solid #e2e8f0; }
+        .subtotal-section { background: #f8fafc; border-radius: 8px; padding: 16px; margin-top: 16px; }
+        .subtotal-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; color: #475569; }
+        .total-row-modern { display: flex; justify-content: space-between; padding: 12px 0 4px; font-size: 18px; font-weight: 700; color: #1e293b; border-top: 2px solid #e2e8f0; margin-top: 8px; }
+        .words-box { background: #eff6ff; border-radius: 6px; padding: 10px 14px; font-size: 12px; color: #1e40ad; margin-top: 12px; border-left: 3px solid #2563eb; }
+        .hsn-section { margin-top: 24px; }
+        .hsn-table th { background: #f1f5f9; padding: 8px 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #475569; border-bottom: 2px solid #e2e8f0; }
+        .footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e2e8f0; display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        .declaration-text { font-size: 11px; color: #64748b; line-height: 1.6; }
+        .signature-area { text-align: right; }
+        .signature-line { border-top: 1px solid #cbd5e1; margin-top: 50px; padding-top: 8px; font-size: 12px; color: #475569; }
+        .bottom-note { text-align: center; margin-top: 24px; font-size: 11px; color: #94a3b8; font-style: italic; }
+        @media print {
+            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+            .invoice { padding: 20px; max-width: 100%; }
+            @page { margin: 10mm; size: A4; }
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice">
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <div class="company-name">${company.name}</div>
+                <div class="company-info">
+                    ${company.address}<br>
+                    GSTIN: ${company.gstin}<br>
+                    State: ${company.state} (${company.stateCode})
+                </div>
+            </div>
+            <div>
+                <div class="invoice-badge">TAX INVOICE</div>
+                <div class="invoice-meta">
+                    <div><strong>${metadata.invoiceNo}</strong></div>
+                    <div>Date: <strong>${metadata.date}</strong></div>
+                    ${metadata.modeOfPayment ? `<div>Payment: ${metadata.modeOfPayment}</div>` : ''}
+                </div>
+            </div>
+        </div>
+
+        <!-- Buyer + Meta -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+            <div class="section">
+                <div class="section-title">Bill To</div>
+                <div class="buyer-card">
+                    <div class="buyer-name">${buyer.name}</div>
+                    <div class="buyer-info">
+                        ${buyer.address}<br>
+                        ${buyer.phone ? `Phone: ${buyer.phone}<br>` : ''}
+                        State: ${buyer.state} (${buyer.stateCode})
+                    </div>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Details</div>
+                <div class="meta-grid" style="grid-template-columns:1fr 1fr;">
+                    ${metadata.referenceNo ? `<div class="meta-item"><div class="meta-label">Ref No.</div><div class="meta-value">${metadata.referenceNo}</div></div>` : ''}
+                    ${metadata.buyerOrderNo ? `<div class="meta-item"><div class="meta-label">Buyer Order</div><div class="meta-value">${metadata.buyerOrderNo}</div></div>` : ''}
+                    ${metadata.dispatchedThrough ? `<div class="meta-item"><div class="meta-label">Dispatch</div><div class="meta-value">${metadata.dispatchedThrough}</div></div>` : ''}
+                    ${metadata.destination ? `<div class="meta-item"><div class="meta-label">Destination</div><div class="meta-value">${metadata.destination}</div></div>` : ''}
+                    ${metadata.termsOfDelivery ? `<div class="meta-item" style="grid-column:span 2;"><div class="meta-label">Terms</div><div class="meta-value">${metadata.termsOfDelivery}</div></div>` : ''}
+                </div>
+            </div>
+        </div>
+
+        <!-- Items Table -->
+        <div class="section">
+            <div class="section-title">Items</div>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th style="text-align:center;width:40px;">#</th>
+                        <th style="text-align:left;">Description</th>
+                        <th style="text-align:center;width:90px;">HSN/SAC</th>
+                        <th style="text-align:center;width:80px;">Qty</th>
+                        <th style="text-align:right;width:90px;">Rate</th>
+                        <th style="text-align:right;width:100px;">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${itemRows}
+                </tbody>
+            </table>
+
+            <!-- Subtotal -->
+            <div class="subtotal-section">
+                <div class="subtotal-row"><span>Subtotal</span><span>₹${fmt(totalTaxableValue)}</span></div>
+                <div class="subtotal-row"><span>CGST @ ${taxes.cgstRate}%</span><span>₹${fmt(taxes.cgstAmount)}</span></div>
+                <div class="subtotal-row"><span>SGST @ ${taxes.sgstRate}%</span><span>₹${fmt(taxes.sgstAmount)}</span></div>
+                ${roundOff !== 0 ? `<div class="subtotal-row"><span>Round Off</span><span>${roundOff >= 0 ? '' : '(-)'}₹${fmt(Math.abs(roundOff))}</span></div>` : ''}
+                <div class="total-row-modern"><span>Total</span><span>₹${fmt(totalAmount)}</span></div>
+            </div>
+
+            <div class="words-box">
+                <strong>Amount in words:</strong> ${amountInWords}
+            </div>
+        </div>
+
+        <!-- HSN Summary -->
+        <div class="hsn-section">
+            <div class="section-title">HSN/SAC Summary</div>
+            <table class="hsn-table">
+                <thead>
+                    <tr>
+                        <th style="text-align:left;">HSN/SAC</th>
+                        <th style="text-align:right;">Taxable Value</th>
+                        <th style="text-align:center;">CGST Rate</th>
+                        <th style="text-align:right;">CGST Amt</th>
+                        <th style="text-align:center;">SGST Rate</th>
+                        <th style="text-align:right;">SGST Amt</th>
+                        <th style="text-align:right;">Total Tax</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${hsnRows}
+                    <tr style="font-weight:600;border-top:2px solid #e2e8f0;">
+                        <td style="padding:8px 10px;">Total</td>
+                        <td style="text-align:right;padding:8px 10px;">₹${fmt(totalTaxableValue)}</td>
+                        <td></td>
+                        <td style="text-align:right;padding:8px 10px;">₹${fmt(totalCgst)}</td>
+                        <td></td>
+                        <td style="text-align:right;padding:8px 10px;">₹${fmt(totalSgst)}</td>
+                        <td style="text-align:right;padding:8px 10px;">₹${fmt(totalTax)}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div style="font-size:11px;color:#64748b;margin-top:6px;">
+                Tax Amount (in words): <strong>${taxAmountInWords}</strong>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div>
+                <div class="section-title">Declaration</div>
+                <div class="declaration-text">${declaration}</div>
+            </div>
+            <div class="signature-area">
+                <div style="font-size:12px;color:#64748b;">for ${company.name}</div>
+                <div class="signature-line">Authorised Signatory</div>
+            </div>
+        </div>
+
+        <div class="bottom-note">This is a Computer Generated Invoice</div>
+    </div>
+</body>
+</html>`.trim();
+}

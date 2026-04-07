@@ -6,6 +6,8 @@ import { AuthModule } from './auth/auth.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { CustomersModule } from './customers/customers.module';
 import { CreditsModule } from './credits/credits.module';
+import { InvoicesModule } from './invoices/invoices.module';
+import { ReportsModule } from './reports/reports.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 
@@ -25,6 +27,8 @@ import { AppController } from './app.controller';
     OrganizationsModule,
     CustomersModule,
     CreditsModule,
+    InvoicesModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [

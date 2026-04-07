@@ -1,0 +1,3023 @@
+{
+  "info": {
+    "_postman_id": "458b1bf7-fe35-4c21-8049-aaac5a5faa9e",
+    "name": "Aurum API",
+    "description": "Postman collection for the Aurum NestJS backend API. Covers Auth, Organizations, Customers, Invoices, and Credits modules.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET Health Check",
+          "id": "719fd6d0-d241-444a-bcd2-7b42f2d2d10b",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "f49ecf5a-6d51-4248-a10a-104786231b21"
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST Signup",
+          "id": "bb55d54d-b764-4db2-b4ba-c2e5fc6d771d",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@test.com\",\n  \"fullName\": \"aryansoni\",\n  \"password\": \"aryansoni\",\n  \"organizationName\": \"test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "signup"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST Login",
+          "id": "95710a1c-374a-41a1-b7c1-83a59bb9faeb",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@test.com\",\n  \"password\": \"aryansoni\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST Logout",
+          "id": "80a22878-6247-48a3-aa2b-dd0937b2477e",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET Whoami",
+          "id": "3d0f3193-66ff-42da-9d7d-10f72a8529e5",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/whoami",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "whoami"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "8eaebc52-06be-437e-9fd0-a315c4277c69"
+    },
+    {
+      "name": "Organizations",
+      "item": [
+        {
+          "name": "POST Add Member",
+          "id": "fdd0efd9-f6fc-4fb8-ad3c-825ec50e833d",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"staff@example.com\",\n  \"fullName\": \"Staff Member\",\n  \"password\": \"password123\",\n  \"role\": \"STAFF\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/organizations/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "members"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET Get Members",
+          "id": "b4d9096b-1277-4087-9b4d-e438f5f7bf05",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "members"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH Change Member Role",
+          "id": "f8f3ce44-abf8-4c4e-9c64-bbc778c00aad",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"ADMIN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/organizations/members/:userId/role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "members",
+                ":userId",
+                "role"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE Remove Member",
+          "id": "baf2aee5-f3ac-4deb-a086-d069d195c0c7",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/members/:userId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "members",
+                ":userId"
+              ],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "20096938-4895-4d3e-b743-df478dc6c82e"
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "Customer CRUD",
+          "item": [
+            {
+              "name": "POST Create Customer",
+              "id": "f82688fb-8f80-4046-8412-d95001e7a348",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"Ramesh Kumar\",\n  \"fatherName\": \"Suresh Kumar\",\n  \"motherName\": \"Sunita Kumar\",\n  \"spouseName\": \"\",\n  \"gender\": \"MALE\",\n  \"dateOfBirth\": \"1990-01-15\",\n  \"isDobEstimated\": false,\n  \"contactDetails\": {\n    \"primaryPhone\": \"9876543210\",\n    \"secondaryPhone\": \"9876543211\",\n    \"phoneOwnerType\": \"SELF\",\n    \"preferredContactMethod\": \"PHONE\"\n  },\n  \"locations\": [\n    {\n      \"village\": \"Rampur\",\n      \"tehsil\": \"Sadar\",\n      \"district\": \"Agra\",\n      \"state\": \"Uttar Pradesh\",\n      \"pincode\": \"282001\",\n      \"landmark\": \"Near temple\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Bulk Create Customers",
+              "id": "2fc1308f-7739-4573-99d4-f799fd86afec",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customers\": []\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/bulk",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    "bulk"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET List Customers",
+              "id": "c46c1d46-d17f-43b6-ab9b-fbd13615a2e8",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Search Customers",
+              "id": "4292bcc2-7602-4f74-ab8e-0f4a17531154",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/search?query=Ramesh&status=ACTIVE&gender=MALE&page=1&limit=20&sortBy=createdAt&sortOrder=desc",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    "search"
+                  ],
+                  "query": [
+                    {
+                      "key": "query",
+                      "value": "Ramesh"
+                    },
+                    {
+                      "key": "status",
+                      "value": "ACTIVE"
+                    },
+                    {
+                      "key": "gender",
+                      "value": "MALE"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "sortBy",
+                      "value": "createdAt"
+                    },
+                    {
+                      "key": "sortOrder",
+                      "value": "desc"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Customer Stats",
+              "id": "f36c0be3-ee66-4f95-b537-b05025ac1cdf",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/stats",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    "stats"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Find Customer by Code",
+              "id": "d9874525-451c-4e1a-a3ae-2fec62fa0665",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/code/:customerCode",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    "code",
+                    ":customerCode"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerCode",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Find Customer by ID",
+              "id": "70dc1b0e-241e-4723-a15b-f6108900c09c",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Update Customer",
+              "id": "f4e098a8-d031-49c1-972c-bb26b7c306ca",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"Ramesh Kumar Updated\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DELETE Delete Customer",
+              "id": "b9f587f2-6166-46a1-90cb-ce82de6955f9",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Bulk Update Status",
+              "id": "c6604f96-e99f-47de-ab5b-b79c710a68b7",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerIds\": [\"id1\", \"id2\"],\n  \"status\": \"ACTIVE\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/bulk/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    "bulk",
+                    "status"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Customer Invoices",
+              "id": "a9a03a48-c949-40f7-b5c2-2a86778bbe1a",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:id/invoices?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":id",
+                    "invoices"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "id": "94526036-9595-40fa-bbe1-83fd624124aa"
+        },
+        {
+          "name": "Contact Details",
+          "item": [
+            {
+              "name": "GET Get Contact Details",
+              "id": "021c97f0-11a9-4d72-9f3e-0c4b74e639da",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/contact-details",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "contact-details"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Add Contact Detail",
+              "id": "a3988fc9-5ccb-452d-8253-284970eab0ae",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"primaryPhone\": \"9876543210\",\n  \"secondaryPhone\": \"9876543211\",\n  \"phoneOwnerType\": \"SELF\",\n  \"preferredContactMethod\": \"PHONE\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/contact-details",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "contact-details"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Update Contact Detail",
+              "id": "3492044a-b061-4998-a00e-f1569a4854e9",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"primaryPhone\": \"9999999999\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/contact-details/:contactDetailId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "contact-details",
+                    ":contactDetailId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "contactDetailId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DELETE Delete Contact Detail",
+              "id": "222b11f3-2117-4be1-8316-b25189e99f8a",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/contact-details/:contactDetailId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "contact-details",
+                    ":contactDetailId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "contactDetailId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "id": "cb054db4-541b-46db-b76f-84fb41720d1c"
+        },
+        {
+          "name": "Locations",
+          "item": [
+            {
+              "name": "GET Get Locations",
+              "id": "ac2eaa19-3dde-492d-8548-abaf6cc7a6b5",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/locations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "locations"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Add Location",
+              "id": "5abfea33-f71d-47d2-8bad-821a7d9cb021",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"village\": \"Rampur\",\n  \"tehsil\": \"Sadar\",\n  \"district\": \"Agra\",\n  \"state\": \"Uttar Pradesh\",\n  \"pincode\": \"282001\",\n  \"landmark\": \"Near temple\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/locations",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "locations"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Update Location",
+              "id": "a2b53d03-f29b-4217-a731-94bd1fa4d0bc",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"village\": \"New Village\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/locations/:locationId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "locations",
+                    ":locationId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "locationId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DELETE Delete Location",
+              "id": "f8a33f73-2f81-4688-98c2-6a3bc9d4197e",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/locations/:locationId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "locations",
+                    ":locationId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "locationId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "id": "37fd793e-fd5b-4d37-a054-e62e056e24b5"
+        },
+        {
+          "name": "Social Contexts",
+          "item": [
+            {
+              "name": "GET Get Social Contexts",
+              "id": "ac1b6c86-0df1-4c16-9478-5b061cc116d5",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/social-contexts",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "social-contexts"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Add Social Context",
+              "id": "46a75731-e5e5-40e1-bfb3-6789f1196e77",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"caste\": \"General\",\n  \"educationLevel\": \"Graduate\",\n  \"occupation\": \"Farmer\",\n  \"incomeRange\": \"MEDIUM\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/social-contexts",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "social-contexts"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Update Social Context",
+              "id": "ea1f0964-fdc4-4025-9241-17414123c23d",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"occupation\": \"Business\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/social-contexts/:socialContextId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "social-contexts",
+                    ":socialContextId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "socialContextId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DELETE Delete Social Context",
+              "id": "e6af826e-8eeb-4c7b-a9e1-d57741266ebc",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/social-contexts/:socialContextId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "social-contexts",
+                    ":socialContextId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "socialContextId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "id": "31353ad6-decd-465b-9c76-844cf480dd66"
+        },
+        {
+          "name": "Documents (KYC)",
+          "item": [
+            {
+              "name": "GET Get Documents",
+              "id": "14cfc889-19d7-4ab0-ad2e-027fa3f918dc",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/documents",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "documents"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Add Document",
+              "id": "2905878a-aa58-42f7-a282-993778aaac0a",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"aadharLast4\": \"1234\",\n  \"aadharVerified\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/documents",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "documents"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Update Document",
+              "id": "fb8c787a-3c57-4588-a0b8-49df4ea055ae",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"aadharVerified\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/documents/:documentId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "documents",
+                    ":documentId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "documentId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DELETE Delete Document",
+              "id": "dca1ab4f-7e96-4021-ac20-b48819384929",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/documents/:documentId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "documents",
+                    ":documentId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "documentId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "id": "96f1aebb-a4a0-4f65-bff7-ed03d609fdcb"
+        },
+        {
+          "name": "Accounts",
+          "item": [
+            {
+              "name": "GET Get Accounts",
+              "id": "2b701069-7fd3-4f3c-9439-e3b2674341ab",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/accounts",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "accounts"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Add Account",
+              "id": "727994a4-6cd5-4180-ae5a-9fa853c8ef80",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"openingBalance\": 0,\n  \"openedAt\": \"2024-01-01\",\n  \"status\": \"ACTIVE\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/accounts",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "accounts"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Update Account",
+              "id": "a219c2a7-226a-4e93-a180-b6e2343ff97a",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"INACTIVE\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/accounts/:accountId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "accounts",
+                    ":accountId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "accountId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DELETE Delete Account",
+              "id": "8ba24b9c-14e6-4fbe-82d0-9999b13c08ba",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/accounts/:accountId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "accounts",
+                    ":accountId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "accountId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "id": "8961c767-c874-4086-923f-96155410b9cd"
+        },
+        {
+          "name": "Meta Tracking",
+          "item": [
+            {
+              "name": "GET Get Meta Trackings",
+              "id": "fc101f7d-025e-4838-afe3-79b81d0db258",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/meta-tracking",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "meta-tracking"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Add Meta Tracking",
+              "id": "9479d281-3f13-41ae-8d00-0a6efdc3321b",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"registeredOn\": \"2024-01-01\",\n  \"notes\": \"Referred by existing customer\",\n  \"source\": \"REFERRAL\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/meta-tracking",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "meta-tracking"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Update Meta Tracking",
+              "id": "d96837fe-1d6e-47a4-930c-d6807e946335",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"notes\": \"Updated notes\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/meta-tracking/:metaTrackingId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "meta-tracking",
+                    ":metaTrackingId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "metaTrackingId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DELETE Delete Meta Tracking",
+              "id": "4b8be073-f886-47dd-bdd1-b7aa1cfa66d9",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customers/:customerId/meta-tracking/:metaTrackingId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customers",
+                    ":customerId",
+                    "meta-tracking",
+                    ":metaTrackingId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "metaTrackingId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "id": "32d40b4b-4ddc-4fda-8594-6d8e852e17a2"
+        }
+      ],
+      "id": "75d6f98d-74a5-4193-a426-6893b3354aa3"
+    },
+    {
+      "name": "Invoices",
+      "item": [
+        {
+          "name": "Settings",
+          "item": [
+            {
+              "name": "POST Upsert Invoice Settings",
+              "id": "0859bd9f-a200-4c41-9d71-c5ee5ec54c03",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"companyName\": \"My Jewellery Shop\",\n  \"address\": \"123 Main Street, Agra\",\n  \"gstin\": \"09ABCDE1234F1Z5\",\n  \"state\": \"Uttar Pradesh\",\n  \"stateCode\": \"09\",\n  \"phone\": \"9876543210\",\n  \"email\": \"shop@example.com\",\n  \"pan\": \"ABCDE1234F\",\n  \"mantra\": \"\",\n  \"logoUrl\": \"\",\n  \"bisLogoUrl\": \"https://upload.wikimedia.org/wikipedia/commons/f/f8/Bureau_of_Indian_Standards_Logo.svg\",\n  \"bankName\": \"State Bank of India\",\n  \"bankBranch\": \"Agra Main\",\n  \"bankAccountName\": \"My Jewellery Shop\",\n  \"bankAccountNumber\": \"1234567890\",\n  \"bankIfsc\": \"SBIN0001234\",\n  \"defaultTaxType\": \"CGST_SGST\",\n  \"defaultCgstRate\": 1.5,\n  \"defaultSgstRate\": 1.5,\n  \"defaultIgstRate\": 0,\n  \"defaultTemplate\": \"jewellery\",\n  \"declaration\": \"\",\n  \"termsOfDelivery\": \"\",\n  \"invoiceNumberPrefix\": \"\",\n  \"startingSequence\": 1\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/settings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    "settings"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Get Invoice Settings",
+              "id": "3b91f1ca-f620-4745-8c9d-192cbdbaba25",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/settings",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    "settings"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Get Invoice Settings Preview",
+              "id": "a1b2c3d4-e5f6-4789-ab01-cd23ef456789",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/settings/preview",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    "settings",
+                    "preview"
+                  ]
+                },
+                "description": "Returns an HTML preview of the invoice template using current org settings."
+              },
+              "response": []
+            }
+          ],
+          "id": "3f52e62c-60e7-4604-9ccb-ad4b360ed6dd"
+        },
+        {
+          "name": "Invoice CRUD",
+          "item": [
+            {
+              "name": "POST Create Invoice Draft",
+              "id": "6b47fa97-9e69-43d5-8a82-71f352a79f6a",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"37eea2f4-3d3e-4034-b9ac-ad0bd1e14618\",\n  \"placeOfSupply\": \"07\",\n  \"metalRateSource\": \"manual\",\n  \"metalRateDate\": \"2026-04-05T00:00:00.000Z\",\n  \"autoCreateUdhar\": false,\n  \"buyerAddress\": \"\",\n  \"buyerState\": \"\",\n  \"buyerStateCode\": \"\",\n  \"paidAmount\": 0,\n  \"modeOfPayment\": \"CASH\",\n  \"notes\": \"Thank you for your purchase\",\n  \"invoiceDate\": \"2026-04-05\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"metalType\": \"GOLD\",\n      \"metalRate\": 7200,\n      \"purityLabel\": \"22K\",\n      \"purityValue\": 22,\n      \"purityBasis\": 24,\n      \"grossWeight\": 10.5,\n      \"stoneWeight\": 2,\n      \"makingCharges\": 500,\n      \"makingChargesType\": \"PER_GRAM\",\n      \"stoneCharges\": 0,\n      \"isHallmarked\": true,\n      \"huid\": \"AB1234\"\n    }\n  ],\n  \"templateType\": \"jewellery\",\n  \"deliveryNote\": \"\",\n  \"dispatchDocNo\": \"\",\n  \"destination\": \"\",\n  \"termsOfDelivery\": \"\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/draft",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    "draft"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Create Invoice",
+              "id": "dec13b04-abbe-4a7c-b182-92f36f1187ca",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"customer-id-here\",\n  \"placeOfSupply\": \"07\",\n  \"metalRateSource\": \"manual\",\n  \"metalRateDate\": \"2026-04-05T00:00:00.000Z\",\n  \"autoCreateUdhar\": true,\n  \"buyerAddress\": \"\",\n  \"buyerState\": \"\",\n  \"buyerStateCode\": \"\",\n  \"paidAmount\": 10000,\n  \"modeOfPayment\": \"CASH\",\n  \"notes\": \"Thank you for your purchase\",\n  \"invoiceDate\": \"2026-04-05\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"metalType\": \"GOLD\",\n      \"metalRate\": 7200,\n      \"purityLabel\": \"22K\",\n      \"purityValue\": 22.0,\n      \"purityBasis\": 24,\n      \"grossWeight\": 10.5,\n      \"stoneWeight\": 2,\n      \"makingCharges\": 500,\n      \"makingChargesType\": \"PER_GRAM\",\n      \"stoneCharges\": 0,\n      \"isHallmarked\": true,\n      \"huid\": \"AB1234\",\n      \"taxType\": \"CGST_SGST\",\n      \"cgstRate\": 1.5,\n      \"sgstRate\": 1.5,\n      \"igstRate\": 0\n    }\n  ],\n  \"taxType\": \"CGST_SGST\",\n  \"cgstRate\": 1.5,\n  \"sgstRate\": 1.5,\n  \"igstRate\": 0,\n  \"templateType\": \"jewellery\",\n  \"deliveryNote\": \"\",\n  \"dispatchDocNo\": \"\",\n  \"destination\": \"\",\n  \"termsOfDelivery\": \"\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET List Invoices",
+              "id": "3951f21c-51c5-47a5-8337-0b9feb907fd6",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices?page=1&limit=20&sortBy=invoiceDate&sortOrder=desc",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "sortBy",
+                      "value": "invoiceDate"
+                    },
+                    {
+                      "key": "sortOrder",
+                      "value": "desc"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Get Invoice by ID",
+              "id": "b6a18ded-33d5-444a-be74-62f23907fb33",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Update Invoice",
+              "id": "ec6b5c41-ec99-41f4-a7fa-b8d5f32eb3df",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"customer-id-here\",\n  \"placeOfSupply\": \"07\",\n  \"paidAmount\": 15000,\n  \"templateType\": \"jewellery\",\n  \"modeOfPayment\": \"CASH\",\n  \"deliveryNote\": \"\",\n  \"dispatchDocNo\": \"\",\n  \"destination\": \"\",\n  \"termsOfDelivery\": \"\",\n  \"notes\": \"Updated invoice notes\",\n  \"invoiceDate\": \"2026-04-05\",\n  \"buyerAddress\": \"\",\n  \"buyerState\": \"\",\n  \"buyerStateCode\": \"\",\n  \"items\": [\n    {\n      \"description\": \"Gold Ring 22K Updated\",\n      \"hsnSac\": \"7113\",\n      \"quantity\": 1,\n      \"unit\": \"PCS\",\n      \"metalType\": \"GOLD\",\n      \"metalRate\": 7200,\n      \"purityLabel\": \"22K\",\n      \"purityValue\": 22.0,\n      \"purityBasis\": 24,\n      \"grossWeight\": 11.0,\n      \"stoneWeight\": 2,\n      \"makingCharges\": 500,\n      \"makingChargesType\": \"PER_GRAM\",\n      \"stoneCharges\": 0,\n      \"isHallmarked\": true,\n      \"huid\": \"AB1234\"\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                },
+                "description": "Update a DRAFT invoice only. Finalized invoices must be cancelled and recreated."
+              },
+              "response": []
+            },
+            {
+              "name": "GET Get Invoice PDF",
+              "id": "7486973e-6723-49eb-b173-2551ce073495",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/pdf",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id",
+                    "pdf"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Record Payment",
+              "id": "c5f457e8-45ca-42c8-8ba5-9860ece1a1e4",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"amount\": 15000,\n  \"paymentMethod\": \"UPI\",\n  \"reference\": \"TXN9988776655\",\n  \"notes\": \"Balance payment for Gold Chain\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/payment",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id",
+                    "payment"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Send Invoice",
+              "id": "7e6bb5fa-bdc6-4d62-bb0d-0ea878388657",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"channel\": \"WHATSAPP\",\n  \"phoneNumber\": \"9876543210\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/send",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id",
+                    "send"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DELETE Cancel Invoice",
+              "id": "9791b826-7c5f-4926-8e0f-dba9905cd920",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                },
+                "description": "Cancel an invoice. When cancelling a finalized invoice, the system reverses the associated Ledger Entry (marks it as RETURN), marks the linked Udhar Entry as CANCELLED, and updates the ledger description with 'CANCELLED: [original description]'."
+              },
+              "response": []
+            },
+            {
+              "name": "POST Finalize Invoice",
+              "id": "48005133-0b4b-48d9-9bf5-cfcc8cea5cad",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"manualInvoiceNumber\": \"INV-001\",\n  \"paidAmount\": 10000,\n  \"invoiceDate\": \"2024-01-15\",\n  \"dueDate\": \"2024-04-15\",\n  \"notes\": \"Finalized with partial payment\",\n  \"autoCreateUdhar\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/finalize",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id",
+                    "finalize"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Get Invoice HTML",
+              "id": "3ab9699f-173d-467b-a7ad-d67808b5ab5f",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/html",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id",
+                    "html"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Get Invoice Sign URL",
+              "id": "e3bec026-a42b-488a-9472-32e1ece9489f",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/sign",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id",
+                    "sign"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Negotiate Invoice Preview",
+              "id": "b2c3d4e5-f6a7-4890-bc12-de34fa567890",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/negotiate/preview?targetAmount=50000",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id",
+                    "negotiate",
+                    "preview"
+                  ],
+                  "query": [
+                    {
+                      "key": "targetAmount",
+                      "value": "50000"
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "invoice-id-here"
+                    }
+                  ]
+                },
+                "description": "Preview the effect of negotiating an invoice to a target amount. Returns adjusted item prices."
+              },
+              "response": []
+            },
+            {
+              "name": "POST Negotiate Invoice Commit",
+              "id": "c3d4e5f6-a7b8-4901-cd23-ef45ab678901",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{authToken}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetAmount\": 50000,\n  \"negotiationNote\": \"Customer requested discount\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/invoices/:id/negotiate/commit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "invoices",
+                    ":id",
+                    "negotiate",
+                    "commit"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "invoice-id-here"
+                    }
+                  ]
+                },
+                "description": "Commit a negotiated price for an invoice. Adjusts item prices proportionally to reach the target amount."
+              },
+              "response": []
+            }
+          ],
+          "id": "90bd0613-a349-4b7c-9c4d-1500c9e96500"
+        }
+      ],
+      "id": "92774b70-f7c3-47b9-9c3e-257add89b2e6"
+    },
+    {
+      "name": "Credits",
+      "item": [
+        {
+          "name": "Credits CRUD",
+          "item": [
+            {
+              "name": "POST Create Credit",
+              "id": "6a27ca91-fe6f-456a-ac01-0d0c0502426d",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"customer-id-here\",\n  \"totalAmount\": 25000,\n  \"saleReference\": \"INV-001\",\n  \"itemSummary\": \"Gold Ring 22K\",\n  \"description\": \"Udhar for gold ring purchase\",\n  \"creditDate\": \"2024-01-15\",\n  \"expectedDueDate\": \"2024-04-15\",\n  \"reminderFrequency\": \"WEEKLY\",\n  \"notes\": \"Customer promised to pay by April\",\n  \"initialPayment\": 5000,\n  \"invoiceId\": \"optional-invoice-id\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/credits",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET List Credits",
+              "id": "ac3d0657-bac3-42ff-8313-17fe39dcc906",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits?page=1&limit=20&customerId=&status=ACTIVE&overdueOnly=false&search=&sortBy=creditDate&sortOrder=desc",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    },
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    },
+                    {
+                      "key": "status",
+                      "value": "ACTIVE"
+                    },
+                    {
+                      "key": "overdueOnly",
+                      "value": "false"
+                    },
+                    {
+                      "key": "search",
+                      "value": ""
+                    },
+                    {
+                      "key": "sortBy",
+                      "value": "creditDate"
+                    },
+                    {
+                      "key": "sortOrder",
+                      "value": "desc"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Credit Stats",
+              "id": "a4983aa8-300f-4192-bfd9-cdab2cf47075",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/stats",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    "stats"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Due Reminders",
+              "id": "c072ab75-d029-4d26-b7d5-ed1ca9572c23",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/due-reminders?days=7",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    "due-reminders"
+                  ],
+                  "query": [
+                    {
+                      "key": "days",
+                      "value": "7"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Customer Credit Summary",
+              "id": "4e24db81-2c91-43f9-bd3c-4dfd9a1253ec",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/customer/:customerId/summary",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    "customer",
+                    ":customerId",
+                    "summary"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Get Credit by ID",
+              "id": "a248e816-1037-4ecd-aaea-316d52fc03f9",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Update Credit",
+              "id": "79616fc3-5afd-4f41-89fa-3c2af274dc20",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"saleReference\": \"INV-001\",\n  \"itemSummary\": \"Gold Ring 22K\",\n  \"description\": \"Updated description\",\n  \"creditDate\": \"2024-01-15\",\n  \"expectedDueDate\": \"2024-05-15\",\n  \"reminderFrequency\": \"WEEKLY\",\n  \"nextReminderDate\": \"2024-04-22\",\n  \"status\": \"ACTIVE\",\n  \"notes\": \"Updated notes\",\n  \"totalAmount\": 25000\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DELETE Delete Credit",
+              "id": "b2c6b7b5-58d9-46ad-ab80-0ef745fb29c4",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:id",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    ":id"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "New Request",
+              "id": "05293ca3-00d1-46f5-a2d5-c3cbe3652e8b",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": ""
+                }
+              },
+              "response": []
+            }
+          ],
+          "id": "cf70816c-2cb5-4118-9f92-f5b363f63b6b"
+        },
+        {
+          "name": "Transactions",
+          "item": [
+            {
+              "name": "GET Get Transactions",
+              "id": "49b7b655-b626-4841-abb8-4f94bcc80cb3",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:id/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    ":id",
+                    "transactions"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Add Transaction",
+              "id": "a9369a01-8cb7-4b1c-aaed-d9cde42fc558",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"amount\": 5000,\n  \"transactionDate\": \"2024-02-01\",\n  \"paymentMethod\": \"CASH\",\n  \"referenceNumber\": \"REF456\",\n  \"collectedBy\": \"Staff Name\",\n  \"notes\": \"Monthly installment\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:id/transactions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    ":id",
+                    "transactions"
+                  ],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "PATCH Update Transaction",
+              "id": "4b46586e-a2e9-4127-bdaf-e07aeb94993c",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"notes\": \"Corrected amount\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:creditId/transactions/:transactionId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    ":creditId",
+                    "transactions",
+                    ":transactionId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "creditId",
+                      "value": ""
+                    },
+                    {
+                      "key": "transactionId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DELETE Delete Transaction",
+              "id": "3ab3c651-ecf4-49da-a9fe-d4565aa1bcf5",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/:creditId/transactions/:transactionId",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    ":creditId",
+                    "transactions",
+                    ":transactionId"
+                  ],
+                  "variable": [
+                    {
+                      "key": "creditId",
+                      "value": ""
+                    },
+                    {
+                      "key": "transactionId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "id": "2217cce2-3374-4a1c-99d4-4f6b8e9dbfb4"
+        },
+        {
+          "name": "Ledger & Udhar",
+          "item": [
+            {
+              "name": "GET Customer Ledger",
+              "id": "fd4a1a38-e31b-41e1-abbd-ecfebd322229",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/customer/:customerId/ledger",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    "customer",
+                    ":customerId",
+                    "ledger"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GET Customer Udhar Entries",
+              "id": "949e3675-2c23-4603-b266-81724693258d",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/credits/customer/:customerId/udhar",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    "customer",
+                    ":customerId",
+                    "udhar"
+                  ],
+                  "variable": [
+                    {
+                      "key": "customerId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "POST Add Udhar Payment",
+              "id": "aeed1adc-fde6-46c5-a7bd-16af9b2e783e",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"amount\": 5000,\n  \"transactionDate\": \"2024-02-01\",\n  \"paymentMethod\": \"CASH\",\n  \"referenceNumber\": \"REF789\",\n  \"collectedBy\": \"Staff Name\",\n  \"notes\": \"Udhar payment collected\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/credits/udhar/:udharId/payment",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "credits",
+                    "udhar",
+                    ":udharId",
+                    "payment"
+                  ],
+                  "variable": [
+                    {
+                      "key": "udharId",
+                      "value": ""
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ],
+          "id": "8902fa9e-6f15-4b5d-97b4-a778861c139f"
+        }
+      ],
+      "id": "796936e7-b0b8-421f-b590-1988be0e4957"
+    },
+    {
+      "name": "reports",
+      "item": [
+        {
+          "name": "sales",
+          "id": "5ced471f-464a-4c2c-bb62-32dca4310358",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": ""
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "gst",
+          "id": "565a99e7-e7a9-4665-8de2-52da04675b8f",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": ""
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "collections",
+          "id": "d315362a-087d-4c7e-9316-841c25746493",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": ""
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "bb55e673-0234-4033-b789-9d455a203073"
+    },
+    {
+      "name": "GET Udhar Payments",
+      "id": "0ca41341-261f-4d87-82bc-a593a0c7a5d4",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/credits/udhar/:id/payments",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "credits",
+            "udhar",
+            ":id",
+            "payments"
+          ],
+          "variable": [
+            {
+              "key": "id",
+              "value": ""
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "New Request",
+      "id": "087b15a0-89e2-4978-a155-568a226159d5",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": ""
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "id": "2a0f912b-0020-4bfe-adbd-dc4aa0097e60",
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "id": "712faafd-ab95-4246-a0b4-54be537fa599",
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

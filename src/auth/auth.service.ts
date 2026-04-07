@@ -38,6 +38,9 @@ export class AuthService {
     private readonly prisma: PrismaService,
   ) {
     this.logger.log('AuthService initialized');
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET environment variable is not set. Refusing to start.');
+    }
   }
 
   async signupFounder(dto: SignupDto, meta: AuthRequestMetadata): Promise<AuthTokenResponse> {
@@ -153,6 +156,10 @@ export class AuthService {
     if (!valid) {
       this.logger.warn(`Login failed: Invalid password for email: ${dto.email}`);
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (user.members.length === 0) {
+      throw new ForbiddenException('User has no organization membership');
     }
 
     if (user.members.length !== 1) {
