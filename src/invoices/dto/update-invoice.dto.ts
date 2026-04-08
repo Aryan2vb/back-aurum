@@ -27,7 +27,6 @@ export class UpdateInvoiceDto {
   @IsOptional()
   paidAmount?: number;
 
-
   @IsString()
   @IsOptional()
   templateType?: string;
@@ -51,7 +50,6 @@ export class UpdateInvoiceDto {
   @IsString()
   @IsOptional()
   termsOfDelivery?: string;
-
 
   @IsDateString()
   @IsOptional()

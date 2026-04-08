@@ -1,14 +1,26 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Decimal } from 'decimal.js';
-import { InvoiceStatus } from '@prisma/client';
+import { InvoiceStatus, MetalType, TaxType } from '@prisma/client';
+
+export enum NegotiationMode {
+  MAKING_CHARGES = 'MAKING_CHARGES',
+  METAL_RATE = 'METAL_RATE',
+}
 
 export interface AdjustmentPreviewItem {
   id: string;
   description: string;
+  // Making Charges
   originalMakingChargesAmt: Decimal;
   newMakingChargesAmt: Decimal;
   newMakingChargesRate: Decimal;
+  // Metal Rates (new)
+  originalMetalRate: Decimal;
+  newMetalRate: Decimal;
+  originalEffectiveRate: Decimal;
+  newEffectiveRate: Decimal;
+  // Totals
   newItemAmount: Decimal;
 }
 
@@ -16,12 +28,15 @@ export interface AdjustmentPreview {
   targetAmount: Decimal;
   requiredTaxableAmount: Decimal;
   totalMakingReduction: Decimal;
+  totalMetalReduction: Decimal; // Added
   newGrandTotal: Decimal;
   roundOff: Decimal;
   feasible: boolean;
   reason?: string;
   minimumAchievableTotal?: Decimal;
   items: AdjustmentPreviewItem[];
+  mode: NegotiationMode; // Added
+  metalType?: MetalType; // Added
 }
 
 @Injectable()
@@ -32,6 +47,8 @@ export class InvoiceNegotiationService {
     invoiceId: string,
     organizationId: string,
     targetAmount: number,
+    mode: NegotiationMode = NegotiationMode.MAKING_CHARGES,
+    metalType?: MetalType,
   ): Promise<AdjustmentPreview> {
     const target = new Decimal(targetAmount);
 
@@ -57,94 +74,157 @@ export class InvoiceNegotiationService {
     }
 
     // Back-solve: targetAmount = taxableAmount × (1 + gstRate/100)
-    const gstMultiplier = new Decimal(1).plus(
-      new Decimal(invoice.cgstRate)
-        .plus(new Decimal(invoice.sgstRate))
-        .plus(new Decimal(invoice.igstRate))
-        .div(100),
-    );
+    const gstRate =
+      invoice.taxType === TaxType.IGST
+        ? new Decimal(invoice.igstRate)
+        : new Decimal(invoice.cgstRate).plus(new Decimal(invoice.sgstRate));
+
+    const gstMultiplier = new Decimal(1).plus(gstRate.div(100));
 
     const requiredTaxableRaw = target.div(gstMultiplier);
     const currentTaxable = new Decimal(invoice.taxableAmount ?? invoice.subtotal);
     const totalReduction = currentTaxable.minus(requiredTaxableRaw).toDecimalPlaces(4);
 
-    // Only adjustable items are those with makingChargesAmount > 0
-    const adjustable = invoice.items.filter(
-      (i) => i.makingChargesAmount && new Decimal(i.makingChargesAmount).gt(0),
-    );
+    let adjustableItems = invoice.items;
+    let totalCurrentPool = new Decimal(0);
 
-    const totalCurrentMaking = adjustable.reduce(
-      (s, i) => s.plus(new Decimal(i.makingChargesAmount!)),
-      new Decimal(0),
-    );
-
-    // Floor check: can the reduction be absorbed entirely by making charges?
-    if (totalReduction.gt(totalCurrentMaking)) {
-      // Compute minimum achievable total (all making charges zeroed out)
-      const nonMakingSubtotal = invoice.items.reduce(
-        (s, i) =>
-          s.plus(new Decimal(i.taxableAmount).minus(new Decimal(i.makingChargesAmount ?? 0))),
+    if (mode === NegotiationMode.MAKING_CHARGES) {
+      adjustableItems = invoice.items.filter(
+        (i) => i.makingChargesAmount && new Decimal(i.makingChargesAmount).gt(0),
+      );
+      totalCurrentPool = adjustableItems.reduce(
+        (s, i) => s.plus(new Decimal(i.makingChargesAmount!)),
         new Decimal(0),
       );
-      const minTaxable = nonMakingSubtotal.toDecimalPlaces(2);
+    } else {
+      // METAL_RATE mode
+      adjustableItems = invoice.items.filter((i) => {
+        const hasValue = i.metalRate && new Decimal(i.metalRate).gt(0);
+        const matchesType = !metalType || i.metalType === metalType;
+        return hasValue && matchesType;
+      });
+      totalCurrentPool = adjustableItems.reduce(
+        (s, i) =>
+          s.plus(
+            new Decimal(i.effectiveRate ?? i.metalRate ?? 0).mul(
+              new Decimal(i.netWeight ?? i.grossWeight ?? 0),
+            ),
+          ),
+        new Decimal(0),
+      );
+    }
+
+    // Floor check: can the reduction be absorbed entirely by the chosen pool?
+    if (totalReduction.gt(totalCurrentPool)) {
+      const minTaxable = currentTaxable.minus(totalCurrentPool);
       const minRaw = minTaxable.mul(gstMultiplier);
       const minTotal = minRaw.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
 
+      const poolLabel = mode === NegotiationMode.MAKING_CHARGES ? 'making charges' : 'metal value';
+
       return {
         targetAmount: target,
-        requiredTaxableAmount: requiredTaxableRaw.toDecimalPlaces(2),
-        totalMakingReduction: totalReduction,
+        requiredTaxableAmount: minTaxable.toDecimalPlaces(2),
+        totalMakingReduction:
+          mode === NegotiationMode.MAKING_CHARGES ? totalReduction : new Decimal(0),
+        totalMetalReduction: mode === NegotiationMode.METAL_RATE ? totalReduction : new Decimal(0),
         newGrandTotal: currentGrand,
         roundOff: new Decimal(invoice.roundOff),
         feasible: false,
         items: [],
         minimumAchievableTotal: minTotal,
+        mode,
+        metalType,
         reason:
-          `Discount requires reducing making charges by ₹${totalReduction.toFixed(2)} ` +
-          `but total making charges are only ₹${totalCurrentMaking.toFixed(2)}. ` +
+          `Discount requires reducing ${poolLabel} by ₹${totalReduction.toFixed(2)} ` +
+          `but total ${poolLabel} available is only ₹${totalCurrentPool.toFixed(2)}. ` +
           `Minimum achievable total is ₹${minTotal}.`,
       };
     }
 
-    // Distribute reduction proportionally across items by makingChargesAmount
-    const adjustedItems: AdjustmentPreviewItem[] = adjustable.map((item) => {
-      const currentAmt = new Decimal(item.makingChargesAmount!);
-      const share = currentAmt.div(totalCurrentMaking);
-      const reduction = totalReduction.mul(share).toDecimalPlaces(4);
-      const newAmt = currentAmt.minus(reduction).toDecimalPlaces(4);
-
+    // Distribute reduction proportionally
+    const adjustedItems: AdjustmentPreviewItem[] = adjustableItems.map((item) => {
       const netWeight = new Decimal(item.netWeight ?? item.grossWeight ?? 1);
-      const newRate =
-        item.makingChargesType === 'PER_GRAM'
-          ? newAmt.div(netWeight).toDecimalPlaces(4)
-          : new Decimal(item.makingCharges ?? 0);
+      const currentMakingAmt = new Decimal(item.makingChargesAmount || 0);
+      const currentMetalValue = new Decimal(item.effectiveRate ?? item.metalRate ?? 0).mul(
+        netWeight,
+      );
 
-      const nonMaking = new Decimal(item.taxableAmount).minus(currentAmt);
-      const newItemAmt = nonMaking.plus(newAmt).toDecimalPlaces(4);
+      let reduction = new Decimal(0);
+      let newMakingAmt = currentMakingAmt;
+      let newMakingRate = new Decimal(item.makingCharges || 0);
+      let newMetalRate = new Decimal(item.metalRate || 0);
+      let newEffectiveRate = new Decimal(item.effectiveRate || item.metalRate || 0);
+
+      if (mode === NegotiationMode.MAKING_CHARGES) {
+        const share = currentMakingAmt.div(totalCurrentPool);
+        reduction = totalReduction.mul(share).toDecimalPlaces(4);
+        newMakingAmt = currentMakingAmt.minus(reduction).toDecimalPlaces(4);
+        newMakingRate =
+          item.makingChargesType === 'PER_GRAM'
+            ? newMakingAmt.div(netWeight).toDecimalPlaces(4)
+            : new Decimal(item.makingCharges ?? 0);
+      } else {
+        const share = currentMetalValue.div(totalCurrentPool);
+        reduction = totalReduction.mul(share).toDecimalPlaces(4);
+        const newMetalValue = currentMetalValue.minus(reduction).toDecimalPlaces(4);
+
+        // Rate reduction: NewRate = OldRate * (NewValue / OldValue)
+        const factor = newMetalValue.div(currentMetalValue);
+        newMetalRate = new Decimal(item.metalRate || 0).mul(factor).toDecimalPlaces(4);
+        newEffectiveRate = new Decimal(item.effectiveRate || item.metalRate || 0)
+          .mul(factor)
+          .toDecimalPlaces(4);
+      }
+
+      const nonAdjustedPart = new Decimal(item.taxableAmount).minus(
+        mode === NegotiationMode.MAKING_CHARGES ? currentMakingAmt : currentMetalValue,
+      );
+
+      const newItemAmt = nonAdjustedPart
+        .plus(
+          mode === NegotiationMode.MAKING_CHARGES
+            ? newMakingAmt
+            : currentMetalValue.minus(reduction),
+        )
+        .toDecimalPlaces(4);
 
       return {
         id: item.id,
         description: item.description,
-        originalMakingChargesAmt: currentAmt,
-        newMakingChargesAmt: newAmt,
-        newMakingChargesRate: newRate,
+        originalMakingChargesAmt: currentMakingAmt,
+        newMakingChargesAmt: newMakingAmt,
+        newMakingChargesRate: newMakingRate,
+        originalMetalRate: new Decimal(item.metalRate || 0),
+        newMetalRate: newMetalRate,
+        originalEffectiveRate: new Decimal(item.effectiveRate || item.metalRate || 0),
+        newEffectiveRate: newEffectiveRate,
         newItemAmount: newItemAmt,
       };
     });
 
-    // Recompute invoice totals with adjusted items
+    // Recompute invoice totals
+    const adjustedIdSet = new Set(adjustedItems.map((i) => i.id));
     const adjustedSubtotal = adjustedItems.reduce(
       (s, i) => s.plus(i.newItemAmount),
       new Decimal(0),
     );
     const unchangedSubtotal = invoice.items
-      .filter((i) => !i.makingChargesAmount || new Decimal(i.makingChargesAmount).eq(0))
+      .filter((i) => !adjustedIdSet.has(i.id))
       .reduce((s, i) => s.plus(new Decimal(i.taxableAmount)), new Decimal(0));
 
     const newTaxable = adjustedSubtotal.plus(unchangedSubtotal).toDecimalPlaces(2);
-    const newCgst = newTaxable.mul(new Decimal(invoice.cgstRate)).div(100).toDecimalPlaces(2);
-    const newSgst = newTaxable.mul(new Decimal(invoice.sgstRate)).div(100).toDecimalPlaces(2);
-    const newIgst = newTaxable.mul(new Decimal(invoice.igstRate)).div(100).toDecimalPlaces(2);
+    let newCgst = new Decimal(0);
+    let newSgst = new Decimal(0);
+    let newIgst = new Decimal(0);
+
+    if (invoice.taxType === TaxType.IGST) {
+      newIgst = newTaxable.mul(new Decimal(invoice.igstRate)).div(100).toDecimalPlaces(2);
+    } else {
+      newCgst = newTaxable.mul(new Decimal(invoice.cgstRate)).div(100).toDecimalPlaces(2);
+      newSgst = newTaxable.mul(new Decimal(invoice.sgstRate)).div(100).toDecimalPlaces(2);
+    }
+
     const rawGrand = newTaxable.plus(newCgst).plus(newSgst).plus(newIgst);
     const newGrand = rawGrand.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
     const newRoundOff = newGrand.minus(rawGrand).toDecimalPlaces(2);
@@ -152,11 +232,18 @@ export class InvoiceNegotiationService {
     return {
       targetAmount: target,
       requiredTaxableAmount: newTaxable,
-      totalMakingReduction: totalReduction.toDecimalPlaces(2),
+      totalMakingReduction:
+        mode === NegotiationMode.MAKING_CHARGES
+          ? totalReduction.toDecimalPlaces(2)
+          : new Decimal(0),
+      totalMetalReduction:
+        mode === NegotiationMode.METAL_RATE ? totalReduction.toDecimalPlaces(2) : new Decimal(0),
       newGrandTotal: newGrand,
       roundOff: newRoundOff,
       feasible: true,
       items: adjustedItems,
+      mode,
+      metalType,
     };
   }
 
@@ -165,9 +252,11 @@ export class InvoiceNegotiationService {
     organizationId: string,
     targetAmount: number,
     approvedById: string,
+    mode: NegotiationMode = NegotiationMode.MAKING_CHARGES,
+    metalType?: MetalType,
     note?: string,
   ): Promise<void> {
-    const preview = await this.preview(invoiceId, organizationId, targetAmount);
+    const preview = await this.preview(invoiceId, organizationId, targetAmount, mode, metalType);
 
     if (!preview.feasible) {
       throw new BadRequestException(preview.reason);
@@ -200,7 +289,6 @@ export class InvoiceNegotiationService {
           },
         });
       } else {
-        // Subsequent negotiations: just update the note
         await tx.invoice.update({
           where: { id: invoiceId, organizationId },
           data: {
@@ -220,10 +308,15 @@ export class InvoiceNegotiationService {
             originalMakingCharges: original.originalMakingCharges ?? original.makingCharges,
             originalMakingChargesAmount:
               original.originalMakingChargesAmount ?? original.makingChargesAmount,
+            originalMetalRate: original.originalMetalRate ?? original.metalRate,
+            originalEffectiveRate: original.originalEffectiveRate ?? original.effectiveRate,
             originalItemAmount: original.originalItemAmount ?? original.taxableAmount,
+
             // Apply adjusted values
             makingCharges: adj.newMakingChargesRate,
             makingChargesAmount: adj.newMakingChargesAmt,
+            metalRate: adj.newMetalRate,
+            effectiveRate: adj.newEffectiveRate,
             taxableAmount: adj.newItemAmount,
             totalAmount: adj.newItemAmount,
           },
@@ -231,18 +324,17 @@ export class InvoiceNegotiationService {
       }
 
       // Recompute and update invoice totals
-      const newCgst = preview.requiredTaxableAmount
-        .mul(new Decimal(invoice.cgstRate))
-        .div(100)
-        .toDecimalPlaces(2);
-      const newSgst = preview.requiredTaxableAmount
-        .mul(new Decimal(invoice.sgstRate))
-        .div(100)
-        .toDecimalPlaces(2);
-      const newIgst = preview.requiredTaxableAmount
-        .mul(new Decimal(invoice.igstRate))
-        .div(100)
-        .toDecimalPlaces(2);
+      const newTaxable = preview.requiredTaxableAmount;
+      let newCgst = new Decimal(0);
+      let newSgst = new Decimal(0);
+      let newIgst = new Decimal(0);
+
+      if (invoice.taxType === TaxType.IGST) {
+        newIgst = newTaxable.mul(new Decimal(invoice.igstRate)).div(100).toDecimalPlaces(2);
+      } else {
+        newCgst = newTaxable.mul(new Decimal(invoice.cgstRate)).div(100).toDecimalPlaces(2);
+        newSgst = newTaxable.mul(new Decimal(invoice.sgstRate)).div(100).toDecimalPlaces(2);
+      }
 
       await tx.invoice.update({
         where: { id: invoiceId, organizationId },
