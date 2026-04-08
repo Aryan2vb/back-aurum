@@ -25,7 +25,7 @@ import { generateInvoiceHtml } from './utils/generate-invoice-html';
 import { generateJewelleryInvoiceHtml } from './utils/generate-jewellery-html';
 import { generateModernInvoiceHtml } from './utils/generate-modern-html';
 import { PdfService } from './utils/pdf.service';
-import { CompanyDetails, BuyerDetails } from './utils/invoice-types';
+import { CompanyDetails, BuyerDetails, InvoiceData } from './utils/invoice-types';
 import { InvoiceCalculationService } from './utils/invoice-calculation.service';
 
 @Injectable()
@@ -210,6 +210,37 @@ export class InvoicesService {
           paidAmount: new Decimal(paidAmount),
           invoiceDate,
           financialYear,
+          companySnapshot: {
+            version: 1,
+            data: {
+              name: settings.companyName,
+              address: settings.address,
+              gstin: settings.gstin,
+              state: settings.state,
+              stateCode: settings.stateCode,
+              phone: settings.phone ?? '',
+              email: settings.email ?? '',
+              pan: settings.pan ?? '',
+              mantra: settings.mantra ?? '',
+              logo: settings.logoUrl ?? '',
+              bisLogo: settings.bisLogoUrl ?? '',
+              bankDetails: settings.bankName
+                ? {
+                    bankName: settings.bankName,
+                    branch: settings.bankBranch ?? '',
+                    accountName: settings.bankAccountName ?? '',
+                    accountNumber: settings.bankAccountNumber ?? '',
+                    ifsc: settings.bankIfsc ?? '',
+                  }
+                : undefined,
+            },
+          } as any,
+          buyerSnapshot: (draft.buyerSnapshot as any)?.version
+            ? (draft.buyerSnapshot as any)
+            : {
+                version: 1,
+                data: draft.buyerSnapshot,
+              },
         },
       });
 
@@ -603,37 +634,37 @@ export class InvoicesService {
     });
 
     if (!invoice) throw new NotFoundException('Invoice not found');
-
+ 
     const customer = invoice.customer;
     const loc = customer.locations && customer.locations.length > 0 ? customer.locations[0] : null;
-    const companySnapshot = (invoice.companySnapshot as any)?.data || {};
-    const buyerSnapshot = (invoice.buyerSnapshot as any)?.data || {};
+    const companySnapshotRaw = (invoice.companySnapshot as any)?.data || (invoice.companySnapshot as any) || {};
+    const buyerSnapshotRaw = (invoice.buyerSnapshot as any)?.data || (invoice.buyerSnapshot as any) || {};
 
     // Build InvoiceData structure expected by templates
-    const invoiceData = {
+    const invoiceData: InvoiceData = {
       company: {
-        name: companySnapshot.name || '',
-        address: companySnapshot.address || '',
-        gstin: companySnapshot.gstin || '',
-        state: companySnapshot.state || '',
-        stateCode: companySnapshot.stateCode || '',
-        phone: companySnapshot.phone || '',
-        email: companySnapshot.email || '',
-        pan: companySnapshot.pan || '',
-        mantra: companySnapshot.mantra || '',
-        logo: companySnapshot.logo || '',
-        bisLogo: companySnapshot.bisLogo || '',
-        bankDetails: companySnapshot.bankDetails || undefined,
+        name: companySnapshotRaw.name || '',
+        address: companySnapshotRaw.address || '',
+        gstin: companySnapshotRaw.gstin || '',
+        state: companySnapshotRaw.state || '',
+        stateCode: companySnapshotRaw.stateCode || '',
+        phone: companySnapshotRaw.phone || '',
+        email: companySnapshotRaw.email || '',
+        pan: companySnapshotRaw.pan || '',
+        mantra: companySnapshotRaw.mantra || '',
+        logo: companySnapshotRaw.logo || '',
+        bisLogo: companySnapshotRaw.bisLogo || '',
+        bankDetails: companySnapshotRaw.bankDetails || undefined,
       },
       buyer: {
-        name: buyerSnapshot.name || customer.fullName || '',
+        name: buyerSnapshotRaw.name || customer.fullName || '',
         address:
-          buyerSnapshot.address || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
-        phone: buyerSnapshot.phone || customer.contactDetails?.[0]?.primaryPhone || '',
-        state: buyerSnapshot.state || companySnapshot.state || '',
-        stateCode: buyerSnapshot.stateCode || companySnapshot.stateCode || '',
-        email: buyerSnapshot.email || '',
-        pan: buyerSnapshot.pan || '',
+          buyerSnapshotRaw.address || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
+        phone: buyerSnapshotRaw.phone || customer.contactDetails?.[0]?.primaryPhone || '',
+        state: buyerSnapshotRaw.state || companySnapshotRaw.state || '',
+        stateCode: buyerSnapshotRaw.stateCode || companySnapshotRaw.stateCode || '',
+        email: buyerSnapshotRaw.email || '',
+        pan: buyerSnapshotRaw.pan || '',
       },
       metadata: {
         invoiceNo: invoice.invoiceNumber || 'DRAFT',
@@ -968,8 +999,8 @@ export class InvoicesService {
           paidAmount: new Decimal(financials.paidAmount),
           metalRateSource: financials.metalRateSource,
           metalRateDate: financials.metalRateDate,
-          companySnapshot: { version: 1, data: financials.companySnapshot } as any,
-          buyerSnapshot: { version: 1, data: financials.buyerSnapshot } as any,
+          companySnapshot: financials.companySnapshot as any,
+          buyerSnapshot: financials.buyerSnapshot as any,
           modeOfPayment: dummyDto.modeOfPayment,
           deliveryNote: dummyDto.deliveryNote,
           dispatchDocNo: dummyDto.dispatchDocNo,
@@ -1150,36 +1181,42 @@ export class InvoicesService {
     );
 
     // 5. Build Snapshots
-    const companySnapshot: CompanyDetails = {
-      name: settings.companyName,
-      address: settings.address,
-      gstin: settings.gstin,
-      state: settings.state,
-      stateCode: settings.stateCode,
-      phone: settings.phone ?? '',
-      email: settings.email ?? '',
-      pan: settings.pan ?? '',
-      mantra: settings.mantra ?? '',
-      logo: settings.logoUrl ?? '',
-      bisLogo: settings.bisLogoUrl ?? '',
-      bankDetails: settings.bankName
-        ? {
-            bankName: settings.bankName,
-            branch: settings.bankBranch ?? '',
-            accountName: settings.bankAccountName ?? '',
-            accountNumber: settings.bankAccountNumber ?? '',
-            ifsc: settings.bankIfsc ?? '',
-          }
-        : undefined,
+    const companySnapshot = {
+      version: 1,
+      data: {
+        name: settings.companyName,
+        address: settings.address,
+        gstin: settings.gstin,
+        state: settings.state,
+        stateCode: settings.stateCode,
+        phone: settings.phone ?? '',
+        email: settings.email ?? '',
+        pan: settings.pan ?? '',
+        mantra: settings.mantra ?? '',
+        logo: settings.logoUrl ?? '',
+        bisLogo: settings.bisLogoUrl ?? '',
+        bankDetails: settings.bankName
+          ? {
+              bankName: settings.bankName,
+              branch: settings.bankBranch ?? '',
+              accountName: settings.bankAccountName ?? '',
+              accountNumber: settings.bankAccountNumber ?? '',
+              ifsc: settings.bankIfsc ?? '',
+            }
+          : undefined,
+      },
     };
 
     const loc = customer.locations?.[0] || null;
-    const buyerSnapshot: BuyerDetails = {
-      name: customer.fullName,
-      address: dto.buyerAddress || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
-      phone: customer.contactDetails?.[0]?.primaryPhone ?? '',
-      state: dto.buyerState || loc?.state || '',
-      stateCode: dto.buyerStateCode || loc?.district || '', // district often used for local codes if state matches
+    const buyerSnapshot = {
+      version: 1,
+      data: {
+        name: customer.fullName,
+        address: dto.buyerAddress || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
+        phone: customer.contactDetails?.[0]?.primaryPhone ?? '',
+        state: dto.buyerState || loc?.state || '',
+        stateCode: dto.buyerStateCode || loc?.district || '', // district often used for local codes if state matches
+      },
     };
 
     const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
@@ -1333,34 +1370,40 @@ export class InvoicesService {
       throw new NotFoundException('Invoice settings not found. Please configure settings first.');
 
     const companySnapshot = {
-      name: settings.companyName,
-      address: settings.address,
-      gstin: settings.gstin,
-      state: settings.state,
-      stateCode: settings.stateCode,
-      phone: settings.phone ?? '',
-      email: settings.email ?? '',
-      pan: settings.pan ?? '',
-      mantra: settings.mantra ?? '',
-      logo: settings.logoUrl ?? '',
-      bisLogo: settings.bisLogoUrl ?? '',
-      bankDetails: settings.bankName
-        ? {
-            bankName: settings.bankName,
-            branch: settings.bankBranch ?? '',
-            accountName: settings.bankAccountName ?? '',
-            accountNumber: settings.bankAccountNumber ?? '',
-            ifsc: settings.bankIfsc ?? '',
-          }
-        : undefined,
+      version: 1,
+      data: {
+        name: settings.companyName,
+        address: settings.address,
+        gstin: settings.gstin,
+        state: settings.state,
+        stateCode: settings.stateCode,
+        phone: settings.phone ?? '',
+        email: settings.email ?? '',
+        pan: settings.pan ?? '',
+        mantra: settings.mantra ?? '',
+        logo: settings.logoUrl ?? '',
+        bisLogo: settings.bisLogoUrl ?? '',
+        bankDetails: settings.bankName
+          ? {
+              bankName: settings.bankName,
+              branch: settings.bankBranch ?? '',
+              accountName: settings.bankAccountName ?? '',
+              accountNumber: settings.bankAccountNumber ?? '',
+              ifsc: settings.bankIfsc ?? '',
+            }
+          : undefined,
+      },
     };
 
     const buyerSnapshot = {
-      name: 'Sample Customer',
-      address: '123 Sample Street, Sample City',
-      phone: '+91 98765 43210',
-      state: settings.state,
-      stateCode: settings.stateCode,
+      version: 1,
+      data: {
+        name: 'Sample Customer',
+        address: '123 Sample Street, Sample City',
+        phone: '+91 98765 43210',
+        state: settings.state,
+        stateCode: settings.stateCode,
+      },
     };
 
     const sampleItems = [
@@ -1411,9 +1454,9 @@ export class InvoicesService {
     const roundOff = Math.round((totalAmount - totalBeforeRound) * 100) / 100;
     const paidAmount = 10000;
 
-    const invoiceData = {
-      company: companySnapshot,
-      buyer: buyerSnapshot,
+    const invoiceData: InvoiceData = {
+      company: companySnapshot.data,
+      buyer: buyerSnapshot.data,
       metadata: {
         invoiceNo: `${settings.invoiceNumberPrefix || 'INV'}-${settings.startingSequence || 1}`,
         date: new Date().toLocaleDateString('en-IN'),
