@@ -49,10 +49,15 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
         <tr>
             <td style="padding:6px 10px;border-bottom:1px solid #eee;">${h.hsnSac}</td>
             <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.taxableValue)}</td>
-            <td style="text-align:center;padding:6px 10px;border-bottom:1px solid #eee;">${h.cgstRate}%</td>
-            <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.cgstAmount)}</td>
-            <td style="text-align:center;padding:6px 10px;border-bottom:1px solid #eee;">${h.sgstRate}%</td>
-            <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.sgstAmount)}</td>
+            ${
+              data.taxType === 'IGST'
+                ? `<td style="text-align:center;padding:6px 10px;border-bottom:1px solid #eee;">${h.igstRate}%</td>
+                   <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.igstAmount || 0)}</td>`
+                : `<td style="text-align:center;padding:6px 10px;border-bottom:1px solid #eee;">${h.cgstRate}%</td>
+                   <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.cgstAmount)}</td>
+                   <td style="text-align:center;padding:6px 10px;border-bottom:1px solid #eee;">${h.sgstRate}%</td>
+                   <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;">₹${fmt(h.sgstAmount)}</td>`
+            }
             <td style="text-align:right;padding:6px 10px;border-bottom:1px solid #eee;font-weight:600;">₹${fmt(h.totalTaxAmount)}</td>
         </tr>
     `,
@@ -98,14 +103,41 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
         .signature-area { text-align: right; }
         .signature-line { border-top: 1px solid #cbd5e1; margin-top: 50px; padding-top: 8px; font-size: 12px; color: #475569; }
         .bottom-note { text-align: center; margin-top: 24px; font-size: 11px; color: #94a3b8; font-style: italic; }
+        .print-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #2563eb;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 30px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        .print-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.2); background: #1d4ed8; }
+        .print-btn:active { transform: translateY(0); }
         @media print {
-            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-            .invoice { padding: 20px; max-width: 100%; }
+            body { background: white; }
+            .print-btn { display: none !important; }
+            .invoice { padding: 0; max-width: 100%; }
             @page { margin: 10mm; size: A4; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
     </style>
 </head>
 <body>
+    <button class="print-btn" onclick="window.print()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+        Save as PDF / Print
+    </button>
     <div class="invoice">
         <!-- Header -->
         <div class="header">
@@ -174,8 +206,12 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
             <!-- Subtotal -->
             <div class="subtotal-section">
                 <div class="subtotal-row"><span>Subtotal</span><span>₹${fmt(totalTaxableValue)}</span></div>
-                <div class="subtotal-row"><span>CGST @ ${taxes.cgstRate}%</span><span>₹${fmt(taxes.cgstAmount)}</span></div>
-                <div class="subtotal-row"><span>SGST @ ${taxes.sgstRate}%</span><span>₹${fmt(taxes.sgstAmount)}</span></div>
+                ${
+                  data.taxType === 'IGST'
+                    ? `<div class="subtotal-row"><span>IGST @ ${taxes.igstRate}%</span><span>₹${fmt(taxes.igstAmount || 0)}</span></div>`
+                    : `<div class="subtotal-row"><span>CGST @ ${taxes.cgstRate}%</span><span>₹${fmt(taxes.cgstAmount)}</span></div>
+                <div class="subtotal-row"><span>SGST @ ${taxes.sgstRate}%</span><span>₹${fmt(taxes.sgstAmount)}</span></div>`
+                }
                 ${roundOff !== 0 ? `<div class="subtotal-row"><span>Round Off</span><span>${roundOff >= 0 ? '' : '(-)'}₹${fmt(Math.abs(roundOff))}</span></div>` : ''}
                 <div class="total-row-modern"><span>Total</span><span>₹${fmt(totalAmount)}</span></div>
             </div>
@@ -190,7 +226,16 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
             <div class="section-title">HSN/SAC Summary</div>
             <table class="hsn-table">
                 <thead>
-                    <tr>
+                    ${
+                      data.taxType === 'IGST'
+                        ? `<tr>
+                        <th style="text-align:left;">HSN/SAC</th>
+                        <th style="text-align:right;">Taxable Value</th>
+                        <th style="text-align:center;">IGST Rate</th>
+                        <th style="text-align:right;">IGST Amt</th>
+                        <th style="text-align:right;">Total Tax</th>
+                    </tr>`
+                        : `<tr>
                         <th style="text-align:left;">HSN/SAC</th>
                         <th style="text-align:right;">Taxable Value</th>
                         <th style="text-align:center;">CGST Rate</th>
@@ -198,17 +243,20 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
                         <th style="text-align:center;">SGST Rate</th>
                         <th style="text-align:right;">SGST Amt</th>
                         <th style="text-align:right;">Total Tax</th>
-                    </tr>
+                    </tr>`
+                    }
                 </thead>
                 <tbody>
                     ${hsnRows}
                     <tr style="font-weight:600;border-top:2px solid #e2e8f0;">
                         <td style="padding:8px 10px;">Total</td>
                         <td style="text-align:right;padding:8px 10px;">₹${fmt(totalTaxableValue)}</td>
-                        <td></td>
-                        <td style="text-align:right;padding:8px 10px;">₹${fmt(totalCgst)}</td>
-                        <td></td>
-                        <td style="text-align:right;padding:8px 10px;">₹${fmt(totalSgst)}</td>
+                        ${
+                          data.taxType === 'IGST'
+                            ? `<td></td><td style="text-align:right;padding:8px 10px;">₹${fmt(taxes.igstAmount || 0)}</td>`
+                            : `<td></td><td style="text-align:right;padding:8px 10px;">₹${fmt(totalCgst)}</td>
+                        <td></td><td style="text-align:right;padding:8px 10px;">₹${fmt(totalSgst)}</td>`
+                        }
                         <td style="text-align:right;padding:8px 10px;">₹${fmt(totalTax)}</td>
                     </tr>
                 </tbody>

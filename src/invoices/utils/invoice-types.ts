@@ -1,3 +1,5 @@
+import { TaxType } from '@prisma/client';
+
 // Invoice Generator Types — server-side port of bill/src/lib/invoice/types.ts
 
 export interface BankDetails {
@@ -69,6 +71,7 @@ export interface InvoiceItem {
 }
 
 export interface TaxDetails {
+  taxType?: TaxType;
   cgstRate: number;
   cgstAmount: number;
   sgstRate: number;
@@ -81,10 +84,13 @@ export interface TaxDetails {
 export interface HsnSummary {
   hsnSac: string;
   taxableValue: number;
+  taxType?: TaxType;
   cgstRate: number;
   cgstAmount: number;
   sgstRate: number;
   sgstAmount: number;
+  igstRate?: number;
+  igstAmount?: number;
   totalTaxAmount: number;
 }
 
@@ -93,6 +99,7 @@ export interface InvoiceData {
   buyer: BuyerDetails;
   metadata: InvoiceMetadata;
   items: InvoiceItem[];
+  taxType?: TaxType;
   taxes: TaxDetails;
   hsnSummary: HsnSummary[];
   roundOff: number;

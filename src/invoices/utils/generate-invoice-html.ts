@@ -59,10 +59,15 @@ export function generateInvoiceHtml(data: InvoiceData): string {
       (hsn) => `<tr>
       <td>${hsn.hsnSac}</td>
       <td class="text-right">${formatCurrency(hsn.taxableValue)}</td>
-      <td class="text-center">${hsn.cgstRate}%</td>
-      <td class="text-right">${formatCurrency(hsn.cgstAmount)}</td>
-      <td class="text-center">${hsn.sgstRate}%</td>
-      <td class="text-right">${formatCurrency(hsn.sgstAmount)}</td>
+      ${
+        data.taxType === 'IGST'
+          ? `<td class="text-center">${hsn.igstRate}%</td>
+             <td class="text-right">${formatCurrency(hsn.igstAmount || 0)}</td>`
+          : `<td class="text-center">${hsn.cgstRate}%</td>
+             <td class="text-right">${formatCurrency(hsn.cgstAmount)}</td>
+             <td class="text-center">${hsn.sgstRate}%</td>
+             <td class="text-right">${formatCurrency(hsn.sgstAmount)}</td>`
+      }
       <td class="text-right">${formatCurrency(hsn.totalTaxAmount)}</td>
     </tr>`,
     )
@@ -121,10 +126,41 @@ export function generateInvoiceHtml(data: InvoiceData): string {
     .declaration-section { display: grid; grid-template-columns: 2fr 1fr; }
     .signature-box { text-align: right; padding: 20px 10px 10px; border-left: 1px solid #000; }
     .computer-generated { text-align: center; padding: 8px; font-style: italic; font-size: 11px; border-top: 1px solid #000; }
-    @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } .invoice-container { padding: 0; max-width: 100%; } @page { margin: 10mm; size: A4; } }
+    .print-btn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #2563eb;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 30px;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+    .print-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.2); background: #1d4ed8; }
+    .print-btn:active { transform: translateY(0); }
+    @media print { 
+      body { background: white; }
+      .print-btn { display: none !important; }
+      .invoice-container { padding: 0; max-width: 100%; border: none; } 
+      @page { margin: 10mm; size: A4; } 
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    }
   </style>
 </head>
 <body>
+  <button class="print-btn" onclick="window.print()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+    Save as PDF / Print
+  </button>
   <div class="invoice-container">
     ${company.mantra ? `<div class="mantra-text">${company.mantra}</div>` : ''}
     ${
@@ -171,28 +207,37 @@ export function generateInvoiceHtml(data: InvoiceData): string {
       <tbody>
         ${itemRows}
         ${Array(Math.max(0, 8 - items.length))
-          .fill('<tr style="height:24px;"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>')
+          .fill(
+            '<tr style="height:24px;"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>',
+          )
           .join('')}
         <tr class="tax-row" style="border-top: 1px solid #000;">
           <td colspan="6" class="text-right font-bold">Taxable Value:</td>
           <td class="text-right font-bold">${formatCurrency(totalTaxableValue)}</td>
         </tr>
-        ${hallmarkingCharge > 0 ? `<tr class="tax-row">
+        ${
+          hallmarkingCharge > 0
+            ? `<tr class="tax-row">
           <td colspan="6" class="text-right">Hallmarking Charges:</td>
           <td class="text-right">${formatCurrency(hallmarkingCharge)}</td>
-        </tr>` : ''}
-        <tr class="tax-row">
+        </tr>`
+            : ''
+        }
+        ${
+          data.taxType === 'IGST'
+            ? `<tr class="tax-row">
+          <td colspan="6" class="text-right font-bold">IGST(${taxes.igstRate}%)</td>
+          <td class="text-right">${formatCurrency(taxes.igstAmount || 0)}</td>
+        </tr>`
+            : `<tr class="tax-row">
           <td colspan="6" class="text-right font-bold">CGST(${taxes.cgstRate}%)</td>
           <td class="text-right">${formatCurrency(taxes.cgstAmount || 0)}</td>
         </tr>
         <tr class="tax-row">
           <td colspan="6" class="text-right font-bold">SGST(${taxes.sgstRate}%)</td>
           <td class="text-right">${formatCurrency(taxes.sgstAmount || 0)}</td>
-        </tr>
-        ${taxes.igstRate && taxes.igstRate > 0 ? `<tr class="tax-row">
-          <td colspan="6" class="text-right font-bold">IGST(${taxes.igstRate}%)</td>
-          <td class="text-right">${formatCurrency(taxes.igstAmount || 0)}</td>
-        </tr>` : ''}
+        </tr>`
+        }
         <tr class="tax-row">
           <td colspan="6" class="text-right font-bold">ROUND OFF</td>
           <td class="text-right">${roundOff >= 0 ? '' : '(-)'}${formatCurrency(Math.abs(roundOff))}</td>
@@ -201,7 +246,9 @@ export function generateInvoiceHtml(data: InvoiceData): string {
           <td colspan="6" class="text-right text-lg">Total Amount</td>
           <td class="text-right font-bold text-lg">₹${formatCurrency(totalAmount)}</td>
         </tr>
-        ${(data.cashReceived || 0) > 0 ? `
+        ${
+          (data.cashReceived || 0) > 0
+            ? `
         <tr class="tax-row">
           <td colspan="6" class="text-right">Paid Amount</td>
           <td class="text-right">${formatCurrency(data.cashReceived || 0)}</td>
@@ -210,19 +257,35 @@ export function generateInvoiceHtml(data: InvoiceData): string {
           <td colspan="6" class="text-right font-bold" style="font-size: 14px;">Balance Due</td>
           <td class="text-right font-bold" style="font-size: 14px;">₹${formatCurrency(data.amtBalance || 0)}</td>
         </tr>
-        ` : ''}
+        `
+            : ''
+        }
       </tbody>
     </table>
     <div class="border border-t-0 px-2 py-1"><span>Amount Chargeable (in words)</span><span style="float:right;">E. &amp; O.E</span></div>
     <div class="border border-t-0 px-2 py-1 font-bold">${amountInWords}</div>
     <table class="hsn-table">
       <thead>
-        <tr><th rowspan="2">HSN/SAC</th><th rowspan="2">Taxable<br/>Value</th><th colspan="2">CGST</th><th colspan="2">SGST/UTGST</th><th rowspan="2">Total<br/>Tax Amount</th></tr>
-        <tr><th>Rate</th><th>Amount</th><th>Rate</th><th>Amount</th></tr>
+        ${
+          data.taxType === 'IGST'
+            ? `<tr><th rowspan="2">HSN/SAC</th><th rowspan="2">Taxable<br/>Value</th><th colspan="2">IGST</th><th rowspan="2">Total<br/>Tax Amount</th></tr>
+               <tr><th>Rate</th><th>Amount</th></tr>`
+            : `<tr><th rowspan="2">HSN/SAC</th><th rowspan="2">Taxable<br/>Value</th><th colspan="2">CGST</th><th colspan="2">SGST/UTGST</th><th rowspan="2">Total<br/>Tax Amount</th></tr>
+               <tr><th>Rate</th><th>Amount</th><th>Rate</th><th>Amount</th></tr>`
+        }
       </thead>
       <tbody>
         ${hsnRows}
-        <tr class="total-row"><td class="text-right">Total</td><td class="text-right">${formatCurrency(totalTaxableValue)}</td><td></td><td class="text-right">${formatCurrency(totalCgst)}</td><td></td><td class="text-right">${formatCurrency(totalSgst)}</td><td class="text-right">${formatCurrency(totalTax)}</td></tr>
+        <tr class="total-row">
+          <td class="text-right">Total</td>
+          <td class="text-right">${formatCurrency(totalTaxableValue)}</td>
+          ${
+            data.taxType === 'IGST'
+              ? `<td></td><td class="text-right">${formatCurrency(taxes.igstAmount || 0)}</td>`
+              : `<td></td><td class="text-right">${formatCurrency(totalCgst)}</td><td></td><td class="text-right">${formatCurrency(totalSgst)}</td>`
+          }
+          <td class="text-right">${formatCurrency(totalTax)}</td>
+        </tr>
       </tbody>
     </table>
     <div class="border border-t-0 px-2 py-1">Tax Amount (in words) : <strong>${taxAmountInWords}</strong></div>

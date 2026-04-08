@@ -25,7 +25,7 @@ import { generateInvoiceHtml } from './utils/generate-invoice-html';
 import { generateJewelleryInvoiceHtml } from './utils/generate-jewellery-html';
 import { generateModernInvoiceHtml } from './utils/generate-modern-html';
 import { PdfService } from './utils/pdf.service';
-import { CompanyDetails, BuyerDetails } from './utils/invoice-types';
+import { InvoiceData } from './utils/invoice-types';
 import { InvoiceCalculationService } from './utils/invoice-calculation.service';
 
 @Injectable()
@@ -210,6 +210,37 @@ export class InvoicesService {
           paidAmount: new Decimal(paidAmount),
           invoiceDate,
           financialYear,
+          companySnapshot: {
+            version: 1,
+            data: {
+              name: settings.companyName,
+              address: settings.address,
+              gstin: settings.gstin,
+              state: settings.state,
+              stateCode: settings.stateCode,
+              phone: settings.phone ?? '',
+              email: settings.email ?? '',
+              pan: settings.pan ?? '',
+              mantra: settings.mantra ?? '',
+              logo: settings.logoUrl ?? '',
+              bisLogo: settings.bisLogoUrl ?? '',
+              bankDetails: settings.bankName
+                ? {
+                    bankName: settings.bankName,
+                    branch: settings.bankBranch ?? '',
+                    accountName: settings.bankAccountName ?? '',
+                    accountNumber: settings.bankAccountNumber ?? '',
+                    ifsc: settings.bankIfsc ?? '',
+                  }
+                : undefined,
+            },
+          } as any,
+          buyerSnapshot: (draft.buyerSnapshot as any)?.version
+            ? (draft.buyerSnapshot as any)
+            : {
+                version: 1,
+                data: draft.buyerSnapshot,
+              },
         },
       });
 
@@ -606,34 +637,37 @@ export class InvoicesService {
 
     const customer = invoice.customer;
     const loc = customer.locations && customer.locations.length > 0 ? customer.locations[0] : null;
-    const companySnapshot = (invoice.companySnapshot as any)?.data || {};
-    const buyerSnapshot = (invoice.buyerSnapshot as any)?.data || {};
+    const companySnapshotRaw =
+      (invoice.companySnapshot as any)?.data || (invoice.companySnapshot as any) || {};
+    const buyerSnapshotRaw =
+      (invoice.buyerSnapshot as any)?.data || (invoice.buyerSnapshot as any) || {};
 
     // Build InvoiceData structure expected by templates
-    const invoiceData = {
+    const invoiceData: InvoiceData = {
       company: {
-        name: companySnapshot.name || '',
-        address: companySnapshot.address || '',
-        gstin: companySnapshot.gstin || '',
-        state: companySnapshot.state || '',
-        stateCode: companySnapshot.stateCode || '',
-        phone: companySnapshot.phone || '',
-        email: companySnapshot.email || '',
-        pan: companySnapshot.pan || '',
-        mantra: companySnapshot.mantra || '',
-        logo: companySnapshot.logo || '',
-        bisLogo: companySnapshot.bisLogo || '',
-        bankDetails: companySnapshot.bankDetails || undefined,
+        name: companySnapshotRaw.name || '',
+        address: companySnapshotRaw.address || '',
+        gstin: companySnapshotRaw.gstin || '',
+        state: companySnapshotRaw.state || '',
+        stateCode: companySnapshotRaw.stateCode || '',
+        phone: companySnapshotRaw.phone || '',
+        email: companySnapshotRaw.email || '',
+        pan: companySnapshotRaw.pan || '',
+        mantra: companySnapshotRaw.mantra || '',
+        logo: companySnapshotRaw.logo || '',
+        bisLogo: companySnapshotRaw.bisLogo || '',
+        bankDetails: companySnapshotRaw.bankDetails || undefined,
       },
       buyer: {
-        name: buyerSnapshot.name || customer.fullName || '',
+        name: buyerSnapshotRaw.name || customer.fullName || '',
         address:
-          buyerSnapshot.address || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
-        phone: buyerSnapshot.phone || customer.contactDetails?.[0]?.primaryPhone || '',
-        state: buyerSnapshot.state || companySnapshot.state || '',
-        stateCode: buyerSnapshot.stateCode || companySnapshot.stateCode || '',
-        email: buyerSnapshot.email || '',
-        pan: buyerSnapshot.pan || '',
+          buyerSnapshotRaw.address ||
+          (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
+        phone: buyerSnapshotRaw.phone || customer.contactDetails?.[0]?.primaryPhone || '',
+        state: buyerSnapshotRaw.state || companySnapshotRaw.state || '',
+        stateCode: buyerSnapshotRaw.stateCode || companySnapshotRaw.stateCode || '',
+        email: buyerSnapshotRaw.email || '',
+        pan: buyerSnapshotRaw.pan || '',
       },
       metadata: {
         invoiceNo: invoice.invoiceNumber || 'DRAFT',
@@ -656,7 +690,9 @@ export class InvoicesService {
         huid: item.huid || undefined,
         amount: new Decimal(item.taxableAmount).toNumber(),
       })),
+      taxType: invoice.taxType,
       taxes: {
+        taxType: invoice.taxType,
         cgstRate: new Decimal(invoice.cgstRate).toNumber(),
         cgstAmount: new Decimal(invoice.cgstAmount).toNumber(),
         sgstRate: new Decimal(invoice.sgstRate).toNumber(),
@@ -674,6 +710,7 @@ export class InvoicesService {
           sgstRate: new Decimal(invoice.sgstRate).toNumber(),
           igstRate: new Decimal(invoice.igstRate || 0).toNumber(),
         },
+        invoice.taxType,
       ),
       roundOff: new Decimal(invoice.roundOff).toNumber(),
       totalQuantity: invoice.items.reduce(
@@ -784,6 +821,43 @@ export class InvoicesService {
       success: true,
       message: `Invoice ${invoice.invoiceNumber} sent to ${dto.recipientEmails.join(', ')}`,
     };
+  }
+  
+  async getWhatsAppShareLink(id: string, user: CurrentUserData): Promise<{ url: string }> {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, organizationId: user.organizationId, deletedAt: null },
+      include: {
+        customer: {
+          include: { contactDetails: { where: { deletedAt: null } } },
+        },
+        organization: true,
+      },
+    });
+    
+    if (!invoice) throw new NotFoundException('Invoice not found');
+    
+    const signature = this.generateSignature(id, user.organizationId);
+    
+    // Use APP_URL if available, otherwise fallback to local/generic
+    const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+    const publicUrl = `${baseUrl}/invoices/${id}/html?signature=${signature}`;
+    
+    const companyName = (invoice as any).organization?.name || 'our store';
+    const message = `Hello, here is your invoice from ${companyName}. You can view and download it as PDF here: ${publicUrl}`;
+    const encodedMessage = encodeURIComponent(message);
+    
+    const primaryPhone = invoice.customer?.contactDetails?.[0]?.primaryPhone;
+    let waUrl = `https://wa.me/?text=${encodedMessage}`;
+    
+    if (primaryPhone) {
+      // Clean phone number: remove non-digits
+      const cleanPhone = primaryPhone.replace(/\D/g, '');
+      // If it doesn't start with a country code (assuming India 91 if 10 digits), prepend 91
+      const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+      waUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
+    }
+    
+    return { url: waUrl };
   }
 
   async findByNumber(invoiceNumber: string, organizationId: string) {
@@ -968,8 +1042,8 @@ export class InvoicesService {
           paidAmount: new Decimal(financials.paidAmount),
           metalRateSource: financials.metalRateSource,
           metalRateDate: financials.metalRateDate,
-          companySnapshot: { version: 1, data: financials.companySnapshot } as any,
-          buyerSnapshot: { version: 1, data: financials.buyerSnapshot } as any,
+          companySnapshot: financials.companySnapshot as any,
+          buyerSnapshot: financials.buyerSnapshot as any,
           modeOfPayment: dummyDto.modeOfPayment,
           deliveryNote: dummyDto.deliveryNote,
           dispatchDocNo: dummyDto.dispatchDocNo,
@@ -1150,36 +1224,43 @@ export class InvoicesService {
     );
 
     // 5. Build Snapshots
-    const companySnapshot: CompanyDetails = {
-      name: settings.companyName,
-      address: settings.address,
-      gstin: settings.gstin,
-      state: settings.state,
-      stateCode: settings.stateCode,
-      phone: settings.phone ?? '',
-      email: settings.email ?? '',
-      pan: settings.pan ?? '',
-      mantra: settings.mantra ?? '',
-      logo: settings.logoUrl ?? '',
-      bisLogo: settings.bisLogoUrl ?? '',
-      bankDetails: settings.bankName
-        ? {
-            bankName: settings.bankName,
-            branch: settings.bankBranch ?? '',
-            accountName: settings.bankAccountName ?? '',
-            accountNumber: settings.bankAccountNumber ?? '',
-            ifsc: settings.bankIfsc ?? '',
-          }
-        : undefined,
+    const companySnapshot = {
+      version: 1,
+      data: {
+        name: settings.companyName,
+        address: settings.address,
+        gstin: settings.gstin,
+        state: settings.state,
+        stateCode: settings.stateCode,
+        phone: settings.phone ?? '',
+        email: settings.email ?? '',
+        pan: settings.pan ?? '',
+        mantra: settings.mantra ?? '',
+        logo: settings.logoUrl ?? '',
+        bisLogo: settings.bisLogoUrl ?? '',
+        bankDetails: settings.bankName
+          ? {
+              bankName: settings.bankName,
+              branch: settings.bankBranch ?? '',
+              accountName: settings.bankAccountName ?? '',
+              accountNumber: settings.bankAccountNumber ?? '',
+              ifsc: settings.bankIfsc ?? '',
+            }
+          : undefined,
+      },
     };
 
     const loc = customer.locations?.[0] || null;
-    const buyerSnapshot: BuyerDetails = {
-      name: customer.fullName,
-      address: dto.buyerAddress || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
-      phone: customer.contactDetails?.[0]?.primaryPhone ?? '',
-      state: dto.buyerState || loc?.state || '',
-      stateCode: dto.buyerStateCode || loc?.district || '', // district often used for local codes if state matches
+    const buyerSnapshot = {
+      version: 1,
+      data: {
+        name: customer.fullName,
+        address:
+          dto.buyerAddress || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
+        phone: customer.contactDetails?.[0]?.primaryPhone ?? '',
+        state: dto.buyerState || loc?.state || '',
+        stateCode: dto.buyerStateCode || loc?.district || '', // district often used for local codes if state matches
+      },
     };
 
     const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
@@ -1220,6 +1301,7 @@ export class InvoicesService {
   private _calculateHsnSummary(
     items: any[],
     taxes: { cgstRate: number; sgstRate: number; igstRate: number },
+    taxType: TaxType = TaxType.CGST_SGST,
   ): any[] {
     const summaryMap = new Map<string, any>();
 
@@ -1248,10 +1330,19 @@ export class InvoicesService {
     // Now calculate taxes for each HSN group
     const result: any[] = [];
     summaryMap.forEach((summary) => {
-      summary.cgstAmount = Math.round(((summary.taxableValue * summary.cgstRate) / 100) * 100) / 100;
-      summary.sgstAmount = Math.round(((summary.taxableValue * summary.sgstRate) / 100) * 100) / 100;
-      summary.igstAmount = Math.round(((summary.taxableValue * summary.igstRate) / 100) * 100) / 100;
-      summary.totalTaxAmount = summary.cgstAmount + summary.sgstAmount + summary.igstAmount;
+      summary.taxType = taxType;
+      summary.cgstAmount =
+        Math.round(((summary.taxableValue * summary.cgstRate) / 100) * 100) / 100;
+      summary.sgstAmount =
+        Math.round(((summary.taxableValue * summary.sgstRate) / 100) * 100) / 100;
+      summary.igstAmount =
+        Math.round(((summary.taxableValue * summary.igstRate) / 100) * 100) / 100;
+
+      if (taxType === TaxType.IGST) {
+        summary.totalTaxAmount = summary.igstAmount;
+      } else {
+        summary.totalTaxAmount = summary.cgstAmount + summary.sgstAmount;
+      }
       result.push(summary);
     });
 
@@ -1333,34 +1424,40 @@ export class InvoicesService {
       throw new NotFoundException('Invoice settings not found. Please configure settings first.');
 
     const companySnapshot = {
-      name: settings.companyName,
-      address: settings.address,
-      gstin: settings.gstin,
-      state: settings.state,
-      stateCode: settings.stateCode,
-      phone: settings.phone ?? '',
-      email: settings.email ?? '',
-      pan: settings.pan ?? '',
-      mantra: settings.mantra ?? '',
-      logo: settings.logoUrl ?? '',
-      bisLogo: settings.bisLogoUrl ?? '',
-      bankDetails: settings.bankName
-        ? {
-            bankName: settings.bankName,
-            branch: settings.bankBranch ?? '',
-            accountName: settings.bankAccountName ?? '',
-            accountNumber: settings.bankAccountNumber ?? '',
-            ifsc: settings.bankIfsc ?? '',
-          }
-        : undefined,
+      version: 1,
+      data: {
+        name: settings.companyName,
+        address: settings.address,
+        gstin: settings.gstin,
+        state: settings.state,
+        stateCode: settings.stateCode,
+        phone: settings.phone ?? '',
+        email: settings.email ?? '',
+        pan: settings.pan ?? '',
+        mantra: settings.mantra ?? '',
+        logo: settings.logoUrl ?? '',
+        bisLogo: settings.bisLogoUrl ?? '',
+        bankDetails: settings.bankName
+          ? {
+              bankName: settings.bankName,
+              branch: settings.bankBranch ?? '',
+              accountName: settings.bankAccountName ?? '',
+              accountNumber: settings.bankAccountNumber ?? '',
+              ifsc: settings.bankIfsc ?? '',
+            }
+          : undefined,
+      },
     };
 
     const buyerSnapshot = {
-      name: 'Sample Customer',
-      address: '123 Sample Street, Sample City',
-      phone: '+91 98765 43210',
-      state: settings.state,
-      stateCode: settings.stateCode,
+      version: 1,
+      data: {
+        name: 'Sample Customer',
+        address: '123 Sample Street, Sample City',
+        phone: '+91 98765 43210',
+        state: settings.state,
+        stateCode: settings.stateCode,
+      },
     };
 
     const sampleItems = [
@@ -1411,16 +1508,18 @@ export class InvoicesService {
     const roundOff = Math.round((totalAmount - totalBeforeRound) * 100) / 100;
     const paidAmount = 10000;
 
-    const invoiceData = {
-      company: companySnapshot,
-      buyer: buyerSnapshot,
+    const invoiceData: InvoiceData = {
+      company: companySnapshot.data,
+      buyer: buyerSnapshot.data,
       metadata: {
         invoiceNo: `${settings.invoiceNumberPrefix || 'INV'}-${settings.startingSequence || 1}`,
         date: new Date().toLocaleDateString('en-IN'),
         financialYear: getFinancialYear(new Date()),
       },
       items: sampleItems,
+      taxType: taxType as any,
       taxes: {
+        taxType: taxType as any,
         cgstRate,
         cgstAmount,
         sgstRate,
@@ -1431,6 +1530,7 @@ export class InvoicesService {
       hsnSummary: this._calculateHsnSummary(
         sampleItems.map((i) => ({ hsnSac: i.hsnSac, amount: i.amount })),
         { cgstRate, sgstRate, igstRate },
+        taxType as any,
       ),
       roundOff,
       totalQuantity: sampleItems.reduce((sum, i) => sum + i.quantity, 0),

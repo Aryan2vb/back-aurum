@@ -158,8 +158,16 @@ export class InvoicesController {
     @Query() query: NegotiatePreviewQueryDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    this.logger.log(`GET /invoices/${id}/negotiate/preview — target: ${query.targetAmount}`);
-    return this.negotiationService.preview(id, user.organizationId, query.targetAmount);
+    this.logger.log(
+      `GET /invoices/${id}/negotiate/preview — target: ${query.targetAmount}, mode: ${query.mode}`,
+    );
+    return this.negotiationService.preview(
+      id,
+      user.organizationId,
+      query.targetAmount,
+      query.mode,
+      query.metalType,
+    );
   }
 
   @Post(':id/negotiate/commit')
@@ -170,12 +178,16 @@ export class InvoicesController {
     @Body() dto: NegotiateCommitDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    this.logger.log(`POST /invoices/${id}/negotiate/commit — target: ${dto.targetAmount}`);
+    this.logger.log(
+      `POST /invoices/${id}/negotiate/commit — target: ${dto.targetAmount}, mode: ${dto.mode}`,
+    );
     return this.negotiationService.commit(
       id,
       user.organizationId,
       dto.targetAmount,
       user.userId,
+      dto.mode,
+      dto.metalType,
       dto.negotiationNote,
     );
   }
@@ -251,6 +263,16 @@ export class InvoicesController {
   signUrl(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     const signature = this.invoicesService.generateSignature(id, user.organizationId);
     return { signature };
+  }
+
+  @Get(':id/share/whatsapp')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+  )
+  getWhatsAppShare(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+    return this.invoicesService.getWhatsAppShareLink(id, user);
   }
 
   // ===========================

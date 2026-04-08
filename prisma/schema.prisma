@@ -479,7 +479,7 @@ model InvoiceItem {
   metalRate           Decimal?           @db.Decimal(12, 4)  // ₹/gm at 24K (gold) or 999 fine (silver)
   purity              String?            // legacy — kept for backward compat
   purityLabel         String?            // "22K", "18K", "925" — display only
-  purityValue         Decimal?           @db.Decimal(6, 3)   // 22.000, 18.000, 925.000
+  purityValue         Decimal?           @db.Decimal(8, 3)   // 22.000, 18.000, 925.000, 1000.000
   purityBasis         Int?               // 24 for gold karats, 1000 for silver millesimal
   effectiveRate       Decimal?           @db.Decimal(12, 4)  // metalRate × (purityValue / purityBasis)
 
@@ -511,6 +511,8 @@ model InvoiceItem {
   // Negotiation audit trail
   originalMakingCharges       Decimal?   @db.Decimal(10, 4)
   originalMakingChargesAmount Decimal?   @db.Decimal(12, 4)
+  originalMetalRate           Decimal?   @db.Decimal(12, 4)
+  originalEffectiveRate       Decimal?   @db.Decimal(12, 4)
   originalItemAmount          Decimal?   @db.Decimal(12, 4)
 
   invoice             Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)

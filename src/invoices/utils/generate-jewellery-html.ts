@@ -48,9 +48,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
     .join('');
 
   const emptyRows = Array(Math.max(0, 6 - items.length))
-    .fill(
-      '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>',
-    )
+    .fill('<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>')
     .join('');
 
   const termsDefault = `1. All disputes are subject to REWA Jurisdiction Only.
@@ -115,10 +113,41 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         .terms-text { font-size: 10px; line-height: 1.5; white-space: pre-line; }
         .signature-section { display: flex; justify-content: space-between; padding: 40px 10px 10px; border: 1px solid #000; border-top: none; }
         .sig-label { font-weight: bold; font-size: 12px; }
-        @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } .invoice { padding: 10px; max-width: 100%; border-width: 1px; } @page { margin: 8mm; size: A4; } }
+        .print-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #c00;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 30px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        .print-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.2); background: #d00; }
+        .print-btn:active { transform: translateY(0); }
+        @media print { 
+            body { background: white; }
+            .print-btn { display: none !important; }
+            .invoice { padding: 10px; max-width: 100%; border-width: 1.5px; margin: 0; } 
+            @page { margin: 10mm; size: A4; } 
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
     </style>
 </head>
 <body>
+    <button class="print-btn" onclick="window.print()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+        Save as PDF / Print
+    </button>
     <div class="invoice">
         <div class="header">
             <div class="header-left"><div class="logo-circle">${company.name.slice(0, 2).toUpperCase()}</div></div>
@@ -161,9 +190,12 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         </table>
         <div class="totals-section">
             <div class="totals-row" style="padding-top:6px;"><span class="label">AMT :</span><span class="value">${fmt(subtotal)}</span></div>
-            <div class="totals-row"><span class="label">CGST (${taxes.cgstRate}%) :</span><span class="value">${fmt(taxes.cgstAmount)}</span></div>
-            <div class="totals-row"><span class="label">SGST (${taxes.sgstRate}%) :</span><span class="value">${fmt(taxes.sgstAmount)}</span></div>
-            ${taxes.igstRate && taxes.igstRate > 0 ? `<div class="totals-row"><span class="label">IGST (${taxes.igstRate}%) :</span><span class="value">${fmt(taxes.igstAmount || 0)}</span></div>` : ''}
+            ${
+              data.taxType === 'IGST'
+                ? `<div class="totals-row"><span class="label">IGST (${taxes.igstRate}%) :</span><span class="value">${fmt(taxes.igstAmount || 0)}</span></div>`
+                : `<div class="totals-row"><span class="label">CGST (${taxes.cgstRate}%) :</span><span class="value">${fmt(taxes.cgstAmount)}</span></div>
+            <div class="totals-row"><span class="label">SGST (${taxes.sgstRate}%) :</span><span class="value">${fmt(taxes.sgstAmount)}</span></div>`
+            }
             <div class="totals-row"><span class="label">ROUND OFF :</span><span class="value">${roundOff >= 0 ? '+ ' : '- '}${fmt(Math.abs(roundOff))}</span></div>
             <div class="totals-divider"></div>
             <div class="totals-row" style="padding:4px 10px;font-size:13px;"><span class="label">TOTAL AMOUNT :</span><span class="value">${fmt(totalAmount)}</span></div>

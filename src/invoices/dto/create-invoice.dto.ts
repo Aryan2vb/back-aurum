@@ -88,7 +88,6 @@ export class CreateInvoiceItemDto {
   @IsString()
   @IsOptional()
   huid?: string;
-
 }
 
 export class CreateInvoiceDto {
@@ -119,7 +118,6 @@ export class CreateInvoiceDto {
   @IsString()
   @IsOptional()
   templateType?: string;
-
 
   // Dispatch / delivery fields
   @IsString()

@@ -17,27 +17,55 @@ export class PdfService {
     this.logger.debug('Generating PDF using pdfmake');
 
     try {
+      // Pre-process HTML to remove "heavy" CSS that causes pdfmake/html-to-pdfmake to hang
+      // Especially gradients, grid, and complex flexbox
+      const sanitizedHtml = this.sanitizeForPdf(html);
+
       const { window } = new JSDOM('');
-      const parsedHtml = htmlToPdfmake(html, { window });
+      const parsedHtml = htmlToPdfmake(sanitizedHtml, { window });
 
       const docDefinition = {
         content: parsedHtml,
-        pageMargins: [28, 28, 28, 28] as [number, number, number, number], // roughly 10mm
+        pageMargins: [28, 28, 28, 28] as [number, number, number, number],
         defaultStyle: {
           font: 'Roboto',
         },
       };
 
       const pdfDocGenerator = pdfMake.createPdf(docDefinition);
-      return new Promise<Buffer>((resolve) => {
-        pdfDocGenerator.getBuffer((buffer: Uint8Array) => {
-          this.logger.debug('PDF generated successfully with pdfmake');
-          resolve(Buffer.from(buffer)); // Ensure it's a native Node Buffer
-        });
+      
+      // Ensure we don't hang indefinitely if pdfmake fails internally
+      return new Promise<Buffer>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('PDF generation timed out after 30s'));
+        }, 30000);
+
+        try {
+          pdfDocGenerator.getBuffer((buffer: Uint8Array) => {
+            clearTimeout(timeout);
+            this.logger.debug('PDF generated successfully with pdfmake');
+            resolve(Buffer.from(buffer));
+          });
+        } catch (err) {
+          clearTimeout(timeout);
+          reject(err);
+        }
       });
     } catch (error) {
       this.logger.error('Failed to generate PDF with pdfmake', error);
       throw error;
     }
+  }
+
+  private sanitizeForPdf(html: string): string {
+    // Remove complex CSS that hangs html-to-pdfmake
+    return html
+      .replace(/background:\s*linear-gradient\([^)]+\);?/gi, '')
+      .replace(/display:\s*(grid|flex);?/gi, 'display: block;')
+      .replace(/grid-template-columns:[^;]+;?/gi, '')
+      .replace(/gap:[^;]+;?/gi, '')
+      .replace(/box-shadow:[^;]+;?/gi, '')
+      .replace(/filter:[^;]+;?/gi, '')
+      .replace(/backdrop-filter:[^;]+;?/gi, '');
   }
 }
