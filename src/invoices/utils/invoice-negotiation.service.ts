@@ -65,15 +65,6 @@ export class InvoiceNegotiationService {
       throw new BadRequestException('Only DRAFT invoices can be negotiated');
     }
 
-    const currentGrand = new Decimal(invoice.totalAmount);
-
-    if (target.gte(currentGrand)) {
-      throw new BadRequestException(
-        `Target ₹${target.toFixed(2)} must be less than current ₹${currentGrand.toFixed(2)}`,
-      );
-    }
-
-    // Back-solve: targetAmount = taxableAmount × (1 + gstRate/100)
     const gstRate =
       invoice.taxType === TaxType.IGST
         ? new Decimal(invoice.igstRate)
@@ -81,8 +72,21 @@ export class InvoiceNegotiationService {
 
     const gstMultiplier = new Decimal(1).plus(gstRate.div(100));
 
+    // Calculate current taxable from items to be robust against header mismatches
+    const currentTaxable = invoice.items.reduce(
+      (sum, item) => sum.plus(new Decimal(item.taxableAmount)),
+      new Decimal(0)
+    );
+
+    const currentGrand = currentTaxable.mul(gstMultiplier).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+
+    if (target.gte(currentGrand)) {
+      throw new BadRequestException(
+        `Target ₹${target.toFixed(2)} must be less than current ₹${currentGrand.toFixed(2)}`,
+      );
+    }
+
     const requiredTaxableRaw = target.div(gstMultiplier);
-    const currentTaxable = new Decimal(invoice.taxableAmount ?? invoice.subtotal);
     const totalReduction = currentTaxable.minus(requiredTaxableRaw).toDecimalPlaces(4);
 
     let adjustableItems = invoice.items;
@@ -157,20 +161,20 @@ export class InvoiceNegotiationService {
       let newEffectiveRate = new Decimal(item.effectiveRate || item.metalRate || 0);
 
       if (mode === NegotiationMode.MAKING_CHARGES) {
-        const share = currentMakingAmt.div(totalCurrentPool);
+        const share = totalCurrentPool.isZero() ? new Decimal(0) : currentMakingAmt.div(totalCurrentPool);
         reduction = totalReduction.mul(share).toDecimalPlaces(4);
         newMakingAmt = currentMakingAmt.minus(reduction).toDecimalPlaces(4);
         newMakingRate =
           item.makingChargesType === 'PER_GRAM'
-            ? newMakingAmt.div(netWeight).toDecimalPlaces(4)
+            ? (netWeight.isZero() ? new Decimal(0) : newMakingAmt.div(netWeight).toDecimalPlaces(4))
             : new Decimal(item.makingCharges ?? 0);
       } else {
-        const share = currentMetalValue.div(totalCurrentPool);
+        const share = totalCurrentPool.isZero() ? new Decimal(0) : currentMetalValue.div(totalCurrentPool);
         reduction = totalReduction.mul(share).toDecimalPlaces(4);
         const newMetalValue = currentMetalValue.minus(reduction).toDecimalPlaces(4);
 
         // Rate reduction: NewRate = OldRate * (NewValue / OldValue)
-        const factor = newMetalValue.div(currentMetalValue);
+        const factor = currentMetalValue.isZero() ? new Decimal(1) : newMetalValue.div(currentMetalValue);
         newMetalRate = new Decimal(item.metalRate || 0).mul(factor).toDecimalPlaces(4);
         newEffectiveRate = new Decimal(item.effectiveRate || item.metalRate || 0)
           .mul(factor)
