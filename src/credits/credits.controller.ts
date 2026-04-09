@@ -77,8 +77,7 @@ export class CreditsController {
     OrganizationRole.VIEWER,
   )
   getDueReminders(@CurrentUser() user: CurrentUserData, @Query('days') days?: number) {
-    console.log('getDueReminders', days);
-    console.log(user);
+    this.logger.debug(`GET /credits/due-reminders - org: ${user.organizationId}, days: ${days}`);
     return this.creditsService.getDueReminders(user.organizationId, days ? Number(days) : 7);
   }
 

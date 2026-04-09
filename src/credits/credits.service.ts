@@ -177,7 +177,7 @@ export class CreditsService {
 
   async update(id: string, dto: UpdateCreditDto, user: CurrentUserData) {
     const udhar = await this.prisma.udharEntry.findFirst({
-      where: { id, organizationId: user.organizationId },
+      where: { id, organizationId: user.organizationId, deletedAt: null },
       include: { ledgerEntry: true },
     });
     if (!udhar) throw new NotFoundException('Udhar not found');
@@ -187,11 +187,10 @@ export class CreditsService {
       dueDate: dto.expectedDueDate ? new Date(dto.expectedDueDate) : undefined,
     };
 
-    // Robust editing: if amount, description or date changes, update ledger too
     return this.prisma.$transaction(async (tx) => {
       const ledgerUpdate: any = {};
       if (dto.description) ledgerUpdate.description = dto.description;
-      if (dto.totalAmount) {
+      if (dto.totalAmount !== undefined) {
         const newTotal = new Decimal(dto.totalAmount);
         if (newTotal.lessThan(udhar.paidAmount)) {
           throw new BadRequestException(
@@ -213,14 +212,15 @@ export class CreditsService {
         });
       }
 
-      // Sync status if amount changed and now matches paid
-      if (dto.totalAmount) {
+      // Sync status if amount changed
+      if (dto.totalAmount !== undefined) {
         const newTotal = new Decimal(dto.totalAmount);
         updateData.status = udhar.paidAmount.gte(newTotal)
           ? CreditStatus.PAID
           : CreditStatus.ACTIVE;
       }
 
+      // Explicit status override takes priority over derived status
       if (dto.status) updateData.status = dto.status;
 
       return tx.udharEntry.update({
@@ -232,7 +232,7 @@ export class CreditsService {
 
   async softDelete(id: string, user: CurrentUserData, forceDelete: boolean = false) {
     const udhar = await this.prisma.udharEntry.findFirst({
-      where: { id, organizationId: user.organizationId },
+      where: { id, organizationId: user.organizationId, deletedAt: null },
     });
     if (!udhar) throw new NotFoundException('Udhar not found');
 
@@ -275,17 +275,19 @@ export class CreditsService {
     dto: UpdateCreditTransactionDto,
     user: CurrentUserData,
   ) {
+    // findFirst enforces organizationId isolation (findUnique ignores extra where clauses)
     const payment = await this.prisma.ledgerEntry.findFirst({
       where: {
         id: transactionId,
         entityId: udharId,
         organizationId: user.organizationId,
         type: LedgerType.PAYMENT,
+        deletedAt: null,
       },
     });
     if (!payment) throw new NotFoundException('Payment not found');
 
-    const newAmount = dto.amount ? new Decimal(dto.amount) : payment.amount;
+    const newAmount = dto.amount !== undefined ? new Decimal(dto.amount) : payment.amount;
     const diff = newAmount.sub(payment.amount);
 
     return this.prisma.$transaction(async (tx) => {
@@ -298,10 +300,16 @@ export class CreditsService {
         },
       });
 
-      const udhar = await tx.udharEntry.findUnique({
-        where: { id: udharId, organizationId: user.organizationId },
+      // findFirst enforces organizationId — findUnique does not since udharId alone is unique
+      const udhar = await tx.udharEntry.findFirst({
+        where: { id: udharId, organizationId: user.organizationId, deletedAt: null },
       });
+      if (!udhar) throw new NotFoundException('Udhar not found');
+
       const newPaid = udhar.paidAmount.add(diff);
+      if (newPaid.lessThan(0)) {
+        throw new BadRequestException('Editing this payment would result in a negative paid amount');
+      }
 
       await tx.udharEntry.update({
         where: { id: udharId, organizationId: user.organizationId },
@@ -316,19 +324,22 @@ export class CreditsService {
   }
 
   async deleteTransaction(udharId: string, transactionId: string, user: CurrentUserData) {
+    // findFirst enforces organizationId isolation (findUnique ignores extra where clauses)
     const payment = await this.prisma.ledgerEntry.findFirst({
       where: {
         id: transactionId,
         entityId: udharId,
         organizationId: user.organizationId,
         type: LedgerType.PAYMENT,
+        deletedAt: null,
       },
     });
     if (!payment) throw new NotFoundException('Payment not found');
 
     return this.prisma.$transaction(async (tx) => {
-      const udhar = await tx.udharEntry.findUnique({
-        where: { id: udharId, organizationId: user.organizationId },
+      // findFirst enforces organizationId — findUnique does not
+      const udhar = await tx.udharEntry.findFirst({
+        where: { id: udharId, organizationId: user.organizationId, deletedAt: null },
       });
       if (!udhar) throw new NotFoundException('Udhar not found');
 
@@ -448,6 +459,17 @@ export class CreditsService {
     if (!udhar) throw new NotFoundException('Udhar not found or inactive');
 
     const amount = new Decimal(dto.amount);
+    if (amount.lte(0)) {
+      throw new BadRequestException('Payment amount must be greater than zero');
+    }
+
+    const remaining = udhar.amount.sub(udhar.paidAmount);
+    if (amount.gt(remaining)) {
+      throw new BadRequestException(
+        `Payment of ₹${amount} exceeds remaining balance of ₹${remaining.toDecimalPlaces(2)}`,
+      );
+    }
+
     const totalPaid = udhar.paidAmount.add(amount);
 
     return this.prisma.$transaction(async (tx) => {
@@ -476,6 +498,7 @@ export class CreditsService {
   async getUdharPayments(udharId: string, organizationId: string) {
     return this.prisma.ledgerEntry.findMany({
       where: { organizationId, entityId: udharId, type: LedgerType.PAYMENT, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
     });
   }
 

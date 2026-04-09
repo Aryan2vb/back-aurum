@@ -563,18 +563,29 @@ export class InvoicesService {
           amount: paymentAmount,
           reference: dto.reference,
           notes: dto.notes,
+          // paidAt defaults to now() in schema — override only if caller provides a date
         },
       });
 
       const udhar = await tx.udharEntry.findFirst({
-        where: { invoiceId: id, organizationId: user.organizationId, status: CreditStatus.ACTIVE },
+        where: {
+          invoiceId: id,
+          organizationId: user.organizationId,
+          // Sync payment to both ACTIVE and OVERDUE udhar entries
+          status: { in: [CreditStatus.ACTIVE, CreditStatus.OVERDUE] },
+          deletedAt: null,
+        },
       });
 
       if (udhar) {
+        // Add only the incoming payment delta — udhar may have already had prior payments
         const newUdharPaid = (udhar.paidAmount as Decimal).add(paymentAmount);
-        const newUdharStatus = newUdharPaid.greaterThanOrEqualTo(udhar.amount)
+        const newUdharBalance = new Decimal(udhar.amount).minus(newUdharPaid);
+        const newUdharStatus = newUdharBalance.lte(0)
           ? CreditStatus.PAID
-          : CreditStatus.ACTIVE;
+          : udhar.status === CreditStatus.OVERDUE
+            ? CreditStatus.OVERDUE // preserve OVERDUE unless fully paid
+            : CreditStatus.ACTIVE;
 
         await tx.udharEntry.update({
           where: { id: udhar.id, organizationId: user.organizationId },
@@ -591,7 +602,7 @@ export class InvoicesService {
             amount: paymentAmount,
             type: LedgerType.PAYMENT,
             description: dto.notes ?? `Payment for Invoice ${invoice.invoiceNumber}`,
-            entityId: id,
+            entityId: udhar.id,
             createdById: user.userId,
           },
         });
@@ -830,7 +841,6 @@ export class InvoicesService {
         customer: {
           include: { contactDetails: { where: { deletedAt: null } } },
         },
-        organization: true,
       },
     });
     
@@ -842,7 +852,8 @@ export class InvoicesService {
     const baseUrl = process.env.APP_URL || 'http://localhost:3000';
     const publicUrl = `${baseUrl}/invoices/${id}/html?signature=${signature}`;
     
-    const companyName = (invoice as any).organization?.name || 'our store';
+    // Use company name from the already-stored snapshot — avoids needing a separate join
+    const companyName = (invoice.companySnapshot as any)?.data?.name || 'our store';
     const message = `Hello, here is your invoice from ${companyName}. You can view and download it as PDF here: ${publicUrl}`;
     const encodedMessage = encodeURIComponent(message);
     
@@ -962,8 +973,11 @@ export class InvoicesService {
       deliveryNote: dto.deliveryNote ?? existing.deliveryNote,
       dispatchDocNo: dto.dispatchDocNo ?? existing.dispatchDocNo,
       destination: dto.destination ?? existing.destination,
+      termsOfDelivery: dto.termsOfDelivery ?? existing.termsOfDelivery,
       invoiceDate: dto.invoiceDate ?? existing.invoiceDate?.toISOString(),
-      buyerAddress: dto.buyerAddress,
+      buyerAddress: dto.buyerAddress ?? (existing.buyerSnapshot as any)?.data?.address,
+      buyerState: dto.buyerState ?? (existing.buyerSnapshot as any)?.data?.state,
+      buyerStateCode: dto.buyerStateCode ?? (existing.buyerSnapshot as any)?.data?.stateCode,
       autoCreateUdhar: dto.autoCreateUdhar ?? (existing as any).autoCreateUdhar,
     };
 
@@ -1164,8 +1178,9 @@ export class InvoicesService {
     // 1. Fetch dependencies context
     const [settings, customer, configItems] = await Promise.all([
       this.prisma.orgInvoiceSettings.findUnique({ where: { organizationId } }),
-      this.prisma.customer.findUnique({
-        where: { id: dto.customerId, organizationId },
+      // findFirst enforces organizationId via the middleware check (findUnique with compound where also works but findFirst is explicit)
+      this.prisma.customer.findFirst({
+        where: { id: dto.customerId, organizationId, deletedAt: null },
         include: { contactDetails: true, locations: true },
       }),
       this.prisma.systemConfig.findMany({
@@ -1495,9 +1510,9 @@ export class InvoicesService {
     const isIgst = taxType === TaxType.IGST;
     const isNone = taxType === TaxType.NONE;
 
-    const cgstRate = isIgst || isNone ? 0 : new Decimal(settings.defaultCgstRate).toNumber();
-    const sgstRate = isIgst || isNone ? 0 : new Decimal(settings.defaultSgstRate).toNumber();
-    const igstRate = isIgst ? new Decimal(settings.defaultIgstRate).toNumber() : 0;
+    const cgstRate = isIgst || isNone ? 0 : new Decimal(settings.defaultCgstRate ?? 0).toNumber();
+    const sgstRate = isIgst || isNone ? 0 : new Decimal(settings.defaultSgstRate ?? 0).toNumber();
+    const igstRate = isIgst ? new Decimal(settings.defaultIgstRate ?? 0).toNumber() : 0;
 
     const subtotal = sampleItems.reduce((sum, i) => sum + i.amount, 0);
     const cgstAmount = Math.round(((subtotal * cgstRate) / 100) * 100) / 100;
