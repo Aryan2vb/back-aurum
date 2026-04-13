@@ -107,6 +107,7 @@ jobs:
             cd /opt/aurum
 
             echo "── Pulling configuration code ──"
+            git -C aurum pull origin main
             git -C back-aurum pull origin main
 
             echo "── Setting up configuration ──"
