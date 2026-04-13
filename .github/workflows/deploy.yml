@@ -113,6 +113,10 @@ jobs:
             cp aurum/docker/docker-compose.prod.yml .
             cp -r aurum/docker/nginx .
 
+            echo "── Cleaning up Docker to free space ──"
+            docker system prune -af --volumes || true
+            docker builder prune -af || true
+
             echo "── Pulling new images ──"
             docker compose -f docker-compose.prod.yml pull backend
 
@@ -122,10 +126,6 @@ jobs:
             echo "── Prisma migrations ──"
             docker compose -f docker-compose.prod.yml exec -T backend \
               npx prisma migrate deploy
-
-            echo "── Cleaning up Docker to free space ──"
-            docker system prune -af --volumes || true
-            docker builder prune -af || true
 
             echo "── Deploy complete ✓ ──"
 
