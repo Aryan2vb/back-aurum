@@ -17,6 +17,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      packages: write
 
     environment:
       name: production
@@ -25,8 +26,6 @@ jobs:
       - uses: actions/checkout@v4
 
       # ── 1. Authenticate to AWS via OIDC ─────────────────
-      # Zero stored credentials. GitHub exchanges a short-lived
-      # OIDC token for temporary AWS credentials at runtime.
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -34,8 +33,6 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       # ── 2. Fetch current public IP dynamically ───────────
-      # EC2_INSTANCE_ID never changes on stop/start — only the
-      # public IP does. We query it fresh on every deploy run.
       - name: Fetch EC2 public IP
         id: ec2
         run: |
@@ -52,9 +49,27 @@ jobs:
           echo "ip=$IP" >> "$GITHUB_OUTPUT"
           echo "Resolved IP: $IP"
 
-      # ── 3. Wait for SSH to be ready ──────────────────────
-      # If this deploy runs right after an EventBridge start,
-      # the instance may still be booting. Retry for 2 minutes.
+      # ── 3. Build & Push to GHCR ─────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ghcr.io/aryan2vb/back-aurum:production
+          target: production
+
+      # ── 4. Wait for SSH to be ready ──────────────────────
       - name: Wait for SSH readiness
         run: |
           echo "${{ secrets.EC2_SSH_KEY }}" > /tmp/deploy_key
@@ -75,39 +90,48 @@ jobs:
           echo "ERROR: SSH did not become ready in time."
           exit 1
 
-      # ── 4. Deploy ────────────────────────────────────────
+      # ── 5. Deploy ────────────────────────────────────────
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ steps.ec2.outputs.ip }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+              -i /tmp/deploy_key \
+              ${{ secrets.EC2_USER }}@${{ steps.ec2.outputs.ip }} "echo $GHCR_PAT | docker login ghcr.io -u aryan2vb --password-stdin"
+
+          ssh -o StrictHostKeyChecking=no \
+              -i /tmp/deploy_key \
+              ${{ secrets.EC2_USER }}@${{ steps.ec2.outputs.ip }} << 'EOF'
+
             set -e
             cd /opt/aurum
 
-            echo "── Pulling latest code ──"
-            git -C aurum      pull origin main
+            echo "── Pulling configuration code ──"
             git -C back-aurum pull origin main
 
             echo "── Setting up configuration ──"
             cp aurum/docker/docker-compose.prod.yml .
             cp -r aurum/docker/nginx .
 
-            echo "── Cleaning up Docker to free space ──"
-            docker system prune -af --volumes || true
-            docker builder prune -af || true
+            echo "── Pulling new images ──"
+            docker compose -f docker-compose.prod.yml pull backend
 
-            echo "── Rebuilding containers ──"
-            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+            echo "── Restarting containers ──"
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
             echo "── Prisma migrations ──"
             docker compose -f docker-compose.prod.yml exec -T backend \
               npx prisma migrate deploy
 
-            echo "── Done ✓ ──"
+            echo "── Cleaning up Docker to free space ──"
+            docker system prune -af --volumes || true
+            docker builder prune -af || true
 
-      # ── 5. Cleanup ───────────────────────────────────────
+            echo "── Deploy complete ✓ ──"
+
+          EOF
+
+      # ── 6. Cleanup ───────────────────────────────────────
       - name: Remove temp SSH key
         if: always()
         run: rm -f /tmp/deploy_key
