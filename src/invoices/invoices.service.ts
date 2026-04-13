@@ -355,7 +355,7 @@ export class InvoicesService {
           metalRateDate,
           companySnapshot: companySnapshot as any,
           buyerSnapshot: buyerSnapshot as any,
-          modeOfPayment: dto.modeOfPayment,
+          modeOfPayment: dto.modeOfPayment || (dto.payments?.[0]?.mode as string),
           deliveryNote: dto.deliveryNote,
           dispatchDocNo: dto.dispatchDocNo,
           destination: dto.destination,
@@ -367,6 +367,17 @@ export class InvoicesService {
           createdById: userId,
           invoiceNumber,
           sequence: sequenceVal,
+          payments: dto.payments?.length
+            ? {
+                create: dto.payments.map((p) => ({
+                  organizationId,
+                  mode: p.mode,
+                  amount: new Decimal(p.amount),
+                  reference: p.reference,
+                  notes: p.notes,
+                })),
+              }
+            : undefined,
           items: {
             create: lineItems.map((item) => ({
               organizationId,
@@ -470,6 +481,7 @@ export class InvoicesService {
           customer: { select: { id: true, fullName: true, customerCode: true } },
           _count: { select: { items: true } },
           items: includeItems ? { orderBy: { slNo: 'asc' } } : undefined,
+          payments: true,
         },
         orderBy: { [sortField]: sortOrder },
         skip,
@@ -505,6 +517,7 @@ export class InvoicesService {
         },
         udharEntries: { where: { deletedAt: null } },
         createdBy: { select: { id: true, fullName: true, email: true } },
+        payments: { orderBy: { createdAt: 'desc' } },
       },
     });
 
@@ -641,6 +654,7 @@ export class InvoicesService {
             locations: { where: { deletedAt: null }, take: 1 },
           },
         },
+        payments: { orderBy: { createdAt: 'asc' } },
       },
     });
 
@@ -741,6 +755,10 @@ export class InvoicesService {
       amtBalance: new Decimal(invoice.totalAmount)
         .minus(new Decimal(invoice.paidAmount))
         .toNumber(),
+      payments: invoice.payments?.map((p: any) => ({
+        mode: p.mode,
+        amount: new Decimal(p.amount).toNumber(),
+      })) || [],
     };
 
     if (invoice.templateType === 'jewellery') {
@@ -953,7 +971,7 @@ export class InvoicesService {
     const { organizationId } = user;
     const existing = await this.prisma.invoice.findFirst({
       where: { id, organizationId, deletedAt: null },
-      include: { items: true },
+      include: { items: true, payments: true },
     });
     if (!existing) throw new NotFoundException('Invoice not found');
 
@@ -963,11 +981,17 @@ export class InvoicesService {
       );
     }
 
+    // Calculate paidAmount from payments if provided, otherwise use dto.paidAmount or existing
+    const paymentsSum = dto.payments?.length
+      ? dto.payments.reduce((sum, p) => sum + new Decimal(p.amount).toNumber(), 0)
+      : dto.paidAmount !== undefined
+        ? dto.paidAmount
+        : new Decimal(existing.paidAmount).toNumber();
+
     const dummyDto: CreateInvoiceDto = {
       customerId: dto.customerId ?? existing.customerId,
       items: dto.items ?? (existing.items as any),
-      paidAmount:
-        dto.paidAmount !== undefined ? dto.paidAmount : new Decimal(existing.paidAmount).toNumber(),
+      paidAmount: paymentsSum,
       templateType: dto.templateType ?? existing.templateType,
       modeOfPayment: dto.modeOfPayment ?? existing.modeOfPayment,
       deliveryNote: dto.deliveryNote ?? existing.deliveryNote,
@@ -1037,6 +1061,33 @@ export class InvoicesService {
         });
       }
 
+      // Synchronize payments if provided
+      if (dto.payments !== undefined) {
+        // Delete all existing payments
+        if (existing.payments.length > 0) {
+          await tx.invoicePayment.deleteMany({
+            where: {
+              invoiceId: id,
+              organizationId,
+            },
+          });
+        }
+
+        // Create new payments
+        if (dto.payments.length > 0) {
+          await tx.invoicePayment.createMany({
+            data: dto.payments.map((p) => ({
+              invoiceId: id,
+              organizationId,
+              mode: p.mode,
+              amount: new Decimal(p.amount),
+              reference: p.reference,
+              notes: p.notes,
+            })),
+          });
+        }
+      }
+
       return tx.invoice.update({
         where: { id, organizationId },
         data: {
@@ -1070,6 +1121,7 @@ export class InvoicesService {
         },
         include: {
           items: { orderBy: { slNo: 'asc' } },
+          payments: true,
         },
       });
     });
@@ -1280,7 +1332,9 @@ export class InvoicesService {
 
     const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
     const financialYear = getFinancialYear(invoiceDate);
-    const paidAmount = new Decimal(dto.paidAmount || 0);
+    const paidAmount = dto.payments?.length
+      ? dto.payments.reduce((sum, p) => sum.plus(new Decimal(p.amount)), new Decimal(0))
+      : new Decimal(dto.paidAmount || 0);
 
     let status: InvoiceStatus;
     if (isDraft) status = InvoiceStatus.DRAFT;

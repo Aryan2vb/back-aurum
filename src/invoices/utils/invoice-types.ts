@@ -113,4 +113,5 @@ export interface InvoiceData {
   cashReceived?: number;
   amtBalance?: number;
   hallmarkingCharge?: number;
+  payments?: { mode: string; amount: number }[];
 }

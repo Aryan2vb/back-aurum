@@ -9,7 +9,7 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CreateInvoiceItemDto } from './create-invoice.dto';
+import { CreateInvoiceItemDto, CreateInvoicePaymentDto } from './create-invoice.dto';
 
 export class UpdateInvoiceDto {
   @IsString()
@@ -70,4 +70,14 @@ export class UpdateInvoiceDto {
   @IsOptional()
   @IsBoolean()
   autoCreateUdhar?: boolean;
+
+  /**
+   * Multi-payment split for draft updates.
+   * When provided, these replace all existing payments on the draft.
+   */
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CreateInvoicePaymentDto)
+  payments?: CreateInvoicePaymentDto[];
 }
