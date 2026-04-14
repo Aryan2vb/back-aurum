@@ -80,4 +80,7 @@ export class UpdateInvoiceDto {
   @ValidateNested({ each: true })
   @Type(() => CreateInvoicePaymentDto)
   payments?: CreateInvoicePaymentDto[];
+  @IsOptional()
+  @IsBoolean()
+  finalize?: boolean;
 }
