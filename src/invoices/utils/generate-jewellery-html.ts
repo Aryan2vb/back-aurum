@@ -26,6 +26,13 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
   const cashReceived = data.cashReceived !== undefined ? data.cashReceived : totalAmount;
   const amtBalance = data.amtBalance !== undefined ? data.amtBalance : 0;
 
+  let paymentsHtml = '';
+  if (data.payments && data.payments.length > 0) {
+    paymentsHtml = data.payments.map((p: any) => `<div>${p.mode}: &nbsp; ${fmt(Number(p.amount))}</div>`).join('');
+  } else {
+    paymentsHtml = `<div>CASH RECEIVED : &nbsp; ${fmt(cashReceived)}</div>`;
+  }
+
   const itemRows = items
     .map(
       (item) => `
@@ -201,8 +208,8 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
             <div class="totals-row" style="padding:4px 10px;font-size:13px;"><span class="label">TOTAL AMOUNT :</span><span class="value">${fmt(totalAmount)}</span></div>
         </div>
         <div class="cash-section">
-            <div>CASH RECEIVED : &nbsp; ${fmt(cashReceived)}</div>
-            <div>NET RECEIVABLE AMT : ${fmt(totalAmount)}</div>
+            <div style="display:flex; flex-direction:column; gap:2px;">${paymentsHtml}</div>
+            <div style="display:flex; align-items:flex-end;">NET RECEIVABLE AMT : ${fmt(totalAmount)}</div>
         </div>
         <div class="balance-row">AMT BALANCE: ${fmt(Math.abs(amtBalance))} <span class="dr-text">${amtBalance >= 0 ? 'DR' : 'CR'}</span></div>
         <div class="payable-section">

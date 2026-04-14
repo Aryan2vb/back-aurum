@@ -12,7 +12,7 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { MetalType, MakingChargesType } from '@prisma/client';
+import { MetalType, MakingChargesType, PaymentMethod } from '@prisma/client';
 
 export class CreateInvoiceItemDto {
   @IsString()
@@ -90,6 +90,25 @@ export class CreateInvoiceItemDto {
   huid?: string;
 }
 
+export class CreateInvoicePaymentDto {
+  @IsEnum(PaymentMethod)
+  @IsNotEmpty()
+  mode: PaymentMethod;
+
+  @IsNumber()
+  @Min(0)
+  @IsNotEmpty()
+  amount: number;
+
+  @IsString()
+  @IsOptional()
+  reference?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+}
+
 export class CreateInvoiceDto {
   @IsString()
   @IsNotEmpty()
@@ -113,6 +132,13 @@ export class CreateInvoiceDto {
   @Min(0)
   @IsOptional()
   paidAmount?: number;
+
+  /** Multi-payment split. If provided, overrides/populates paidAmount. */
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => CreateInvoicePaymentDto)
+  payments?: CreateInvoicePaymentDto[];
 
   /** "standard" or "jewellery" — defaults to "jewellery" for this module. */
   @IsString()

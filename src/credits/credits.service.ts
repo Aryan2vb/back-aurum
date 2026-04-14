@@ -319,6 +319,34 @@ export class CreditsService {
         },
       });
 
+      // Sync payment change to linked invoice if exists
+      if (udhar.invoiceId) {
+        const invoice = await tx.invoice.findFirst({
+          where: { id: udhar.invoiceId, organizationId: user.organizationId, deletedAt: null },
+        });
+
+        if (invoice) {
+          const currentPaidAmount = new Decimal(invoice.paidAmount);
+          const newInvoicePaidAmount = currentPaidAmount.add(diff);
+
+          // Ensure we don't go negative or over total
+          if (newInvoicePaidAmount.lessThan(0)) {
+            throw new BadRequestException('Payment adjustment would result in negative invoice paid amount');
+          }
+
+          const isFullyPaid = newInvoicePaidAmount.gte(invoice.totalAmount);
+          const newStatus = isFullyPaid ? 'PAID' : newInvoicePaidAmount.gt(0) ? 'PARTIAL' : 'UNPAID';
+
+          await tx.invoice.update({
+            where: { id: invoice.id, organizationId: user.organizationId },
+            data: {
+              paidAmount: newInvoicePaidAmount,
+              status: newStatus as any,
+            },
+          });
+        }
+      }
+
       return updated;
     });
   }
@@ -367,6 +395,34 @@ export class CreditsService {
           status: newStatus,
         },
       });
+
+      // Sync payment deletion to linked invoice if exists
+      if (udhar.invoiceId) {
+        const invoice = await tx.invoice.findFirst({
+          where: { id: udhar.invoiceId, organizationId: user.organizationId, deletedAt: null },
+        });
+
+        if (invoice) {
+          const currentPaidAmount = new Decimal(invoice.paidAmount);
+          const newInvoicePaidAmount = currentPaidAmount.sub(payment.amount);
+
+          // Ensure we don't go negative
+          if (newInvoicePaidAmount.lessThan(0)) {
+            throw new BadRequestException('Payment deletion would result in negative invoice paid amount');
+          }
+
+          const isFullyPaid = newInvoicePaidAmount.gte(invoice.totalAmount);
+          const newStatus = isFullyPaid ? 'PAID' : newInvoicePaidAmount.gt(0) ? 'PARTIAL' : 'UNPAID';
+
+          await tx.invoice.update({
+            where: { id: invoice.id, organizationId: user.organizationId },
+            data: {
+              paidAmount: newInvoicePaidAmount,
+              status: newStatus as any,
+            },
+          });
+        }
+      }
     });
   }
 
@@ -481,7 +537,7 @@ export class CreditsService {
         },
       });
 
-      return tx.ledgerEntry.create({
+      const ledgerEntry = await tx.ledgerEntry.create({
         data: {
           organizationId: user.organizationId,
           customerId: udhar.customerId,
@@ -492,6 +548,52 @@ export class CreditsService {
           createdById: user.userId,
         },
       });
+
+      // Sync payment to linked invoice if exists
+      if (udhar.invoiceId) {
+        this.logger.log(`Syncing udhar payment to invoice ${udhar.invoiceId}`);
+        const invoice = await tx.invoice.findFirst({
+          where: { id: udhar.invoiceId, organizationId: user.organizationId, deletedAt: null },
+        });
+
+        if (invoice) {
+          const currentPaidAmount = new Decimal(invoice.paidAmount);
+          const newPaidAmount = currentPaidAmount.add(amount);
+          const isFullyPaid = newPaidAmount.gte(invoice.totalAmount);
+          const newStatus = isFullyPaid ? 'PAID' : 'PARTIAL';
+
+          this.logger.log(
+            `Invoice ${invoice.invoiceNumber}: paid ${currentPaidAmount} -> ${newPaidAmount}, status: ${invoice.status} -> ${newStatus}`,
+          );
+
+          await tx.invoice.update({
+            where: { id: invoice.id, organizationId: user.organizationId },
+            data: {
+              paidAmount: newPaidAmount,
+              status: newStatus as any,
+            },
+          });
+
+          // Also create an InvoicePayment record for consistency
+          await tx.invoicePayment.create({
+            data: {
+              invoiceId: invoice.id,
+              organizationId: user.organizationId,
+              mode: dto.paymentMethod || 'OTHER',
+              amount,
+              reference: dto.referenceNumber,
+              notes: dto.notes,
+            },
+          });
+          this.logger.log(`Invoice ${invoice.id} synced successfully`);
+        } else {
+          this.logger.warn(`Invoice ${udhar.invoiceId} not found or deleted`);
+        }
+      } else {
+        this.logger.log(`No invoice linked to udhar ${udharId}`);
+      }
+
+      return ledgerEntry;
     });
   }
 

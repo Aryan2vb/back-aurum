@@ -355,7 +355,7 @@ export class InvoicesService {
           metalRateDate,
           companySnapshot: companySnapshot as any,
           buyerSnapshot: buyerSnapshot as any,
-          modeOfPayment: dto.modeOfPayment,
+          modeOfPayment: dto.modeOfPayment || (dto.payments?.[0]?.mode as string),
           deliveryNote: dto.deliveryNote,
           dispatchDocNo: dto.dispatchDocNo,
           destination: dto.destination,
@@ -367,6 +367,17 @@ export class InvoicesService {
           createdById: userId,
           invoiceNumber,
           sequence: sequenceVal,
+          payments: dto.payments?.length
+            ? {
+                create: dto.payments.map((p) => ({
+                  organizationId,
+                  mode: p.mode,
+                  amount: new Decimal(p.amount),
+                  reference: p.reference,
+                  notes: p.notes,
+                })),
+              }
+            : undefined,
           items: {
             create: lineItems.map((item) => ({
               organizationId,
@@ -463,18 +474,43 @@ export class InvoicesService {
 
     const skip = (page - 1) * limit;
 
+    const findOptions: any = {
+      where,
+      orderBy: { [sortField]: sortOrder },
+      skip,
+      take: limit,
+      ...(includeItems
+        ? {
+            include: {
+              customer: { select: { id: true, fullName: true, customerCode: true } },
+              _count: { select: { items: true } },
+              items: { orderBy: { slNo: 'asc' } },
+              payments: true,
+            },
+          }
+        : {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              status: true,
+              invoiceDate: true,
+              subtotal: true,
+              taxableAmount: true,
+              cgstAmount: true,
+              sgstAmount: true,
+              igstAmount: true,
+              totalAmount: true,
+              paidAmount: true,
+              customerId: true,
+              customer: { select: { id: true, fullName: true, customerCode: true } },
+              _count: { select: { items: true } },
+              payments: { select: { amount: true, mode: true } },
+            },
+          }),
+    };
+
     const [invoices, total] = await Promise.all([
-      this.prisma.invoice.findMany({
-        where,
-        include: {
-          customer: { select: { id: true, fullName: true, customerCode: true } },
-          _count: { select: { items: true } },
-          items: includeItems ? { orderBy: { slNo: 'asc' } } : undefined,
-        },
-        orderBy: { [sortField]: sortOrder },
-        skip,
-        take: limit,
-      }),
+      this.prisma.invoice.findMany(findOptions),
       this.prisma.invoice.count({ where }),
     ]);
 
@@ -505,6 +541,7 @@ export class InvoicesService {
         },
         udharEntries: { where: { deletedAt: null } },
         createdBy: { select: { id: true, fullName: true, email: true } },
+        payments: { orderBy: { createdAt: 'desc' } },
       },
     });
 
@@ -641,6 +678,7 @@ export class InvoicesService {
             locations: { where: { deletedAt: null }, take: 1 },
           },
         },
+        payments: { orderBy: { createdAt: 'asc' } },
       },
     });
 
@@ -741,6 +779,10 @@ export class InvoicesService {
       amtBalance: new Decimal(invoice.totalAmount)
         .minus(new Decimal(invoice.paidAmount))
         .toNumber(),
+      payments: invoice.payments?.map((p: any) => ({
+        mode: p.mode,
+        amount: new Decimal(p.amount).toNumber(),
+      })) || [],
     };
 
     if (invoice.templateType === 'jewellery') {
@@ -953,21 +995,25 @@ export class InvoicesService {
     const { organizationId } = user;
     const existing = await this.prisma.invoice.findFirst({
       where: { id, organizationId, deletedAt: null },
-      include: { items: true },
+      include: { items: true, payments: true },
     });
     if (!existing) throw new NotFoundException('Invoice not found');
 
-    if (existing.status !== InvoiceStatus.DRAFT) {
-      throw new BadRequestException(
-        'Currently, only DRAFT invoices can be modified. For finalized invoices, please cancel and recreate.',
-      );
+    if (existing.status === InvoiceStatus.CANCELLED) {
+      throw new BadRequestException('Cancelled invoices cannot be modified.');
     }
+
+    // Calculate paidAmount from payments if provided, otherwise use dto.paidAmount or existing
+    const paymentsSum = dto.payments?.length
+      ? dto.payments.reduce((sum, p) => sum + new Decimal(p.amount).toNumber(), 0)
+      : dto.paidAmount !== undefined
+        ? dto.paidAmount
+        : new Decimal(existing.paidAmount).toNumber();
 
     const dummyDto: CreateInvoiceDto = {
       customerId: dto.customerId ?? existing.customerId,
       items: dto.items ?? (existing.items as any),
-      paidAmount:
-        dto.paidAmount !== undefined ? dto.paidAmount : new Decimal(existing.paidAmount).toNumber(),
+      paidAmount: paymentsSum,
       templateType: dto.templateType ?? existing.templateType,
       modeOfPayment: dto.modeOfPayment ?? existing.modeOfPayment,
       deliveryNote: dto.deliveryNote ?? existing.deliveryNote,
@@ -982,6 +1028,19 @@ export class InvoicesService {
     };
 
     const financials = await this._calculateInvoiceFinancials(dummyDto, user, true);
+
+    // Recalculate status for non-draft invoices if totals changed, or if explicit finalization requested
+    let status = existing.status;
+    const isFinalizing = dto.finalize && status === InvoiceStatus.DRAFT;
+
+    if (status !== InvoiceStatus.DRAFT || dto.finalize) {
+      const balance = financials.grandTotal.minus(financials.paidAmount);
+      if (balance.lte(0)) {
+        status = InvoiceStatus.PAID;
+      } else {
+        status = financials.paidAmount.gt(0) ? InvoiceStatus.PARTIAL : InvoiceStatus.UNPAID;
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const existingItems = existing.items;
@@ -1037,9 +1096,77 @@ export class InvoicesService {
         });
       }
 
-      return tx.invoice.update({
+      // Synchronize payments if provided
+      if (dto.payments !== undefined) {
+        // Delete all existing payments
+        if (existing.payments.length > 0) {
+          await tx.invoicePayment.deleteMany({
+            where: {
+              invoiceId: id,
+              organizationId,
+            },
+          });
+        }
+
+        // Create new payments
+        if (dto.payments.length > 0) {
+          await tx.invoicePayment.createMany({
+            data: dto.payments.map((p) => ({
+              invoiceId: id,
+              organizationId,
+              mode: p.mode,
+              amount: new Decimal(p.amount),
+              reference: p.reference,
+              notes: p.notes,
+            })),
+          });
+        }
+      }
+
+      const settings = await tx.orgInvoiceSettings.findUnique({
+        where: { organizationId },
+      });
+      if (!settings) throw new BadRequestException('Invoice settings not found');
+
+      let invoiceNumber = existing.invoiceNumber;
+      let sequenceVal = existing.sequence;
+
+      // Generate invoice number if finalizing a draft
+      if (isFinalizing) {
+        const financialYear = financials.financialYear;
+        let attempts = 0;
+        const maxAttempts = 3;
+        while (attempts < maxAttempts) {
+          try {
+            const seqRec = await tx.invoiceSequence.upsert({
+              where: { organizationId_financialYear: { organizationId, financialYear } },
+              create: {
+                organizationId,
+                financialYear,
+                nextSequence: (settings.startingSequence ?? 1) + 1,
+              },
+              update: { nextSequence: { increment: 1 } },
+            });
+
+            sequenceVal = seqRec.nextSequence - 1;
+            const prefix = settings.invoiceNumberPrefix ?? 'INV';
+            invoiceNumber = `${prefix}/${sequenceVal}/${financialYear}`;
+            break;
+          } catch (error: any) {
+            attempts++;
+            if (attempts >= maxAttempts || !error.code || error.code !== 'P2002') {
+              throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50 * attempts));
+          }
+        }
+      }
+
+      const updated = await tx.invoice.update({
         where: { id, organizationId },
         data: {
+          invoiceNumber,
+          sequence: sequenceVal,
           customerId: dummyDto.customerId,
           taxType: financials.taxType,
           placeOfSupply: financials.placeOfSupply,
@@ -1053,7 +1180,8 @@ export class InvoicesService {
           totalHallmarkingCharges: new Decimal(financials.totalHallmarkingCharges),
           roundOff: new Decimal(financials.roundOff),
           totalAmount: new Decimal(financials.grandTotal),
-          paidAmount: new Decimal(financials.paidAmount),
+          paidAmount: financials.paidAmount,
+          status,
           metalRateSource: financials.metalRateSource,
           metalRateDate: financials.metalRateDate,
           companySnapshot: financials.companySnapshot as any,
@@ -1070,8 +1198,27 @@ export class InvoicesService {
         },
         include: {
           items: { orderBy: { slNo: 'asc' } },
+          payments: true,
         },
       });
+
+      // Synchronize ledger/udhar if invoice is finalized
+      if (status !== InvoiceStatus.DRAFT) {
+        await this._syncInvoiceFinancialsWithLedger(tx, {
+          organizationId,
+          id,
+          invoiceNumber: invoiceNumber!,
+          oldCustomerId: existing.customerId,
+          newCustomerId: dummyDto.customerId,
+          grandTotal: financials.grandTotal.toNumber(),
+          paidAmount: financials.paidAmount.toNumber(),
+          items: financials.lineItems as any,
+          userId: user.userId,
+          notes: financials.notes,
+        });
+      }
+
+      return updated;
     });
   }
 
@@ -1280,7 +1427,9 @@ export class InvoicesService {
 
     const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
     const financialYear = getFinancialYear(invoiceDate);
-    const paidAmount = new Decimal(dto.paidAmount || 0);
+    const paidAmount = dto.payments?.length
+      ? dto.payments.reduce((sum, p) => sum.plus(new Decimal(p.amount)), new Decimal(0))
+      : new Decimal(dto.paidAmount || 0);
 
     let status: InvoiceStatus;
     if (isDraft) status = InvoiceStatus.DRAFT;
@@ -1564,6 +1713,98 @@ export class InvoicesService {
       return generateModernInvoiceHtml(invoiceData);
     } else {
       return generateInvoiceHtml(invoiceData);
+    }
+  }
+  private async _syncInvoiceFinancialsWithLedger(
+    tx: Prisma.TransactionClient,
+    data: {
+      organizationId: string;
+      id: string; // invoiceId
+      invoiceNumber: string;
+      oldCustomerId: string;
+      newCustomerId: string;
+      grandTotal: number;
+      paidAmount: number;
+      items: any[];
+      userId: string;
+      notes?: string;
+    },
+  ) {
+    const {
+      organizationId,
+      id,
+      invoiceNumber,
+      oldCustomerId,
+      newCustomerId,
+      grandTotal,
+      paidAmount,
+      items,
+      userId,
+      notes,
+    } = data;
+
+    const balance = grandTotal - paidAmount;
+    const itemSummary = items
+      .slice(0, 3)
+      .map((i) => i.description)
+      .join(', ');
+
+    // 1. Find existing UdharEntry linked to this invoice
+    const udhar = await tx.udharEntry.findFirst({
+      where: { invoiceId: id, organizationId, deletedAt: null },
+    });
+
+    if (udhar) {
+      const balanceDecimal = new Decimal(balance);
+      const isPaid = balanceDecimal.lte(0);
+      const newStatus = isPaid ? CreditStatus.PAID : udhar.status === CreditStatus.OVERDUE ? CreditStatus.OVERDUE : CreditStatus.ACTIVE;
+
+      // 2. Update existing UdharEntry
+      await tx.udharEntry.update({
+        where: { id: udhar.id, organizationId },
+        data: {
+          customerId: newCustomerId,
+          amount: balanceDecimal,
+          // We don't change paidAmount here because that's tracked via incoming payments
+          // but wait, the invoice's paidAmount might have changed due to payment split edit.
+          // Actually, udhar.paidAmount is explicitly for payments recorded AFTER finalization.
+          // The payments made AT finalization are subtracted from grandTotal to get the initial udhar.amount.
+          // So if we edit the payments AT finalization, we should update udhar.amount (which is the balance).
+          status: newStatus,
+          notes: notes ?? `Update from invoice ${invoiceNumber}`,
+        },
+      });
+
+      // 3. Update the linked LedgerEntry
+      await tx.ledgerEntry.update({
+        where: { id: udhar.ledgerEntryId, organizationId },
+        data: {
+          customerId: newCustomerId,
+          amount: balanceDecimal,
+          description: `Invoice ${invoiceNumber} balance. Items: ${itemSummary}`,
+          createdById: userId,
+        },
+      });
+
+      // 4. Move any other linked LedgerEntries (like individual payments) if customer changed
+      if (oldCustomerId !== newCustomerId) {
+        await tx.ledgerEntry.updateMany({
+          where: { entityId: udhar.id, organizationId },
+          data: { customerId: newCustomerId },
+        });
+      }
+    } else if (balance > 0) {
+      // Create new Udhar if it didn't exist but now there is a balance
+      await this._createInvoiceBalanceRecord(tx, {
+        organizationId,
+        customerId: newCustomerId,
+        invoiceId: id,
+        invoiceNumber: invoiceNumber,
+        balance,
+        items,
+        userId,
+        notes,
+      });
     }
   }
 }

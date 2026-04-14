@@ -154,7 +154,7 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
                 <div class="invoice-meta">
                     <div><strong>${metadata.invoiceNo}</strong></div>
                     <div>Date: <strong>${metadata.date}</strong></div>
-                    ${metadata.modeOfPayment ? `<div>Payment: ${metadata.modeOfPayment}</div>` : ''}
+                    ${data.payments && data.payments.length ? `<div>Payment: ${data.payments.map((p: any) => p.mode).join(', ')}</div>` : (metadata.modeOfPayment ? `<div>Payment: ${metadata.modeOfPayment}</div>` : '')}
                 </div>
             </div>
         </div>
@@ -214,6 +214,28 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
                 }
                 ${roundOff !== 0 ? `<div class="subtotal-row"><span>Round Off</span><span>${roundOff >= 0 ? '' : '(-)'}₹${fmt(Math.abs(roundOff))}</span></div>` : ''}
                 <div class="total-row-modern"><span>Total</span><span>₹${fmt(totalAmount)}</span></div>
+                ${
+                  data.payments && data.payments.length > 0
+                    ? data.payments
+                        .map(
+                          (p: any) => `
+                <div class="subtotal-row" style="margin-top:4px;">
+                  <span style="font-size:11px;color:#64748b;">${p.mode} Received</span>
+                  <span style="font-size:11px;color:#64748b;font-weight:600;">₹${fmt(Number(p.amount))}</span>
+                </div>`,
+                        )
+                        .join('')
+                    : (data.cashReceived || 0) > 0
+                    ? `<div class="subtotal-row" style="margin-top:4px;">
+                  <span style="font-size:11px;color:#64748b;">Paid Amount</span>
+                  <span style="font-size:11px;color:#64748b;font-weight:600;">₹${fmt(data.cashReceived || 0)}</span>
+                </div>`
+                    : ''
+                }
+                <div class="subtotal-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #e2e8f0;">
+                    <span style="font-weight:700;color:#2563eb;">Balance Due</span>
+                    <span style="font-weight:700;color:#2563eb;">₹${fmt(data.amtBalance || 0)}</span>
+                </div>
             </div>
 
             <div class="words-box">
