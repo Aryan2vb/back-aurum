@@ -228,9 +228,15 @@ export class InvoicesService {
               pan: settings.pan ?? '',
               mantra: settings.mantra ?? '',
               logo: settings.logoUrl ? `${settings.logoUrl}?v=${settings.updatedAt.getTime()}` : '',
-              bisLogo: settings.bisLogoUrl ? `${settings.bisLogoUrl}?v=${settings.updatedAt.getTime()}` : '',
-              signature: settings.signatureUrl ? `${settings.signatureUrl}?v=${settings.updatedAt.getTime()}` : '',
-              qrCode: settings.qrCodeUrl ? `${settings.qrCodeUrl}?v=${settings.updatedAt.getTime()}` : '',
+              bisLogo: settings.bisLogoUrl
+                ? `${settings.bisLogoUrl}?v=${settings.updatedAt.getTime()}`
+                : '',
+              signature: settings.signatureUrl
+                ? `${settings.signatureUrl}?v=${settings.updatedAt.getTime()}`
+                : '',
+              qrCode: settings.qrCodeUrl
+                ? `${settings.qrCodeUrl}?v=${settings.updatedAt.getTime()}`
+                : '',
               bankDetails: settings.bankName
                 ? {
                     bankName: settings.bankName,
@@ -788,10 +794,11 @@ export class InvoicesService {
       amtBalance: new Decimal(invoice.totalAmount)
         .minus(new Decimal(invoice.paidAmount))
         .toNumber(),
-      payments: invoice.payments?.map((p: any) => ({
-        mode: p.mode,
-        amount: new Decimal(p.amount).toNumber(),
-      })) || [],
+      payments:
+        invoice.payments?.map((p: any) => ({
+          mode: p.mode,
+          amount: new Decimal(p.amount).toNumber(),
+        })) || [],
     };
 
     if (invoice.templateType === 'jewellery') {
@@ -884,7 +891,7 @@ export class InvoicesService {
       message: `Invoice ${invoice.invoiceNumber} sent to ${dto.recipientEmails.join(', ')}`,
     };
   }
-  
+
   async getWhatsAppShareLink(id: string, user: CurrentUserData): Promise<{ url: string }> {
     const invoice = await this.prisma.invoice.findFirst({
       where: { id, organizationId: user.organizationId, deletedAt: null },
@@ -894,23 +901,23 @@ export class InvoicesService {
         },
       },
     });
-    
+
     if (!invoice) throw new NotFoundException('Invoice not found');
-    
+
     const signature = this.generateSignature(id, user.organizationId);
-    
+
     // Use APP_URL if available, otherwise fallback to local/generic
     const baseUrl = process.env.APP_URL || 'http://localhost:3000';
     const publicUrl = `${baseUrl}/invoices/${id}/html?signature=${signature}`;
-    
+
     // Use company name from the already-stored snapshot — avoids needing a separate join
     const companyName = (invoice.companySnapshot as any)?.data?.name || 'our store';
     const message = `Hello, here is your invoice from ${companyName}. You can view and download it as PDF here: ${publicUrl}`;
     const encodedMessage = encodeURIComponent(message);
-    
+
     const primaryPhone = invoice.customer?.contactDetails?.[0]?.primaryPhone;
     let waUrl = `https://wa.me/?text=${encodedMessage}`;
-    
+
     if (primaryPhone) {
       // Clean phone number: remove non-digits
       const cleanPhone = primaryPhone.replace(/\D/g, '');
@@ -918,7 +925,7 @@ export class InvoicesService {
       const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
       waUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
     }
-    
+
     return { url: waUrl };
   }
 
@@ -1609,10 +1616,26 @@ export class InvoicesService {
         email: settings.email ?? '',
         pan: settings.pan ?? '',
         mantra: settings.mantra ?? '',
-        logo: settings.logoUrl ? (settings.logoUrl.includes('?') ? `${settings.logoUrl}&v=${t}` : `${settings.logoUrl}?v=${t}`) : '',
-        bisLogo: settings.bisLogoUrl ? (settings.bisLogoUrl.includes('?') ? `${settings.bisLogoUrl}&v=${t}` : `${settings.bisLogoUrl}?v=${t}`) : '',
-        signature: settings.signatureUrl ? (settings.signatureUrl.includes('?') ? `${settings.signatureUrl}&v=${t}` : `${settings.signatureUrl}?v=${t}`) : '',
-        qrCode: settings.qrCodeUrl ? (settings.qrCodeUrl.includes('?') ? `${settings.qrCodeUrl}&v=${t}` : `${settings.qrCodeUrl}?v=${t}`) : '',
+        logo: settings.logoUrl
+          ? settings.logoUrl.includes('?')
+            ? `${settings.logoUrl}&v=${t}`
+            : `${settings.logoUrl}?v=${t}`
+          : '',
+        bisLogo: settings.bisLogoUrl
+          ? settings.bisLogoUrl.includes('?')
+            ? `${settings.bisLogoUrl}&v=${t}`
+            : `${settings.bisLogoUrl}?v=${t}`
+          : '',
+        signature: settings.signatureUrl
+          ? settings.signatureUrl.includes('?')
+            ? `${settings.signatureUrl}&v=${t}`
+            : `${settings.signatureUrl}?v=${t}`
+          : '',
+        qrCode: settings.qrCodeUrl
+          ? settings.qrCodeUrl.includes('?')
+            ? `${settings.qrCodeUrl}&v=${t}`
+            : `${settings.qrCodeUrl}?v=${t}`
+          : '',
         bankDetails: settings.bankName
           ? {
               bankName: settings.bankName,
@@ -1769,7 +1792,11 @@ export class InvoicesService {
     if (udhar) {
       const balanceDecimal = new Decimal(balance);
       const isPaid = balanceDecimal.lte(0);
-      const newStatus = isPaid ? CreditStatus.PAID : udhar.status === CreditStatus.OVERDUE ? CreditStatus.OVERDUE : CreditStatus.ACTIVE;
+      const newStatus = isPaid
+        ? CreditStatus.PAID
+        : udhar.status === CreditStatus.OVERDUE
+          ? CreditStatus.OVERDUE
+          : CreditStatus.ACTIVE;
 
       // 2. Update existing UdharEntry
       await tx.udharEntry.update({

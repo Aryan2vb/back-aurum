@@ -1,4 +1,4 @@
-import { IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { AssetType, ASSET_CONFIG } from '../asset-type.enum';
 
 export class PresignUploadDto {

@@ -266,11 +266,7 @@ export class InvoicesController {
   }
 
   @Get(':id/share/whatsapp')
-  @Roles(
-    OrganizationRole.OWNER,
-    OrganizationRole.ADMIN,
-    OrganizationRole.STAFF,
-  )
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   getWhatsAppShare(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.invoicesService.getWhatsAppShareLink(id, user);
   }

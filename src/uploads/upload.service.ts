@@ -15,7 +15,6 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
-import { extname } from 'path';
 import { AssetType, ASSET_CONFIG } from './asset-type.enum';
 
 export interface PresignResult {
@@ -126,9 +125,7 @@ export class UploadService {
    */
   async deleteObject(key: string): Promise<void> {
     try {
-      await this.client.send(
-        new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
-      );
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
       this.logger.debug(`Deleted R2 object: ${key}`);
     } catch (err) {
       this.logger.error(`Failed to delete R2 object: ${key}`, err);
@@ -176,9 +173,7 @@ export class UploadService {
           deleted += objects.length;
         }
 
-        continuationToken = listOutput.IsTruncated
-          ? listOutput.NextContinuationToken
-          : undefined;
+        continuationToken = listOutput.IsTruncated ? listOutput.NextContinuationToken : undefined;
       } while (continuationToken);
 
       this.logger.log(`Purged ${deleted} R2 objects for org: ${orgId}`);
@@ -200,7 +195,7 @@ export class UploadService {
     const ext = this.mimeToExt(contentType);
 
     // Resolve folder template
-    let folder = config.folder
+    const folder = config.folder
       .replace('{orgId}', orgId)
       .replace('{entityId}', entityId ?? 'default');
 

@@ -167,7 +167,7 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
                 <div class="invoice-meta">
                     <div><strong>${metadata.invoiceNo}</strong></div>
                     <div>Date: <strong>${metadata.date}</strong></div>
-                    ${data.payments && data.payments.length ? `<div>Payment: ${data.payments.map((p: any) => p.mode).join(', ')}</div>` : (metadata.modeOfPayment ? `<div>Payment: ${metadata.modeOfPayment}</div>` : '')}
+                    ${data.payments && data.payments.length ? `<div>Payment: ${data.payments.map((p: any) => p.mode).join(', ')}</div>` : metadata.modeOfPayment ? `<div>Payment: ${metadata.modeOfPayment}</div>` : ''}
                 </div>
             </div>
         </div>
@@ -239,11 +239,11 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
                         )
                         .join('')
                     : (data.cashReceived || 0) > 0
-                    ? `<div class="subtotal-row" style="margin-top:4px;">
+                      ? `<div class="subtotal-row" style="margin-top:4px;">
                   <span style="font-size:11px;color:#64748b;">Paid Amount</span>
                   <span style="font-size:11px;color:#64748b;font-weight:600;">₹${fmt(data.cashReceived || 0)}</span>
                 </div>`
-                    : ''
+                      : ''
                 }
                 <div class="subtotal-row" style="margin-top:8px;padding-top:8px;border-top:1px dashed #e2e8f0;">
                     <span style="font-weight:700;color:#2563eb;">Balance Due</span>
@@ -306,7 +306,9 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
             <div>
                 <div class="section-title">Declaration</div>
                 <div class="declaration-text">${declaration}</div>
-                ${company.bankDetails ? `
+                ${
+                  company.bankDetails
+                    ? `
                 <div class="bank-details-modern">
                   <div style="font-weight: 600; margin-bottom: 6px; color: #1e293b; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px;">Bank Details</div>
                   <table class="bank-table-modern">
@@ -314,13 +316,19 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
                     <tr><td class="blabel">Account Number</td><td>: ${company.bankDetails.accountNumber}</td></tr>
                     <tr><td class="blabel">IFSC Code</td><td>: ${company.bankDetails.ifsc}</td></tr>
                   </table>
-                </div>` : ''}
+                </div>`
+                    : ''
+                }
                 <!--
-                ${company.qrCode ? `
+                ${
+                  company.qrCode
+                    ? `
                 <div class="qr-area">
                   <div style="font-size: 9px; font-weight: 600; color: #64748b; margin-bottom: 4px;">PAYMENT QR</div>
                   <img src="${company.qrCode}" class="qr-img" alt="QR"/>
-                </div>` : ''}
+                </div>`
+                    : ''
+                }
                 -->
             </div>
             <div class="signature-area">

@@ -39,10 +39,7 @@ export class UploadController {
   @Post('presign')
   @HttpCode(HttpStatus.OK)
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  async presign(
-    @Body() dto: PresignUploadDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  async presign(@Body() dto: PresignUploadDto, @CurrentUser() user: CurrentUserData) {
     this.logger.log(
       `POST /uploads/presign — assetType: ${dto.assetType}, org: ${user.organizationId}`,
     );
@@ -59,9 +56,7 @@ export class UploadController {
 
     // Non-singleton types require an entityId for proper namespacing
     if (!config.singleton && !dto.entityId) {
-      throw new BadRequestException(
-        `entityId is required for asset type ${dto.assetType}`,
-      );
+      throw new BadRequestException(`entityId is required for asset type ${dto.assetType}`);
     }
 
     const result = await this.uploadService.presign(
@@ -91,13 +86,8 @@ export class UploadController {
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  async deleteObject(
-    @Body() dto: DeleteUploadDto,
-    @CurrentUser() user: CurrentUserData,
-  ) {
-    this.logger.log(
-      `DELETE /uploads — key: ${dto.key}, org: ${user.organizationId}`,
-    );
+  async deleteObject(@Body() dto: DeleteUploadDto, @CurrentUser() user: CurrentUserData) {
+    this.logger.log(`DELETE /uploads — key: ${dto.key}, org: ${user.organizationId}`);
 
     // Ensure the key belongs to this org (security: prevent deleting other orgs' files)
     const expectedPrefix = `org/${user.organizationId}/`;

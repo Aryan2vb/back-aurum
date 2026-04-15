@@ -28,7 +28,9 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 
   let paymentsHtml = '';
   if (data.payments && data.payments.length > 0) {
-    paymentsHtml = data.payments.map((p: any) => `<div>${p.mode}: &nbsp; ${fmt(Number(p.amount))}</div>`).join('');
+    paymentsHtml = data.payments
+      .map((p: any) => `<div>${p.mode}: &nbsp; ${fmt(Number(p.amount))}</div>`)
+      .join('');
   } else {
     paymentsHtml = `<div>CASH RECEIVED : &nbsp; ${fmt(cashReceived)}</div>`;
   }
@@ -65,7 +67,6 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 5. Choose wisely & purchase only if it satisfies you.`;
 
   const terms = declaration || termsDefault;
-
 
   return `<!DOCTYPE html>
 <html lang="en">

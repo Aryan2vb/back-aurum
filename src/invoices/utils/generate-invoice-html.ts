@@ -193,7 +193,7 @@ export function generateInvoiceHtml(data: InvoiceData): string {
       </div>
       <div class="company-right">
         <div class="meta-row"><div class="meta-cell"><div class="meta-label">Invoice No.</div><div class="font-bold">${metadata.invoiceNo}</div></div><div class="meta-cell"><div class="meta-label">Dated</div><div class="font-bold">${metadata.date}</div></div></div>
-        <div class="meta-row"><div class="meta-cell"><div class="meta-label">Delivery Note</div><div>${metadata.deliveryNote || ''}</div></div><div class="meta-cell"><div class="meta-label">Mode of Payment</div><div>${data.payments && data.payments.length ? data.payments.map((p: any) => p.mode).join(', ') : (metadata.modeOfPayment || '')}</div></div></div>
+        <div class="meta-row"><div class="meta-cell"><div class="meta-label">Delivery Note</div><div>${metadata.deliveryNote || ''}</div></div><div class="meta-cell"><div class="meta-label">Mode of Payment</div><div>${data.payments && data.payments.length ? data.payments.map((p: any) => p.mode).join(', ') : metadata.modeOfPayment || ''}</div></div></div>
         <div class="meta-row"><div class="meta-cell"><div class="meta-label">Reference No. &amp; Date</div><div>${metadata.referenceNo || ''} ${metadata.referenceDate || ''}</div></div><div class="meta-cell"><div class="meta-label">Other References</div><div></div></div></div>
         <div class="meta-row"><div class="meta-cell"><div class="meta-label">Buyer's Order No.</div><div>${metadata.buyerOrderNo || ''}</div></div><div class="meta-cell"><div class="meta-label">Dated</div><div>${metadata.buyerOrderDate || ''}</div></div></div>
         <div class="meta-row"><div class="meta-cell"><div class="meta-label">Dispatch Doc No.</div><div>${metadata.dispatchDocNo || ''}</div></div><div class="meta-cell"><div class="meta-label">Delivery Note Date</div><div>${metadata.deliveryNoteDate || ''}</div></div></div>
@@ -255,18 +255,22 @@ export function generateInvoiceHtml(data: InvoiceData): string {
         </tr>
         ${
           data.payments && data.payments.length > 0
-            ? data.payments.map((p: any) => `
+            ? data.payments
+                .map(
+                  (p: any) => `
         <tr class="tax-row">
           <td colspan="6" class="text-right">${p.mode} Received</td>
           <td class="text-right">${formatCurrency(p.amount || 0)}</td>
-        </tr>`).join('')
+        </tr>`,
+                )
+                .join('')
             : (data.cashReceived || 0) > 0
-            ? `
+              ? `
         <tr class="tax-row">
           <td colspan="6" class="text-right">Paid Amount</td>
           <td class="text-right">${formatCurrency(data.cashReceived || 0)}</td>
         </tr>`
-            : ''
+              : ''
         }
         <tr class="tax-row">
           <td colspan="6" class="text-right font-bold" style="font-size: 14px;">Balance Due</td>
@@ -311,7 +315,9 @@ export function generateInvoiceHtml(data: InvoiceData): string {
         <div>
           <div class="font-bold mb-1">Declaration</div>
           <div class="text-sm">${declaration}</div>
-          ${company.bankDetails ? `
+          ${
+            company.bankDetails
+              ? `
           <div class="bank-details-box">
             <div class="font-bold mb-1" style="font-size: 12px;">Bank Details</div>
             <table class="bank-table-std">
@@ -319,14 +325,20 @@ export function generateInvoiceHtml(data: InvoiceData): string {
               <tr><td class="blabel">A/c No.</td><td>: ${company.bankDetails.accountNumber}</td></tr>
               <tr><td class="blabel">IFSC Code</td><td>: ${company.bankDetails.ifsc}</td></tr>
             </table>
-          </div>` : ''}
+          </div>`
+              : ''
+          }
         </div>
         <!--
-        ${company.qrCode ? `
+        ${
+          company.qrCode
+            ? `
         <div class="qr-footer-box">
           <div style="font-size: 8px; font-weight: bold; margin-bottom: 2px;">SCAN TO PAY</div>
           <img src="${company.qrCode}" class="qr-footer-img" alt="Payment QR"/>
-        </div>` : ''}
+        </div>`
+            : ''
+        }
         -->
       </div>
       <div class="signature-box">

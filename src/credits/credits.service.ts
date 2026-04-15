@@ -308,7 +308,9 @@ export class CreditsService {
 
       const newPaid = udhar.paidAmount.add(diff);
       if (newPaid.lessThan(0)) {
-        throw new BadRequestException('Editing this payment would result in a negative paid amount');
+        throw new BadRequestException(
+          'Editing this payment would result in a negative paid amount',
+        );
       }
 
       await tx.udharEntry.update({
@@ -331,11 +333,17 @@ export class CreditsService {
 
           // Ensure we don't go negative or over total
           if (newInvoicePaidAmount.lessThan(0)) {
-            throw new BadRequestException('Payment adjustment would result in negative invoice paid amount');
+            throw new BadRequestException(
+              'Payment adjustment would result in negative invoice paid amount',
+            );
           }
 
           const isFullyPaid = newInvoicePaidAmount.gte(invoice.totalAmount);
-          const newStatus = isFullyPaid ? 'PAID' : newInvoicePaidAmount.gt(0) ? 'PARTIAL' : 'UNPAID';
+          const newStatus = isFullyPaid
+            ? 'PAID'
+            : newInvoicePaidAmount.gt(0)
+              ? 'PARTIAL'
+              : 'UNPAID';
 
           await tx.invoice.update({
             where: { id: invoice.id, organizationId: user.organizationId },
@@ -408,11 +416,17 @@ export class CreditsService {
 
           // Ensure we don't go negative
           if (newInvoicePaidAmount.lessThan(0)) {
-            throw new BadRequestException('Payment deletion would result in negative invoice paid amount');
+            throw new BadRequestException(
+              'Payment deletion would result in negative invoice paid amount',
+            );
           }
 
           const isFullyPaid = newInvoicePaidAmount.gte(invoice.totalAmount);
-          const newStatus = isFullyPaid ? 'PAID' : newInvoicePaidAmount.gt(0) ? 'PARTIAL' : 'UNPAID';
+          const newStatus = isFullyPaid
+            ? 'PAID'
+            : newInvoicePaidAmount.gt(0)
+              ? 'PARTIAL'
+              : 'UNPAID';
 
           await tx.invoice.update({
             where: { id: invoice.id, organizationId: user.organizationId },

@@ -271,9 +271,11 @@ export class OrganizationsService {
     this.logger.warn(`Starting hard delete for org: ${orgId}`);
 
     // 1. Purge R2 storage first — best effort, non-fatal
-    await this.uploadService.purgeOrgFolder(orgId).catch((err) =>
-      this.logger.error(`R2 cleanup failed for org ${orgId} — continuing with DB delete`, err),
-    );
+    await this.uploadService
+      .purgeOrgFolder(orgId)
+      .catch((err) =>
+        this.logger.error(`R2 cleanup failed for org ${orgId} — continuing with DB delete`, err),
+      );
 
     // 2. Hard delete from DB — Prisma cascade handles all child records
     await this.prisma.organization.delete({ where: { id: orgId } });

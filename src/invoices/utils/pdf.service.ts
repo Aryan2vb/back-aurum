@@ -33,7 +33,7 @@ export class PdfService {
       };
 
       const pdfDocGenerator = pdfMake.createPdf(docDefinition);
-      
+
       // Ensure we don't hang indefinitely if pdfmake fails internally
       return new Promise<Buffer>((resolve, reject) => {
         const timeout = setTimeout(() => {
