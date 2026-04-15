@@ -18,6 +18,10 @@ export interface CompanyDetails {
   stateCode: string;
   logo?: string;
   bisLogo?: string;
+  /** R2 public URL for the authorized signatory image */
+  signature?: string;
+  /** R2 public URL for the UPI / payment QR code */
+  qrCode?: string;
   mantra?: string;
   phone?: string;
   email?: string;

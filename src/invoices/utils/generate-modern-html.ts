@@ -101,7 +101,16 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
         .footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e2e8f0; display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
         .declaration-text { font-size: 11px; color: #64748b; line-height: 1.6; }
         .signature-area { text-align: right; }
-        .signature-line { border-top: 1px solid #cbd5e1; margin-top: 50px; padding-top: 8px; font-size: 12px; color: #475569; }
+        .signature-img { max-height: 50px; max-width: 150px; object-fit: contain; margin-bottom: 4px; display: block; margin-left: auto; }
+        .bank-details-modern { margin-top: 16px; font-size: 11px; color: #475569; }
+        .bank-table-modern { width: auto; border-collapse: collapse; }
+        .bank-table-modern td { padding: 2px 0; }
+        .bank-table-modern .blabel { font-weight: 600; width: 110px; color: #64748b; }
+        .signature-line { border-top: 1px solid #cbd5e1; margin-top: 4px; padding-top: 8px; font-size: 12px; color: #475569; }
+        .qr-area { text-align: center; margin-top: 10px; }
+        .qr-img { max-height: 80px; max-width: 80px; object-fit: contain; }
+        .logo-img { width: 85px; height: 85px; object-fit: cover; border-radius: 50%; border: 1px solid #e2e8f0; margin-bottom: 12px; display: block; }
+        .bis-logo-img { max-height: 40px; max-width: 80px; object-fit: contain; vertical-align: middle; margin-left: 12px; }
         .bottom-note { text-align: center; margin-top: 24px; font-size: 11px; color: #94a3b8; font-style: italic; }
         .print-btn {
             position: fixed;
@@ -142,6 +151,10 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
         <!-- Header -->
         <div class="header">
             <div>
+            <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                ${company.logo ? `<img src="${company.logo}" class="logo-img" alt="Logo"/>` : ''}
+                ${company.bisLogo ? `<img src="${company.bisLogo}" class="bis-logo-img" alt="BIS Logo"/>` : ''}
+            </div>
                 <div class="company-name">${company.name}</div>
                 <div class="company-info">
                     ${company.address}<br>
@@ -293,9 +306,26 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
             <div>
                 <div class="section-title">Declaration</div>
                 <div class="declaration-text">${declaration}</div>
+                ${company.bankDetails ? `
+                <div class="bank-details-modern">
+                  <div style="font-weight: 600; margin-bottom: 6px; color: #1e293b; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px;">Bank Details</div>
+                  <table class="bank-table-modern">
+                    <tr><td class="blabel">Bank Name</td><td>: ${company.bankDetails.bankName}</td></tr>
+                    <tr><td class="blabel">Account Number</td><td>: ${company.bankDetails.accountNumber}</td></tr>
+                    <tr><td class="blabel">IFSC Code</td><td>: ${company.bankDetails.ifsc}</td></tr>
+                  </table>
+                </div>` : ''}
+                <!--
+                ${company.qrCode ? `
+                <div class="qr-area">
+                  <div style="font-size: 9px; font-weight: 600; color: #64748b; margin-bottom: 4px;">PAYMENT QR</div>
+                  <img src="${company.qrCode}" class="qr-img" alt="QR"/>
+                </div>` : ''}
+                -->
             </div>
             <div class="signature-area">
-                <div style="font-size:12px;color:#64748b;">for ${company.name}</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">for ${company.name}</div>
+                ${company.signature ? `<img src="${company.signature}" class="signature-img" alt="Signature"/>` : '<div style="height:40px;"></div>'}
                 <div class="signature-line">Authorised Signatory</div>
             </div>
         </div>

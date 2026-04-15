@@ -60,6 +60,8 @@ export class InvoicesService {
         mantra: dto.mantra,
         logoUrl: dto.logoUrl,
         bisLogoUrl: dto.bisLogoUrl,
+        signatureUrl: dto.signatureUrl,
+        qrCodeUrl: dto.qrCodeUrl,
         bankName: dto.bankName,
         bankBranch: dto.bankBranch,
         bankAccountName: dto.bankAccountName,
@@ -90,6 +92,8 @@ export class InvoicesService {
         mantra: dto.mantra,
         logoUrl: dto.logoUrl,
         bisLogoUrl: dto.bisLogoUrl,
+        signatureUrl: dto.signatureUrl,
+        qrCodeUrl: dto.qrCodeUrl,
         bankName: dto.bankName,
         bankBranch: dto.bankBranch,
         bankAccountName: dto.bankAccountName,
@@ -107,6 +111,7 @@ export class InvoicesService {
         termsOfDelivery: dto.termsOfDelivery,
         invoiceNumberPrefix: dto.invoiceNumberPrefix,
         startingSequence: dto.startingSequence,
+        updatedAt: new Date(), // Force a refresh so cache-busting timestamps advance
       },
     });
   }
@@ -222,8 +227,10 @@ export class InvoicesService {
               email: settings.email ?? '',
               pan: settings.pan ?? '',
               mantra: settings.mantra ?? '',
-              logo: settings.logoUrl ?? '',
-              bisLogo: settings.bisLogoUrl ?? '',
+              logo: settings.logoUrl ? `${settings.logoUrl}?v=${settings.updatedAt.getTime()}` : '',
+              bisLogo: settings.bisLogoUrl ? `${settings.bisLogoUrl}?v=${settings.updatedAt.getTime()}` : '',
+              signature: settings.signatureUrl ? `${settings.signatureUrl}?v=${settings.updatedAt.getTime()}` : '',
+              qrCode: settings.qrCodeUrl ? `${settings.qrCodeUrl}?v=${settings.updatedAt.getTime()}` : '',
               bankDetails: settings.bankName
                 ? {
                     bankName: settings.bankName,
@@ -705,6 +712,8 @@ export class InvoicesService {
         mantra: companySnapshotRaw.mantra || '',
         logo: companySnapshotRaw.logo || '',
         bisLogo: companySnapshotRaw.bisLogo || '',
+        signature: companySnapshotRaw.signature || '',
+        qrCode: companySnapshotRaw.qrCode || '',
         bankDetails: companySnapshotRaw.bankDetails || undefined,
       },
       buyer: {
@@ -1587,6 +1596,7 @@ export class InvoicesService {
     if (!settings)
       throw new NotFoundException('Invoice settings not found. Please configure settings first.');
 
+    const t = settings.updatedAt.getTime();
     const companySnapshot = {
       version: 1,
       data: {
@@ -1599,8 +1609,10 @@ export class InvoicesService {
         email: settings.email ?? '',
         pan: settings.pan ?? '',
         mantra: settings.mantra ?? '',
-        logo: settings.logoUrl ?? '',
-        bisLogo: settings.bisLogoUrl ?? '',
+        logo: settings.logoUrl ? (settings.logoUrl.includes('?') ? `${settings.logoUrl}&v=${t}` : `${settings.logoUrl}?v=${t}`) : '',
+        bisLogo: settings.bisLogoUrl ? (settings.bisLogoUrl.includes('?') ? `${settings.bisLogoUrl}&v=${t}` : `${settings.bisLogoUrl}?v=${t}`) : '',
+        signature: settings.signatureUrl ? (settings.signatureUrl.includes('?') ? `${settings.signatureUrl}&v=${t}` : `${settings.signatureUrl}?v=${t}`) : '',
+        qrCode: settings.qrCodeUrl ? (settings.qrCodeUrl.includes('?') ? `${settings.qrCodeUrl}&v=${t}` : `${settings.qrCodeUrl}?v=${t}`) : '',
         bankDetails: settings.bankName
           ? {
               bankName: settings.bankName,

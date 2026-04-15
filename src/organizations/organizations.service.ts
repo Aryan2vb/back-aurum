@@ -11,12 +11,16 @@ import { AuditAction, OrganizationStatus, OrganizationRole } from '@prisma/clien
 import { PrismaService } from '../prisma/prisma.service';
 import { AddMemberDto } from './dto/add-member.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
+import { UploadService } from '../uploads/upload.service';
 
 @Injectable()
 export class OrganizationsService {
   private readonly logger = new Logger(OrganizationsService.name);
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly uploadService: UploadService,
+  ) {
     this.logger.log('OrganizationsService initialized');
   }
 
@@ -213,5 +217,67 @@ export class OrganizationsService {
 
       return { success: true };
     });
+  }
+
+  // ─── Organization Lifecycle ────────────────────────────────────────────────
+
+  /**
+   * Soft-delete an organization.
+   * Sets deletedAt + INACTIVE status. R2 files are preserved during grace period.
+   * Only OWNER can trigger this.
+   */
+  async softDeleteOrg(actor: CurrentUserData) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: actor.organizationId },
+    });
+
+    if (!org || org.deletedAt) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.organization.update({
+        where: { id: actor.organizationId },
+        data: {
+          deletedAt: new Date(),
+          status: OrganizationStatus.INACTIVE,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          organizationId: actor.organizationId,
+          userId: actor.userId,
+          action: AuditAction.SOFT_DELETE,
+          entityType: 'Organization',
+          entityId: actor.organizationId,
+          metadata: { event: 'ORG_SOFT_DELETE' },
+        },
+      });
+    });
+
+    this.logger.warn(`Org soft-deleted: ${actor.organizationId} by user ${actor.userId}`);
+    return { success: true, message: 'Organization scheduled for deletion' };
+  }
+
+  /**
+   * Permanently delete an organization and all its data.
+   * Purges R2 storage first (best-effort), then cascades the DB delete.
+   *
+   * ONLY call this after the grace period has elapsed and soft-delete is confirmed.
+   * Must only be called by a super-admin / internal job — NOT exposed via HTTP directly.
+   */
+  async hardDeleteOrg(orgId: string): Promise<void> {
+    this.logger.warn(`Starting hard delete for org: ${orgId}`);
+
+    // 1. Purge R2 storage first — best effort, non-fatal
+    await this.uploadService.purgeOrgFolder(orgId).catch((err) =>
+      this.logger.error(`R2 cleanup failed for org ${orgId} — continuing with DB delete`, err),
+    );
+
+    // 2. Hard delete from DB — Prisma cascade handles all child records
+    await this.prisma.organization.delete({ where: { id: orgId } });
+
+    this.logger.warn(`Org hard-deleted: ${orgId}`);
   }
 }

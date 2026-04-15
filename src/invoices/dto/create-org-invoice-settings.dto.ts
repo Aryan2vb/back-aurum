@@ -46,6 +46,14 @@ export class CreateOrgInvoiceSettingsDto {
   @IsOptional()
   bisLogoUrl?: string;
 
+  @IsString()
+  @IsOptional()
+  signatureUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  qrCodeUrl?: string;
+
   // Bank details
   @IsString()
   @IsOptional()

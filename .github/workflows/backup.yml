@@ -1,0 +1,108 @@
+name: aurum · backup
+
+on:
+  # Runs at 03:00 IST (21:30 UTC) daily — lowest traffic window
+  schedule:
+    - cron: '30 21 * * *'
+  # Manual trigger for on-demand / pre-migration backups
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual backup (optional)'
+        required: false
+        default: 'manual'
+
+jobs:
+  backup:
+    name: pg_dump → R2
+    runs-on: ubuntu-latest
+
+    # Uses existing OIDC role from deploy.yml — no new AWS secrets needed
+    permissions:
+      id-token: write
+      contents: read
+
+    environment:
+      name: production
+
+    steps:
+      - name: Install postgresql-client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Run pg_dump
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          PGPASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%d_%H%M")
+          FILENAME="backup_${TIMESTAMP}.dump"
+
+          echo "── Starting pg_dump at $(date -u) ──"
+
+          pg_dump \
+            "$DIRECT_URL" \
+            --format=custom \
+            --no-acl \
+            --no-owner \
+            --file="${FILENAME}"
+
+          echo "── Compressing backup ──"
+          gzip "${FILENAME}"
+          FILENAME="${FILENAME}.gz"
+
+          echo "BACKUP_FILE=${FILENAME}" >> "$GITHUB_ENV"
+          echo "Backup file: ${FILENAME} ($(du -sh ${FILENAME} | cut -f1))"
+
+      - name: Upload to Cloudflare R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          aws configure set aws_access_key_id     "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+          aws configure set default.region        auto
+
+          S3_KEY="db-backups/${BACKUP_FILE}"
+
+          echo "── Uploading ${BACKUP_FILE} → R2 s3://${R2_BUCKET}/${S3_KEY} ──"
+
+          aws s3 cp "${BACKUP_FILE}" "s3://${R2_BUCKET}/${S3_KEY}" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --no-progress
+
+          echo "── Upload complete ✓ ──"
+          echo "R2 path: s3://${R2_BUCKET}/${S3_KEY}"
+
+      - name: Verify upload
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          S3_KEY="db-backups/${BACKUP_FILE}"
+
+          # List the file to confirm it landed
+          aws s3 ls "s3://${R2_BUCKET}/${S3_KEY}" \
+            --endpoint-url "${R2_ENDPOINT}"
+
+          echo "── Backup verified in R2 ✓ ──"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Backup Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| File | \`${BACKUP_FILE}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | \`${{ github.event_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Reason | \`${{ inputs.reason || 'scheduled' }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Time (UTC) | \`$(date -u)\` |" >> $GITHUB_STEP_SUMMARY

@@ -66,7 +66,6 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 
   const terms = declaration || termsDefault;
 
-  const coAny = company as any;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -88,7 +87,10 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         .company-phone { font-size: 11px; font-weight: bold; }
         .header-right { text-align: right; flex-shrink: 0; }
         .scan-text { font-size: 10px; font-weight: bold; margin-bottom: 2px; }
-        .qr-placeholder { width: 70px; height: 70px; border: 1px solid #ccc; display: inline-block; background: #f9f9f9; }
+        .qr-placeholder { width: 70px; height: 70px; border: 1px solid #ccc; display: inline-block; background: #fff; vertical-align: middle; }
+        .qr-img { width: 100%; height: 100%; object-fit: contain; }
+        .signature-img { max-height: 50px; max-width: 150px; object-fit: contain; display: block; margin: 0 auto; }
+        .logo-img { width: 80px; height: 80px; object-fit: cover; border-radius: 50%; border: 1px solid #eee; }
         .tax-title { text-align: center; font-size: 16px; font-weight: bold; color: #c00; padding: 6px 0; border-bottom: 2px solid #c00; margin-bottom: 8px; }
         .buyer-meta { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #000; margin-bottom: 8px; }
         .buyer-info { font-size: 12px; }
@@ -108,17 +110,17 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         .balance-row { text-align: right; padding: 2px 10px; font-size: 12px; font-weight: bold; border: 1px solid #000; border-top: none; }
         .dr-text { color: #c00; }
         .payable-section { border: 1px solid #000; border-top: none; padding: 8px 10px; }
-        .payable-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-        .payable-label { font-weight: bold; font-size: 12px; }
+        .payable-row { display: flex; justify-content: flex-start; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+        .payable-label { font-weight: bold; font-size: 12px; width: 140px; }
         .payable-words { font-size: 12px; font-weight: bold; }
         .bank-details { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
         .bank-table { font-size: 11px; }
         .bank-table td { padding: 1px 4px; vertical-align: top; }
-        .bank-table .blabel { font-weight: bold; white-space: nowrap; }
+        .bank-table .blabel { font-weight: bold; white-space: nowrap; width: 100px; }
         .terms-section { border: 1px solid #000; border-top: none; padding: 10px; }
         .terms-title { font-weight: bold; font-size: 12px; margin-bottom: 4px; }
         .terms-text { font-size: 10px; line-height: 1.5; white-space: pre-line; }
-        .signature-section { display: flex; justify-content: space-between; padding: 40px 10px 10px; border: 1px solid #000; border-top: none; }
+        .signature-section { display: flex; justify-content: space-between; align-items: flex-end; padding: 20px 10px 10px; border: 1px solid #000; border-top: none; }
         .sig-label { font-weight: bold; font-size: 12px; }
         .print-btn {
             position: fixed;
@@ -157,16 +159,18 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
     </button>
     <div class="invoice">
         <div class="header">
-            <div class="header-left"><div class="logo-circle">${company.name.slice(0, 2).toUpperCase()}</div></div>
+            <div class="header-left">
+              ${company.logo ? `<img src="${company.logo}" alt="Logo" class="logo-img"/>` : `<div class="logo-circle">${company.name.slice(0, 2).toUpperCase()}</div>`}
+            </div>
             <div class="header-center">
-                <div class="mantra">${coAny.mantra || 'ॐ भूर्भुवः स्वः'}</div>
+                <div class="mantra">${company.mantra || 'ॐ भूर्भुवः स्वः'}</div>
                 <div class="company-name">${company.name}</div>
                 <div class="company-addr">${company.address}</div>
-                <div class="company-phone">PHONE : ${coAny.phone || ''}</div>
+                <div class="company-phone">PHONE : ${company.phone || ''}</div>
             </div>
             <div class="header-right">
                 <div class="scan-text">Scan this</div>
-                <div class="qr-placeholder"></div>
+                <div class="qr-placeholder">${company.qrCode ? `<img src="${company.qrCode}" class="qr-img" alt="QR"/>` : ''}</div>
             </div>
         </div>
         <div class="tax-title">TAX INVOICE</div>
@@ -219,14 +223,18 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
             </div>
             <div class="bank-details">
                 <table class="bank-table">
-                    <tr><td class="blabel">Bank Name</td><td>: ${coAny.bankDetails?.bankName || ''} ${coAny.bankDetails?.branch || ''}</td></tr>
-                    <tr><td class="blabel">Bank Acc No</td><td>: ${coAny.bankDetails?.accountNumber || ''}</td></tr>
-                    <tr><td class="blabel">Bank IFSC No</td><td>: ${coAny.bankDetails?.ifsc || ''}</td></tr>
+                    <tr><td class="blabel">Bank Name</td><td>: ${company.bankDetails?.bankName || ''}</td></tr>
+                    <tr><td class="blabel">Bank Acc No</td><td>: ${company.bankDetails?.accountNumber || ''}</td></tr>
+                    <tr><td class="blabel">Bank IFSC No</td><td>: ${company.bankDetails?.ifsc || ''}</td></tr>
                 </table>
+                <!--
                 <div style="text-align:center;">
                     <div style="font-size:10px;font-weight:bold;">SCAN QR CODE</div>
-                    <div class="qr-placeholder" style="width:80px;height:80px;"></div>
+                    <div class="qr-placeholder" style="width:80px;height:80px;">
+                        ${company.qrCode ? `<img src="${company.qrCode}" class="qr-img" alt="QR"/>` : ''}
+                    </div>
                 </div>
+                -->
             </div>
         </div>
         <div class="terms-section">
@@ -234,8 +242,14 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
             <div class="terms-text">${terms}</div>
         </div>
         <div class="signature-section">
-            <div class="sig-label">Customer Signatory</div>
-            <div class="sig-label">Authorized Signatory</div>
+            <div style="text-align: center;">
+                <div style="height: 50px;"></div>
+                <div class="sig-label">Customer Signatory</div>
+            </div>
+            <div style="text-align: center;">
+                ${company.signature ? `<img src="${company.signature}" class="signature-img" alt="Signature"/>` : '<div style="height: 50px;"></div>'}
+                <div class="sig-label">Authorized Signatory</div>
+            </div>
         </div>
     </div>
 </body>
