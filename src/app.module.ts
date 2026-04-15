@@ -8,6 +8,7 @@ import { CustomersModule } from './customers/customers.module';
 import { CreditsModule } from './credits/credits.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { ReportsModule } from './reports/reports.module';
+import { UploadModule } from './uploads/upload.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 
@@ -24,6 +25,7 @@ import { AppController } from './app.controller';
     ]),
     PrismaModule,
     AuthModule,
+    UploadModule,
     OrganizationsModule,
     CustomersModule,
     CreditsModule,

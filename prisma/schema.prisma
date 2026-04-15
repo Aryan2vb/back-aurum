@@ -368,6 +368,10 @@ model OrgInvoiceSettings {
   mantra            String?
   logoUrl           String?
   bisLogoUrl        String?
+  /// URL of the authorized signatory image stored in R2
+  signatureUrl      String?
+  /// URL of the UPI / payment QR code image stored in R2
+  qrCodeUrl         String?
   bankName          String?
   bankBranch        String?
   bankAccountName   String?

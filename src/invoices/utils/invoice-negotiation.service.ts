@@ -75,10 +75,12 @@ export class InvoiceNegotiationService {
     // Calculate current taxable from items to be robust against header mismatches
     const currentTaxable = invoice.items.reduce(
       (sum, item) => sum.plus(new Decimal(item.taxableAmount)),
-      new Decimal(0)
+      new Decimal(0),
     );
 
-    const currentGrand = currentTaxable.mul(gstMultiplier).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+    const currentGrand = currentTaxable
+      .mul(gstMultiplier)
+      .toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
 
     if (target.gte(currentGrand)) {
       throw new BadRequestException(
@@ -161,20 +163,28 @@ export class InvoiceNegotiationService {
       let newEffectiveRate = new Decimal(item.effectiveRate || item.metalRate || 0);
 
       if (mode === NegotiationMode.MAKING_CHARGES) {
-        const share = totalCurrentPool.isZero() ? new Decimal(0) : currentMakingAmt.div(totalCurrentPool);
+        const share = totalCurrentPool.isZero()
+          ? new Decimal(0)
+          : currentMakingAmt.div(totalCurrentPool);
         reduction = totalReduction.mul(share).toDecimalPlaces(4);
         newMakingAmt = currentMakingAmt.minus(reduction).toDecimalPlaces(4);
         newMakingRate =
           item.makingChargesType === 'PER_GRAM'
-            ? (netWeight.isZero() ? new Decimal(0) : newMakingAmt.div(netWeight).toDecimalPlaces(4))
+            ? netWeight.isZero()
+              ? new Decimal(0)
+              : newMakingAmt.div(netWeight).toDecimalPlaces(4)
             : new Decimal(item.makingCharges ?? 0);
       } else {
-        const share = totalCurrentPool.isZero() ? new Decimal(0) : currentMetalValue.div(totalCurrentPool);
+        const share = totalCurrentPool.isZero()
+          ? new Decimal(0)
+          : currentMetalValue.div(totalCurrentPool);
         reduction = totalReduction.mul(share).toDecimalPlaces(4);
         const newMetalValue = currentMetalValue.minus(reduction).toDecimalPlaces(4);
 
         // Rate reduction: NewRate = OldRate * (NewValue / OldValue)
-        const factor = currentMetalValue.isZero() ? new Decimal(1) : newMetalValue.div(currentMetalValue);
+        const factor = currentMetalValue.isZero()
+          ? new Decimal(1)
+          : newMetalValue.div(currentMetalValue);
         newMetalRate = new Decimal(item.metalRate || 0).mul(factor).toDecimalPlaces(4);
         newEffectiveRate = new Decimal(item.effectiveRate || item.metalRate || 0)
           .mul(factor)

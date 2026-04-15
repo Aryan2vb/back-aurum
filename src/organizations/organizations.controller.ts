@@ -28,6 +28,8 @@ export class OrganizationsController {
     this.logger.log('OrganizationsController initialized');
   }
 
+  // ── Members ──────────────────────────────────────────────────────────────
+
   @Post('members')
   @HttpCode(HttpStatus.CREATED)
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
@@ -56,5 +58,22 @@ export class OrganizationsController {
   @Roles(OrganizationRole.OWNER)
   removeMember(@Param('userId') userId: string, @CurrentUser() user: CurrentUserData) {
     return this.organizationsService.removeMember(userId, user);
+  }
+
+  // ── Organization Lifecycle ────────────────────────────────────────────────
+
+  /**
+   * DELETE /organizations
+   *
+   * Soft-deletes the organization — sets deletedAt + status INACTIVE.
+   * R2 files are preserved during the grace period (hard-delete is internal only).
+   * Only OWNER can trigger this.
+   */
+  @Delete()
+  @HttpCode(HttpStatus.OK)
+  @Roles(OrganizationRole.OWNER)
+  softDelete(@CurrentUser() user: CurrentUserData) {
+    this.logger.warn(`DELETE /organizations — soft-delete by owner ${user.userId}`);
+    return this.organizationsService.softDeleteOrg(user);
   }
 }
