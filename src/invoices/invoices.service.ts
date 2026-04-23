@@ -1428,6 +1428,10 @@ export class InvoicesService {
         mantra: settings.mantra ?? '',
         logo: settings.logoUrl ?? '',
         bisLogo: settings.bisLogoUrl ?? '',
+        signature: settings.signatureUrl ?? '',
+        qrCode: settings.qrCodeUrl ?? '',
+        footerImage: settings.footerImageUrl ?? '',
+        whatsappGroupQr: settings.whatsappGroupQrUrl ?? '',
         bankDetails: settings.bankName
           ? {
               bankName: settings.bankName,
