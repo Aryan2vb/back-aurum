@@ -92,6 +92,8 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         .qr-img { width: 100%; height: 100%; object-fit: contain; }
         .signature-img { max-height: 50px; max-width: 150px; object-fit: contain; display: block; margin: 0 auto; }
         .logo-img { width: 80px; height: 80px; object-fit: cover; border-radius: 50%; border: 1px solid #eee; }
+        .footer-banner { margin-top: 10px; border: 1px solid #000; border-top: none; overflow: hidden; }
+        .footer-banner img { width: 100%; display: block; }
         .tax-title { text-align: center; font-size: 16px; font-weight: bold; color: #c00; padding: 6px 0; border-bottom: 2px solid #c00; margin-bottom: 8px; }
         .buyer-meta { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #000; margin-bottom: 8px; }
         .buyer-info { font-size: 12px; }
@@ -170,8 +172,8 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
                 <div class="company-phone">PHONE : ${company.phone || ''}</div>
             </div>
             <div class="header-right">
-                <div class="scan-text">Scan this</div>
-                <div class="qr-placeholder">${company.qrCode ? `<img src="${company.qrCode}" class="qr-img" alt="QR"/>` : ''}</div>
+                <div class="scan-text">Join WhatsApp</div>
+                <div class="qr-placeholder">${company.whatsappGroupQr ? `<img src="${company.whatsappGroupQr}" class="qr-img" alt="WhatsApp QR"/>` : ''}</div>
             </div>
         </div>
         <div class="tax-title">TAX INVOICE</div>
@@ -228,14 +230,12 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
                     <tr><td class="blabel">Bank Acc No</td><td>: ${company.bankDetails?.accountNumber || ''}</td></tr>
                     <tr><td class="blabel">Bank IFSC No</td><td>: ${company.bankDetails?.ifsc || ''}</td></tr>
                 </table>
-                <!--
                 <div style="text-align:center;">
-                    <div style="font-size:10px;font-weight:bold;">SCAN QR CODE</div>
+                    <div style="font-size:10px;font-weight:bold;">PAYMENT QR</div>
                     <div class="qr-placeholder" style="width:80px;height:80px;">
-                        ${company.qrCode ? `<img src="${company.qrCode}" class="qr-img" alt="QR"/>` : ''}
+                        ${company.qrCode ? `<img src="${company.qrCode}" class="qr-img" alt="Payment QR"/>` : ''}
                     </div>
                 </div>
-                -->
             </div>
         </div>
         <div class="terms-section">
@@ -252,6 +252,10 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
                 <div class="sig-label">Authorized Signatory</div>
             </div>
         </div>
+        ${company.footerImage ? `
+        <div class="footer-banner">
+            <img src="${company.footerImage}" alt="Footer Banner">
+        </div>` : ''}
     </div>
 </body>
 </html>`.trim();

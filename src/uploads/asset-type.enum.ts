@@ -13,6 +13,8 @@ export enum AssetType {
   ORG_BIS_LOGO = 'ORG_BIS_LOGO',
   ORG_QR_CODE = 'ORG_QR_CODE',
   ORG_SIGNATURE = 'ORG_SIGNATURE',
+  ORG_FOOTER_IMAGE = 'ORG_FOOTER_IMAGE',
+  ORG_WHATSAPP_QR = 'ORG_WHATSAPP_QR',
 
   // ─── Future: jewellery tag photos ──────────────────────────────────────
   JEWELLERY_PHOTO = 'JEWELLERY_PHOTO',
@@ -68,6 +70,20 @@ export const ASSET_CONFIG: Record<AssetType, AssetConfig> = {
   ORG_SIGNATURE: {
     folder: 'org/{orgId}',
     maxBytes: 3_000_000,
+    allowedMimes: ['image/png', 'image/jpeg', 'image/webp'],
+    singleton: true,
+    public: true,
+  },
+  ORG_FOOTER_IMAGE: {
+    folder: 'org/{orgId}',
+    maxBytes: 5_000_000,
+    allowedMimes: ['image/png', 'image/jpeg', 'image/webp'],
+    singleton: true,
+    public: true,
+  },
+  ORG_WHATSAPP_QR: {
+    folder: 'org/{orgId}',
+    maxBytes: 2_000_000,
     allowedMimes: ['image/png', 'image/jpeg', 'image/webp'],
     singleton: true,
     public: true,

@@ -372,6 +372,8 @@ model OrgInvoiceSettings {
   signatureUrl      String?
   /// URL of the UPI / payment QR code image stored in R2
   qrCodeUrl         String?
+  footerImageUrl    String?
+  whatsappGroupQrUrl String?
   bankName          String?
   bankBranch        String?
   bankAccountName   String?

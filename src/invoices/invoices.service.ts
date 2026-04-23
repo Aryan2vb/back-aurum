@@ -62,6 +62,8 @@ export class InvoicesService {
         bisLogoUrl: dto.bisLogoUrl,
         signatureUrl: dto.signatureUrl,
         qrCodeUrl: dto.qrCodeUrl,
+        footerImageUrl: dto.footerImageUrl,
+        whatsappGroupQrUrl: dto.whatsappGroupQrUrl,
         bankName: dto.bankName,
         bankBranch: dto.bankBranch,
         bankAccountName: dto.bankAccountName,
@@ -94,6 +96,8 @@ export class InvoicesService {
         bisLogoUrl: dto.bisLogoUrl,
         signatureUrl: dto.signatureUrl,
         qrCodeUrl: dto.qrCodeUrl,
+        footerImageUrl: dto.footerImageUrl,
+        whatsappGroupQrUrl: dto.whatsappGroupQrUrl,
         bankName: dto.bankName,
         bankBranch: dto.bankBranch,
         bankAccountName: dto.bankAccountName,
@@ -236,6 +240,12 @@ export class InvoicesService {
                 : '',
               qrCode: settings.qrCodeUrl
                 ? `${settings.qrCodeUrl}?v=${settings.updatedAt.getTime()}`
+                : '',
+              footerImage: settings.footerImageUrl
+                ? `${settings.footerImageUrl}?v=${settings.updatedAt.getTime()}`
+                : '',
+              whatsappGroupQr: settings.whatsappGroupQrUrl
+                ? `${settings.whatsappGroupQrUrl}?v=${settings.updatedAt.getTime()}`
                 : '',
               bankDetails: settings.bankName
                 ? {
@@ -720,6 +730,8 @@ export class InvoicesService {
         bisLogo: companySnapshotRaw.bisLogo || '',
         signature: companySnapshotRaw.signature || '',
         qrCode: companySnapshotRaw.qrCode || '',
+        footerImage: companySnapshotRaw.footerImage || '',
+        whatsappGroupQr: companySnapshotRaw.whatsappGroupQr || '',
         bankDetails: companySnapshotRaw.bankDetails || undefined,
       },
       buyer: {
@@ -1416,6 +1428,10 @@ export class InvoicesService {
         mantra: settings.mantra ?? '',
         logo: settings.logoUrl ?? '',
         bisLogo: settings.bisLogoUrl ?? '',
+        signature: settings.signatureUrl ?? '',
+        qrCode: settings.qrCodeUrl ?? '',
+        footerImage: settings.footerImageUrl ?? '',
+        whatsappGroupQr: settings.whatsappGroupQrUrl ?? '',
         bankDetails: settings.bankName
           ? {
               bankName: settings.bankName,
@@ -1635,6 +1651,16 @@ export class InvoicesService {
           ? settings.qrCodeUrl.includes('?')
             ? `${settings.qrCodeUrl}&v=${t}`
             : `${settings.qrCodeUrl}?v=${t}`
+          : '',
+        footerImage: settings.footerImageUrl
+          ? settings.footerImageUrl.includes('?')
+            ? `${settings.footerImageUrl}&v=${t}`
+            : `${settings.footerImageUrl}?v=${t}`
+          : '',
+        whatsappGroupQr: settings.whatsappGroupQrUrl
+          ? settings.whatsappGroupQrUrl.includes('?')
+            ? `${settings.whatsappGroupQrUrl}&v=${t}`
+            : `${settings.whatsappGroupQrUrl}?v=${t}`
           : '',
         bankDetails: settings.bankName
           ? {

@@ -22,6 +22,8 @@ export interface CompanyDetails {
   signature?: string;
   /** R2 public URL for the UPI / payment QR code */
   qrCode?: string;
+  footerImage?: string;
+  whatsappGroupQr?: string;
   mantra?: string;
   phone?: string;
   email?: string;
