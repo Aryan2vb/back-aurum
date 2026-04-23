@@ -53,6 +53,14 @@ export class CreateOrgInvoiceSettingsDto {
   @IsString()
   @IsOptional()
   qrCodeUrl?: string;
+  
+  @IsString()
+  @IsOptional()
+  footerImageUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  whatsappGroupQrUrl?: string;
 
   // Bank details
   @IsString()
