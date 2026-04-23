@@ -90,7 +90,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         .scan-text { font-size: 10px; font-weight: bold; margin-bottom: 2px; }
         .qr-placeholder { width: 70px; height: 70px; border: 1px solid #ccc; display: inline-block; background: #fff; vertical-align: middle; }
         .qr-img { width: 100%; height: 100%; object-fit: contain; }
-        .signature-img { max-height: 50px; max-width: 150px; object-fit: contain; display: block; margin: 0 auto; }
+        .signature-img { max-height: 80px; max-width: 200px; object-fit: contain; display: block; margin: 0 auto; }
         .logo-img { width: 80px; height: 80px; object-fit: cover; border-radius: 50%; border: 1px solid #eee; }
         .footer-banner { margin-top: 10px; border: 1px solid #000; border-top: none; overflow: hidden; }
         .footer-banner img { width: 100%; display: block; }
