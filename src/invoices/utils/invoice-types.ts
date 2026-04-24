@@ -72,6 +72,9 @@ export interface InvoiceItem {
   makingCharges?: number;
   makingChargesType?: MakingChargesType;
   purity?: string;
+  purityLabel?: string;
+  purityValue?: number;
+  purityBasis?: number;
   netWeight?: number;
   grossWeight?: number;
   huid?: string;

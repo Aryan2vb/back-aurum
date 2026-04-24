@@ -40,19 +40,35 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
       (item) => `
         <tr>
             <td>${
-              item.description
+              (item.description
                 .split('\\n')[0]
                 .replace(/GOLD JEWELLERY-\d+\n?/i, '')
-                .trim() || item.description.split('\n').pop()
+                .trim() || item.description.split('\n').pop()) +
+              (item.huid ? `<br/><small>HUID: ${item.huid}</small>` : '')
             }</td>
             <td class="ctr">${item.quantity}</td>
             <td class="ctr">${item.hsnSac}</td>
             <td class="ctr">${
               item.grossWeight ? fmt(item.grossWeight) + ' GM' : item.quantity + ' ' + item.unit
             }</td>
-            <td class="ctr">${item.purity || '-'}</td>
+            <td class="ctr">${
+              !item.purityLabel ||
+              item.purityLabel === 'None' ||
+              item.purityLabel === 'NONE' ||
+              item.purityLabel === '-'
+                ? '-'
+                : item.purityLabel
+            }</td>
             <td class="rgt">${fmt(item.rate)}</td>
-            <td class="rgt">${item.makingCharges ? fmt(item.makingCharges) : '-'}</td>
+            <td class="rgt">${
+              item.makingCharges
+                ? item.makingChargesType === 'PERCENTAGE_ON_METAL'
+                  ? item.makingCharges + '%'
+                  : item.makingChargesType === 'PER_GRAM'
+                  ? item.makingCharges + '/gm'
+                  : fmt(item.makingCharges)
+                : '-'
+            }</td>
             <td class="rgt">${item.huid ? '45.00' : '-'}</td>
             <td class="rgt">${fmt(item.amount)}</td>
         </tr>`,
