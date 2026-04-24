@@ -178,12 +178,10 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
     .totals-row .label {
         min-width: 100px;
         text-align: right;
-        font-weight: bold;
     }
     .totals-row .value {
         min-width: 80px;
         text-align: right;
-        font-weight: bold;
     }
             .totals-divider { border-top: 1px solid #000; margin: 0; }
 
@@ -301,19 +299,10 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 
         @media print {
             html, body { height: 100%; margin: 0; print-color-adjust: exact; -webkit-print-color-adjust: exact; overflow: hidden; }
-            .invoice { 
-                display: flex; 
-                flex-direction: column;
-                height: 287mm; 
-                max-height: 287mm; 
-                overflow: hidden; 
-                padding: 8px; 
-                max-width: 100%; 
-                border-width: 1px; 
-            }
+            .invoice {  display: block;   padding: 8px; max-width: 100%; border-width: 1px; }
             .invoice-content { height: 100%; }
             .print-btn { display: none !important; }
-            @page { margin: 5mm; size: A4; }
+            @page { margin: 3mm; size: A4; }
         }
     </style>
 </head>
