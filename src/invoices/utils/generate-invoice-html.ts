@@ -37,7 +37,7 @@ export function generateInvoiceHtml(data: InvoiceData): string {
 
       const rateDisplay =
         item.makingCharges && item.makingCharges > 0
-          ? `<strong>${formatCurrency(item.rate)}</strong><br/><span class="text-sm" style="font-size:11px;">+ ${makingChargeLabel} Making Charge</span>`
+          ? `<strong>${formatCurrency(item.rate)}</strong><br/><span class="text-sm" style="font-size:11px;">+ ${makingChargeLabel} </span>`
           : formatCurrency(item.rate);
 
       const descLines = item.description.split('\n');
