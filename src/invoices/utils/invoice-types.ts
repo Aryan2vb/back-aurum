@@ -1,4 +1,4 @@
-import { TaxType } from '@prisma/client';
+import { TaxType, MakingChargesType } from '@prisma/client';
 
 // Invoice Generator Types — server-side port of bill/src/lib/invoice/types.ts
 
@@ -34,6 +34,7 @@ export interface CompanyDetails {
 export interface BuyerDetails {
   name: string;
   address: string;
+  gstin?: string;
   phone?: string;
   state: string;
   stateCode: string;
@@ -69,6 +70,7 @@ export interface InvoiceItem {
   unit: string;
   rate: number;
   makingCharges?: number;
+  makingChargesType?: MakingChargesType;
   purity?: string;
   netWeight?: number;
   grossWeight?: number;

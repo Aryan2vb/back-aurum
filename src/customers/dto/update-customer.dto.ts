@@ -8,6 +8,10 @@ export class UpdateCustomerDto {
 
   @IsString()
   @IsOptional()
+  gstin?: string;
+
+  @IsString()
+  @IsOptional()
   fatherName?: string;
 
   @IsString()

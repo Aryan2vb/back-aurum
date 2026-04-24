@@ -696,6 +696,7 @@ export class InvoicesService {
           select: {
             id: true,
             fullName: true,
+            gstin: true,
             customerCode: true,
             contactDetails: { where: { deletedAt: null }, select: { primaryPhone: true }, take: 1 },
             locations: { where: { deletedAt: null }, take: 1 },
@@ -742,6 +743,7 @@ export class InvoicesService {
         phone: buyerSnapshotRaw.phone || customer.contactDetails?.[0]?.primaryPhone || '',
         state: buyerSnapshotRaw.state || companySnapshotRaw.state || '',
         stateCode: buyerSnapshotRaw.stateCode || companySnapshotRaw.stateCode || '',
+        gstin: buyerSnapshotRaw.gstin || customer.gstin || '',
         email: buyerSnapshotRaw.email || '',
         pan: buyerSnapshotRaw.pan || '',
       },
@@ -760,6 +762,7 @@ export class InvoicesService {
         unit: item.unit || 'PCS',
         rate: new Decimal(item.unitPrice).toNumber(),
         makingCharges: item.makingCharges ? new Decimal(item.makingCharges).toNumber() : undefined,
+        makingChargesType: item.makingChargesType,
         purity: item.purity || undefined,
         netWeight: item.netWeight ? new Decimal(item.netWeight).toNumber() : undefined,
         grossWeight: item.grossWeight ? new Decimal(item.grossWeight).toNumber() : undefined,
@@ -1454,6 +1457,7 @@ export class InvoicesService {
         phone: customer.contactDetails?.[0]?.primaryPhone ?? '',
         state: dto.buyerState || loc?.state || '',
         stateCode: dto.buyerStateCode || loc?.district || '', // district often used for local codes if state matches
+        gstin: customer.gstin || '',
       },
     };
 
