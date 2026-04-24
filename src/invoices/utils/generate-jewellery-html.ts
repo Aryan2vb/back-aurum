@@ -98,7 +98,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 
         /* Header */
         .header { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 4px; border-bottom: 1px solid #000; flex-shrink: 0; }
-        .header-left { display: flex; align-items: flex-start; gap: 12px; }
+        .header-left { display: flex; align-items: flex-start; gap: 12px; ;padding-top:10px ;padding-left: 10px }
         .logo-circle {
             width: 60px; height: 60px; border: 2px solid #000; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
@@ -114,7 +114,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         .qr-placeholder { width: 70px; height: 70px; border: 1px solid #ccc; display: inline-block; background: #fff; vertical-align: middle; }
         .qr-img { width: 100%; height: 100%; object-fit: contain; }
         .signature-img { max-height: 70px; max-width: 250px; object-fit: contain; display: block; margin: 0 auto; }
-        .logo-img { width: 70px; height: 70px; object-fit: cover; border-radius: 50%; border: 1px solid #000; }
+        .logo-img { width: 85px; height: 85px; object-fit: cover; border-radius: 50%; border: 1px solid #000; }
 
         /* Tax Invoice Title */
         .tax-title {
@@ -211,7 +211,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
             gap: 20px;   
 }
         .bank-table {
-            font-size: 10px;
+            font-size: 12px;
         }
         .bank-table td {
             padding: 2px 6px 2px 0;
