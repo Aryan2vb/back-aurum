@@ -675,18 +675,22 @@ export class CustomersService {
     const { organizationId } = user;
 
     // We use deleteMany so it doesn't fail if already gone, and to check organizationId
-    const result = await this.prisma.customer.deleteMany({
+ const result = await this.prisma.customer.updateMany({
       where: {
         id,
         organizationId,
+        deletedAt: null,
+      },
+      data: {
+        deletedAt: new Date(),
       },
     });
 
     if (result.count === 0) {
-      throw new NotFoundException(`Customer with ID ${id} not found in this organization`);
+      throw new NotFoundException(`Customer with ID ${id} not found in this organization or already deleted`);
     }
 
-    return { message: 'Customer permanently deleted and all linked data removed' };
+    return { message: 'Customer successfully removed and archived' };
   }
 
   async bulkUpdateStatus(bulkUpdateStatusDto: BulkUpdateStatusDto, user: CurrentUserData) {
