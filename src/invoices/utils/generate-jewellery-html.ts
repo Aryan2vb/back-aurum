@@ -94,10 +94,10 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
             flex-direction: column;
             position: relative; 
         }
-        .invoice-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+        .invoice-content { display: flex; flex-direction: column; min-height: 0; flex: 1; margin-bottom: 2px; }
 
         /* Header */
-        .header { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid #000; flex-shrink: 0; }
+        .header { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 4px; border-bottom: 1px solid #000; flex-shrink: 0; }
         .header-left { display: flex; align-items: flex-start; gap: 12px; }
         .logo-circle {
             width: 60px; height: 60px; border: 2px solid #000; border-radius: 50%;
@@ -118,20 +118,20 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 
         /* Tax Invoice Title */
         .tax-title {
-            text-align: center; font-size: 16px; font-weight: bold; color: #c00;
-            padding: 6px 0; border-bottom: 2px solid #c00; margin-bottom: 8px;
+            text-align: center; font-size: 15px; font-weight: bold; color: #c00;
+            padding: 4px 0; border-bottom: 2px solid #c00; margin-bottom: 4px;
             flex-shrink: 0;
         }
 
         /* Buyer & Meta Row */
-        .buyer-meta { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #000; margin-bottom: 8px; flex-shrink: 0; }
+        .buyer-meta { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #000; margin-bottom: 4px; flex-shrink: 0; }
         .buyer-info { font-size: 12px; }
         .buyer-info strong { font-size: 12px; }
         .meta-info { text-align: right; font-size: 12px; }
         .meta-info div { margin-bottom: 1px; }
 
         /* Items Table */
-        .items-table-wrap { min-height: 20px; display: block; }
+        .items-table-wrap { min-height: 20px; display: block; flex: 1 1 auto; overflow: visible; }
         .items-table { width: 100%; border-collapse: collapse; margin-bottom: 0; }
         .items-table th {
             background: #f0f0f0; border: 1px solid #000; padding: 6px 4px;
@@ -158,10 +158,6 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 
         .totals-section,
 .cash-section,
-.balance-row {
-    background: #f7f7f7;
-}
-
         /* Totals Section */
         .totals-section { border: 1px solid #000; border-top: none; flex-shrink: 1; }
         // .totals-row { display: flex; justify-content: flex-end; padding: 2px 10px; font-size: 12px; }
@@ -241,17 +237,17 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 
 
         .footer-banner {
-    margin-top: 2px;
-    border: 1px solid #000;
-    overflow: hidden;
-    flex-shrink: 0;          /* prevent shrinking */
-    min-height: 60px;
-    /* optional: set fixed height if needed */
-    /* height: 120px; */
-    line-height: 0;
-    align-self: flex-end;
-    width: 100%;
-}
+        // margin-top: 1px;
+        border: 1px solid #000;
+        overflow: hidden;
+        flex-shrink: 1;          /* allow shrinking in y-axis */
+        min-height: 30px;
+        /* optional: set fixed height if needed */
+        /* height: 120px; */
+        line-height: 0;
+        align-self: flex-end;
+        width: 100%;
+        }
     .qr-box {
     text-align: center;
     margin-top: -15px;
@@ -270,8 +266,8 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 
 .footer-banner img {
     width: 100%;
-    height: auto;            /* maintain aspect ratio */
-    object-fit: contain;     /* or remove this line */
+    height: 100%;            /* fill the footer container height */
+    object-fit: fill;        /* compress in y-axis but not x-axis */
     display: block;          /* remove bottom gap */
 }
 
@@ -299,10 +295,18 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
 
         @media print {
             html, body { height: 100%; margin: 0; print-color-adjust: exact; -webkit-print-color-adjust: exact; overflow: hidden; }
-            .invoice {  display: block;   padding: 8px; max-width: 100%; border-width: 1px; }
-            .invoice-content { height: 100%; }
+            .invoice { 
+                display: flex; 
+                flex-direction: column;
+                height: calc(100% - 1mm);
+                padding: 10px; 
+                max-width: 100%; 
+                border-width: 1px; 
+                box-sizing: border-box;
+            }
+            .invoice-content { height: 100%; display: flex; flex-direction: column; }
             .print-btn { display: none !important; }
-            @page { margin: 3mm; size: A4; }
+            @page { margin: 5mm; size: A4; }
         }
     </style>
 </head>
@@ -466,7 +470,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         <!-- Signatures -->
         <div class="signature-section">
             <div style="text-align: center;">
-                <div style="height: 40px;"></div>
+                <div style="height: 70px;"></div>
                 <div class="sig-label">Customer Signatory</div>
             </div>
             <div style="text-align: center;">
