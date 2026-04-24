@@ -84,11 +84,20 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { margin: 0; }
         body { font-family: 'Arial', sans-serif; font-size: 10.5px; color: #000; background: #fff; }
-        .invoice { max-width: 750px; width: 100%; margin: 0 auto; padding: 8px; border: 1px solid #000; display: block; position: relative; }
-        .invoice-content { display: block; }
+        .invoice { 
+            max-width: 750px; 
+            width: 100%; 
+            margin: 0 auto; 
+            padding: 8px; 
+            border: 1px solid #000; 
+            display: flex;
+            flex-direction: column;
+            position: relative; 
+        }
+        .invoice-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 
         /* Header */
-        .header { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 5px; border-bottom: 1px solid #000; flex-shrink: 0; }
+        .header { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid #000; flex-shrink: 0; }
         .header-left { display: flex; align-items: flex-start; gap: 12px; }
         .logo-circle {
             width: 60px; height: 60px; border: 2px solid #000; border-radius: 50%;
@@ -104,17 +113,18 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         .scan-text { font-size: 10px; font-weight: bold; margin-bottom: 2px; }
         .qr-placeholder { width: 70px; height: 70px; border: 1px solid #ccc; display: inline-block; background: #fff; vertical-align: middle; }
         .qr-img { width: 100%; height: 100%; object-fit: contain; }
-        .signature-img { max-height: 50px; max-width: 150px; object-fit: contain; display: block; margin: 0 auto; }
-        .logo-img { width: 60px; height: 60px; object-fit: cover; border-radius: 50%; border: 1px solid #000; }
+        .signature-img { max-height: 70px; max-width: 250px; object-fit: contain; display: block; margin: 0 auto; }
+        .logo-img { width: 70px; height: 70px; object-fit: cover; border-radius: 50%; border: 1px solid #000; }
 
         /* Tax Invoice Title */
         .tax-title {
-            text-align: center; font-size: 14px; font-weight: bold; color: #c00;
-            padding: 3px 0; border-bottom: 2px solid #c00; margin-bottom: 4px;
+            text-align: center; font-size: 16px; font-weight: bold; color: #c00;
+            padding: 6px 0; border-bottom: 2px solid #c00; margin-bottom: 8px;
+            flex-shrink: 0;
         }
 
         /* Buyer & Meta Row */
-        .buyer-meta { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #000; margin-bottom: 4px; }
+        .buyer-meta { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #000; margin-bottom: 8px; flex-shrink: 0; }
         .buyer-info { font-size: 12px; }
         .buyer-info strong { font-size: 12px; }
         .meta-info { text-align: right; font-size: 12px; }
@@ -125,23 +135,57 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         .items-table { width: 100%; border-collapse: collapse; margin-bottom: 0; }
         .items-table th {
             background: #f0f0f0; border: 1px solid #000; padding: 6px 4px;
-            font-size: 10px; font-weight: bold; text-transform: uppercase;
+            font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 4px;
         }
         .items-table td {
             border-left: 1px solid #000; border-right: 1px solid #000;
             padding: 3px 4px; font-size: 10.5px; vertical-align: top;
+            height: 20px;
         }
         .items-table tbody tr:last-child td { border-bottom: 1px solid #000; }
         .ctr { text-align: center; }
         .rgt { text-align: right; }
         .lft { text-align: left; }
 
+        .items-table,
+        .totals-section,
+        .payable-section,
+        .terms-section,
+        .signature-section,
+        .footer-banner {
+        page-break-inside: avoid;
+        }
+
+        .totals-section,
+.cash-section,
+.balance-row {
+    background: #f7f7f7;
+}
+
         /* Totals Section */
-        .totals-section { border: 1px solid #000; border-top: none; }
-        .totals-row { display: flex; justify-content: flex-end; padding: 2px 10px; font-size: 12px; }
-        .totals-row .label { font-weight: bold; min-width: 140px; text-align: right; margin-right: 10px; }
-        .totals-row .value { min-width: 100px; text-align: right; font-weight: bold; }
-        .totals-divider { border-top: 1px solid #000; margin: 0; }
+        .totals-section { border: 1px solid #000; border-top: none; flex-shrink: 1; }
+        // .totals-row { display: flex; justify-content: flex-end; padding: 2px 10px; font-size: 12px; }
+        // .totals-row .label { font-weight: bold; min-width: 140px; text-align: right; margin-right: 10px; }
+        // .totals-row .value { min-width: 100px; text-align: right; font-weight: bold; }
+        .totals-row {
+        display: flex;
+    justify-content: flex-end;   /* 🔥 pushes everything to right */
+    align-items: center;
+    padding: 1px 10px;
+    margin-left: 50px;
+    font-size: 11px;
+    }
+    .totals-row .label {
+        min-width: 100px;
+        text-align: right;
+        font-weight: bold;
+    }
+    .totals-row .value {
+        min-width: 80px;
+        text-align: right;
+        font-weight: bold;
+    }
+            .totals-divider { border-top: 1px solid #000; margin: 0; }
 
         /* Cash & Balance */
         .cash-section { display: flex; justify-content: space-between; padding: 4px 10px; border: 1px solid #000; border-top: none; font-size: 11px; font-weight: bold; }
@@ -149,39 +193,89 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         .dr-text { color: #c00; }
 
         /* Payable & Bank */
-        .payable-section { border: 1px solid #000; border-top: none; padding: 6px 10px; }
-        .payable-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-        .payable-label { font-weight: bold; font-size: 12px; }
-        .payable-words { font-size: 12px; font-weight: bold; }
-        .bank-details { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-        .bank-table { font-size: 11px; }
-        .bank-table td { padding: 1px 4px; vertical-align: top; }
-        .bank-table .blabel { font-weight: bold; white-space: nowrap; }
+        .payable-section { border: 1px solid #000; border-top: none; padding: 4px 10px; flex-shrink: 1; }
+        // .payable-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+        .payable-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .payable-label {
+            background: #cfe2ff;   /* light blue highlight like screenshot */
+            padding: 2px 6px;
+        }
+        .payable-words {
+            background: #cfe2ff;
+            padding: 2px 6px;
+        }
+        // .payable-label { font-weight: bold; font-size: 12px; }
+        // .payable-words { font-size: 12px; font-weight: bold; }
+        .bank-details {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;   
+}
+        .bank-table {
+            font-size: 10px;
+        }
+        .bank-table td {
+            padding: 2px 6px 2px 0;
+        }
+        .bank-table .blabel {
+            width: 110px;       
+            font-weight: bold;
+        }
 
         /* Terms */
-        .terms-section { border: 1px solid #000; border-top: none; padding: 6px 10px; break-inside: avoid; }
-        .terms-title { font-weight: bold; font-size: 12px; margin-bottom: 4px; }
-        .terms-text { font-size: 9px; line-height: 1.4; white-space: pre-line; }
+        .terms-section { border: 1px solid #000; border-top: none; padding: 4px 10px; flex-shrink: 1; }
+        .terms-title { font-weight: bold; font-size: 11px; margin-bottom: 2px; }
+        .terms-text { font-size: 8px; line-height: 1.3; white-space: pre-line; }
 
         /* Signatures */
         .signature-section {
             display: flex; justify-content: space-between; padding: 10px 10px 5px;
             border: 1px solid #000; border-top: none;
-            break-inside: avoid;
+            flex-shrink: 0;
+            margin-bottom: 0; /* pushes footer to bottom only in print */
         }
         .sig-label { font-weight: bold; font-size: 12px; }
 
-        /* Footer Banner */
+
         .footer-banner {
-            margin-top: 5px;
-            border: 1px solid #000;
-            overflow: hidden;
-            break-inside: avoid;
-        }
-        .footer-banner img {
-            width: 100%;
-            display: block;
-        }
+    margin-top: 2px;
+    border: 1px solid #000;
+    overflow: hidden;
+    flex-shrink: 0;          /* prevent shrinking */
+    min-height: 60px;
+    /* optional: set fixed height if needed */
+    /* height: 120px; */
+    line-height: 0;
+    align-self: flex-end;
+    width: 100%;
+}
+    .qr-box {
+    text-align: center;
+    margin-top: -15px;
+    margin-bottom: 5px;
+}
+.qr-title {
+    font-size: 10px;
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+.qr-placeholder {
+    width: 85px;
+    height: 85px;
+    border: 1px solid #999;
+}
+
+.footer-banner img {
+    width: 100%;
+    height: auto;            /* maintain aspect ratio */
+    object-fit: contain;     /* or remove this line */
+    display: block;          /* remove bottom gap */
+}
 
         .print-btn {
             position: fixed;
@@ -206,8 +300,18 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         .print-btn:active { transform: translateY(0); }
 
         @media print {
-            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; margin: 0; }
-            .invoice { padding: 8px; max-width: 100%; border-width: 1px; }
+            html, body { height: 100%; margin: 0; print-color-adjust: exact; -webkit-print-color-adjust: exact; overflow: hidden; }
+            .invoice { 
+                display: flex; 
+                flex-direction: column;
+                height: 287mm; 
+                max-height: 287mm; 
+                overflow: hidden; 
+                padding: 8px; 
+                max-width: 100%; 
+                border-width: 1px; 
+            }
+            .invoice-content { height: 100%; }
             .print-btn { display: none !important; }
             @page { margin: 5mm; size: A4; }
         }
@@ -353,13 +457,12 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
                     </tr>
                 </table>
                 <div style="text-align:center;">
-                    <div style="font-size:10px;font-weight:bold;">PAYMENT QR</div>
-                    <div class="qr-placeholder" style="width:80px;height:80px;">
-                        ${
-                          company.qrCode
-                            ? `<img src="${company.qrCode}" class="qr-img" alt="Payment QR"/>`
-                            : ''
-                        }
+              
+                    <div class="qr-box">
+                        <div class="qr-title">PAYMENT QR</div>
+                            <div class="qr-placeholder">
+                                ${company.qrCode ? `<img src="${company.qrCode}" class="qr-img"/>` : ''}
+                            </div>
                     </div>
                 </div>
             </div>
@@ -374,18 +477,19 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         <!-- Signatures -->
         <div class="signature-section">
             <div style="text-align: center;">
-                <div style="height: 50px;"></div>
+                <div style="height: 40px;"></div>
                 <div class="sig-label">Customer Signatory</div>
             </div>
             <div style="text-align: center;">
                 ${
                   company.signature
                     ? `<img src="${company.signature}" class="signature-img" alt="Signature"/>`
-                    : '<div style="height: 50px;"></div>'
+                    : '<div style="height: 40px;"></div>'
                 }
                 <div class="sig-label">Authorized Signatory</div>
             </div>
         </div>
+
 
         <!-- Footer Banner -->
         ${
