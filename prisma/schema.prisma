@@ -11,20 +11,20 @@ datasource db {
 
 model User {
   /// Matches Supabase auth.users.id (UUID string)
-  id                        String                   @id
-  email                     String                   @unique
-  createdAt                 DateTime                 @default(now())
-  updatedAt                 DateTime                 @updatedAt
-  passwordHash              String?
-  fullName                  String?
-  accountsCreated           Account[]
-  auditLogsPerformed        AuditLog[]
-  customersCreated          Customer[]
-  invoicesCreated           Invoice[]
-  ledgerEntriesCreated      LedgerEntry[]            @relation("LedgerCreatedBy")
-  invitationsCreated        OrganizationInvitation[]
-  members                   OrganizationMember[]
-  sessions                  Session[]
+  id                   String                   @id
+  email                String                   @unique
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  passwordHash         String?
+  fullName             String?
+  accountsCreated      Account[]
+  auditLogsPerformed   AuditLog[]
+  customersCreated     Customer[]
+  invoicesCreated      Invoice[]
+  ledgerEntriesCreated LedgerEntry[]            @relation("LedgerCreatedBy")
+  invitationsCreated   OrganizationInvitation[]
+  members              OrganizationMember[]
+  sessions             Session[]
 }
 
 model Organization {
@@ -32,11 +32,11 @@ model Organization {
   name               String
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
+  nextCustomerNumber Int                      @default(1)
   deletedAt          DateTime?
   locale             String                   @default("en-US")
   status             OrganizationStatus       @default(ACTIVE)
   timezone           String                   @default("UTC")
-  nextCustomerNumber Int                      @default(1)
   accounts           Account[]
   auditLogs          AuditLog[]
   contactDetails     ContactDetail[]
@@ -46,6 +46,7 @@ model Organization {
   invoiceItems       InvoiceItem[]
   invoicePayments    InvoicePayment[]
   invoiceSequences   InvoiceSequence[]
+  ledgerEntries      LedgerEntry[]
   locations          Location[]
   metaTrackings      MetaTracking[]
   invoiceSettings    OrgInvoiceSettings?
@@ -53,7 +54,6 @@ model Organization {
   members            OrganizationMember[]
   sessions           Session[]
   socialContexts     SocialContext[]
-  ledgerEntries      LedgerEntry[]
 
   @@index([status])
   @@index([deletedAt])
@@ -63,9 +63,9 @@ model OrganizationMember {
   id             String           @id @default(uuid())
   userId         String
   organizationId String
+  role           OrganizationRole @default(STAFF)
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
-  role           OrganizationRole @default(STAFF)
   organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -119,6 +119,7 @@ model Customer {
   organizationId String
   customerCode   String
   fullName       String
+  gstin          String?
   fatherName     String?
   motherName     String?
   spouseName     String?
@@ -137,10 +138,10 @@ model Customer {
   documents      Document[]
   invoices       Invoice[]
   ledgers        LedgerEntry[]
-  udharEntries   UdharEntry[]
+  locations      Location[]
   metaTrackings  MetaTracking[]
   socialContexts SocialContext[]
-  locations      Location[]
+  udharEntries   UdharEntry[]
 
   @@unique([organizationId, customerCode])
   @@index([organizationId])
@@ -298,8 +299,6 @@ model AuditLog {
   @@index([entityType, entityId])
 }
 
-
-
 model LedgerEntry {
   id             String       @id @default(uuid())
   organizationId String
@@ -307,15 +306,15 @@ model LedgerEntry {
   amount         Decimal      @db.Decimal(12, 2)
   type           LedgerType
   description    String?
-  entityId       String?      /// ID of the related entity (Invoice ID, Payment ID, etc.)
+  /// ID of the related entity (Invoice ID, Payment ID, etc.)
+  entityId       String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
   createdById    String?
-  
+  createdBy      User?        @relation("LedgerCreatedBy", fields: [createdById], references: [id])
   customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy      User?        @relation("LedgerCreatedBy", fields: [createdById], references: [id])
   udharEntry     UdharEntry?
 
   @@index([organizationId])
@@ -326,25 +325,25 @@ model LedgerEntry {
 }
 
 model UdharEntry {
-  id             String       @id @default(uuid())
-  organizationId String
-  customerId     String
-  ledgerEntryId  String       @unique
-  invoiceId      String?      /// Optional link to an invoice
-  amount         Decimal      @db.Decimal(12, 2)
-  paidAmount     Decimal      @default(0) @db.Decimal(12, 2)
-  dueDate        DateTime?
-  status         CreditStatus @default(ACTIVE)
-  notes          String?
-  reminderFrequency ReminderFrequency?
+  id                String             @id @default(uuid())
+  organizationId    String
+  customerId        String
+  ledgerEntryId     String             @unique
+  /// Optional link to an invoice
+  invoiceId         String?
+  amount            Decimal            @db.Decimal(12, 2)
+  paidAmount        Decimal            @default(0) @db.Decimal(12, 2)
+  dueDate           DateTime?
+  status            CreditStatus       @default(ACTIVE)
+  notes             String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  deletedAt         DateTime?
   nextReminderDate  DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  deletedAt      DateTime?
-
-  invoice        Invoice?     @relation(fields: [invoiceId], references: [id])
-  ledgerEntry    LedgerEntry  @relation(fields: [ledgerEntryId], references: [id], onDelete: Cascade)
-  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  reminderFrequency ReminderFrequency?
+  customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  invoice           Invoice?           @relation(fields: [invoiceId], references: [id])
+  ledgerEntry       LedgerEntry        @relation(fields: [ledgerEntryId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([customerId])
@@ -355,42 +354,42 @@ model UdharEntry {
 /// One-time GST + company details per organisation.
 /// Stored as a snapshot on each Invoice for immutability.
 model OrgInvoiceSettings {
-  id                String       @id @default(uuid())
-  organizationId    String       @unique
-  companyName       String
-  address           String
-  gstin             String
-  state             String
-  stateCode         String
-  phone             String?
-  email             String?
-  pan               String?
-  mantra            String?
-  logoUrl           String?
-  bisLogoUrl        String?
-  /// URL of the authorized signatory image stored in R2
-  signatureUrl      String?
+  id                  String       @id @default(uuid())
+  organizationId      String       @unique
+  companyName         String
+  address             String
+  gstin               String
+  state               String
+  stateCode           String
+  phone               String?
+  email               String?
+  pan                 String?
+  mantra              String?
+  logoUrl             String?
+  bisLogoUrl          String?
+  bankName            String?
+  bankBranch          String?
+  bankAccountName     String?
+  bankAccountNumber   String?
+  bankIfsc            String?
+  defaultTaxType      TaxType      @default(CGST_SGST)
+  defaultCgstRate     Decimal      @default(1.5) @db.Decimal(5, 2)
+  defaultSgstRate     Decimal      @default(1.5) @db.Decimal(5, 2)
+  defaultIgstRate     Decimal      @default(0) @db.Decimal(5, 2)
+  defaultTemplate     String       @default("standard")
+  invoiceNumberPrefix String?      @default("INV")
+  startingSequence    Int          @default(1)
+  declaration         String?
+  termsOfDelivery     String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
   /// URL of the UPI / payment QR code image stored in R2
-  qrCodeUrl         String?
-  footerImageUrl    String?
-  whatsappGroupQrUrl String?
-  bankName          String?
-  bankBranch        String?
-  bankAccountName   String?
-  bankAccountNumber String?
-  bankIfsc          String?
-  defaultTaxType    TaxType      @default(CGST_SGST)
-  defaultCgstRate   Decimal      @default(1.5) @db.Decimal(5, 2)
-  defaultSgstRate   Decimal      @default(1.5) @db.Decimal(5, 2)
-  defaultIgstRate   Decimal      @default(0) @db.Decimal(5, 2)
-  defaultTemplate   String       @default("standard")
-  invoiceNumberPrefix String?    @default("INV")
-  startingSequence  Int          @default(1)
-  declaration       String?
-  termsOfDelivery   String?
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  qrCodeUrl           String?
+  /// URL of the authorized signatory image stored in R2
+  signatureUrl        String?
+  footerImageUrl      String?
+  whatsappGroupQrUrl  String?
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model Invoice {
@@ -400,14 +399,7 @@ model Invoice {
   invoiceNumber           String?
   status                  InvoiceStatus    @default(DRAFT)
   taxType                 TaxType          @default(CGST_SGST)
-
-  // GST classification
-  placeOfSupply           String?          // customer state code e.g. "07" — drives taxType
-
-  // Totals (all denormalised — never recomputed on read)
   subtotal                Decimal          @db.Decimal(14, 4)
-  totalHallmarkingCharges Decimal          @default(0) @db.Decimal(12, 2)
-  taxableAmount           Decimal?         @db.Decimal(14, 4)  // = subtotal (hallmarking is inside subtotal)
   cgstRate                Decimal          @default(0) @db.Decimal(5, 2)
   sgstRate                Decimal          @default(0) @db.Decimal(5, 2)
   igstRate                Decimal          @default(0) @db.Decimal(5, 2)
@@ -417,24 +409,6 @@ model Invoice {
   roundOff                Decimal          @default(0) @db.Decimal(6, 2)
   totalAmount             Decimal          @db.Decimal(14, 2)
   paidAmount              Decimal          @default(0) @db.Decimal(12, 2)
-
-  // Metal rate provenance
-  metalRateSource         String?          // "IBJA" | "MCX" | "MANUAL"
-  metalRateDate           DateTime?
-
-  // Negotiation audit trail
-  isNegotiated            Boolean          @default(false)
-  negotiatedBy            String?
-  negotiationNote         String?
-  originalSubtotal        Decimal?         @db.Decimal(14, 4)
-  originalTaxableAmount   Decimal?         @db.Decimal(14, 4)
-  originalCgstAmount      Decimal?         @db.Decimal(12, 2)
-  originalSgstAmount      Decimal?         @db.Decimal(12, 2)
-  originalIgstAmount      Decimal?         @db.Decimal(12, 2)
-  originalGrandTotal      Decimal?         @db.Decimal(14, 2)
-  discountAmount          Decimal?         @db.Decimal(12, 2)
-
-  // Existing fields
   companySnapshot         Json
   buyerSnapshot           Json?
   modeOfPayment           String?
@@ -451,7 +425,21 @@ model Invoice {
   createdById             String?
   deletedAt               DateTime?
   sequence                Int?
-
+  discountAmount          Decimal?         @db.Decimal(12, 2)
+  isNegotiated            Boolean          @default(false)
+  metalRateDate           DateTime?
+  metalRateSource         String?
+  negotiatedBy            String?
+  negotiationNote         String?
+  originalCgstAmount      Decimal?         @db.Decimal(12, 2)
+  originalGrandTotal      Decimal?         @db.Decimal(14, 2)
+  originalIgstAmount      Decimal?         @db.Decimal(12, 2)
+  originalSgstAmount      Decimal?         @db.Decimal(12, 2)
+  originalSubtotal        Decimal?         @db.Decimal(14, 4)
+  originalTaxableAmount   Decimal?         @db.Decimal(14, 4)
+  placeOfSupply           String?
+  taxableAmount           Decimal?         @db.Decimal(14, 4)
+  totalHallmarkingCharges Decimal          @default(0) @db.Decimal(12, 2)
   createdBy               User?            @relation(fields: [createdById], references: [id])
   customer                Customer         @relation(fields: [customerId], references: [id])
   organization            Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -471,58 +459,41 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id                  String             @id @default(uuid())
-  invoiceId           String
-  organizationId      String
-  slNo                Int
-  description         String
-  hsnSac              String
-  quantity            Decimal            @db.Decimal(10, 3)
-  unit                String             @default("PCS")
-
-  // Metal provenance — all stored at invoice time
-  metalType           MetalType          @default(GOLD)
-  metalRate           Decimal?           @db.Decimal(12, 4)  // ₹/gm at 24K (gold) or 999 fine (silver)
-  purity              String?            // legacy — kept for backward compat
-  purityLabel         String?            // "22K", "18K", "925" — display only
-  purityValue         Decimal?           @db.Decimal(8, 3)   // 22.000, 18.000, 925.000, 1000.000
-  purityBasis         Int?               // 24 for gold karats, 1000 for silver millesimal
-  effectiveRate       Decimal?           @db.Decimal(12, 4)  // metalRate × (purityValue / purityBasis)
-
-  // Weight
-  grossWeight         Decimal?           @db.Decimal(10, 3)
-  stoneWeight         Decimal?           @db.Decimal(10, 3)  @default(0)
-  netWeight           Decimal?           @db.Decimal(10, 3)  // grossWeight − stoneWeight
-
-  // Making charges
-  makingCharges       Decimal?           @db.Decimal(10, 4)  // the rate
-  makingChargesType   MakingChargesType? @default(PER_GRAM)
-  makingChargesAmount Decimal?           @db.Decimal(12, 4)  // resolved ₹ actually charged
-
-  // Stone and additional
-  stoneCharges        Decimal?           @db.Decimal(12, 4)  @default(0)
-
-  // Hallmarking
-  huid                String?
-  isHallmarked        Boolean            @default(false)
-  hallmarkingCharge   Decimal            @default(0) @db.Decimal(8, 2)
-
-  // Line total (pre-GST)
-  taxableAmount       Decimal            @db.Decimal(14, 4)
-  totalAmount         Decimal            @db.Decimal(14, 4)  // = taxableAmount (backward compat)
-
-  // Backward compat — set equal to effectiveRate going forward
-  unitPrice           Decimal            @db.Decimal(12, 4)
-
-  // Negotiation audit trail
-  originalMakingCharges       Decimal?   @db.Decimal(10, 4)
-  originalMakingChargesAmount Decimal?   @db.Decimal(12, 4)
-  originalMetalRate           Decimal?   @db.Decimal(12, 4)
-  originalEffectiveRate       Decimal?   @db.Decimal(12, 4)
-  originalItemAmount          Decimal?   @db.Decimal(12, 4)
-
-  invoice             Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  organization        Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id                          String             @id @default(uuid())
+  invoiceId                   String
+  organizationId              String
+  slNo                        Int
+  description                 String
+  hsnSac                      String
+  quantity                    Decimal            @db.Decimal(10, 3)
+  unit                        String             @default("PCS")
+  unitPrice                   Decimal            @db.Decimal(12, 4)
+  makingCharges               Decimal?           @db.Decimal(10, 4)
+  taxableAmount               Decimal            @db.Decimal(14, 4)
+  totalAmount                 Decimal            @db.Decimal(14, 4)
+  grossWeight                 Decimal?           @db.Decimal(10, 3)
+  netWeight                   Decimal?           @db.Decimal(10, 3)
+  purity                      String?
+  huid                        String?
+  metalType                   MetalType          @default(GOLD)
+  effectiveRate               Decimal?           @db.Decimal(12, 4)
+  hallmarkingCharge           Decimal            @default(0) @db.Decimal(8, 2)
+  isHallmarked                Boolean            @default(false)
+  makingChargesAmount         Decimal?           @db.Decimal(12, 4)
+  makingChargesType           MakingChargesType? @default(PER_GRAM)
+  metalRate                   Decimal?           @db.Decimal(12, 4)
+  originalItemAmount          Decimal?           @db.Decimal(12, 4)
+  originalMakingCharges       Decimal?           @db.Decimal(10, 4)
+  originalMakingChargesAmount Decimal?           @db.Decimal(12, 4)
+  purityBasis                 Int?
+  purityLabel                 String?
+  purityValue                 Decimal?           @db.Decimal(8, 3)
+  stoneCharges                Decimal?           @default(0) @db.Decimal(12, 4)
+  stoneWeight                 Decimal?           @default(0) @db.Decimal(10, 3)
+  originalEffectiveRate       Decimal?           @db.Decimal(12, 4)
+  originalMetalRate           Decimal?           @db.Decimal(12, 4)
+  invoice                     Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  organization                Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@index([organizationId])
@@ -538,6 +509,35 @@ model InvoiceSequence {
 
   @@unique([organizationId, financialYear])
   @@index([organizationId])
+}
+
+model InvoicePayment {
+  id             String        @id @default(uuid())
+  invoiceId      String
+  organizationId String
+  mode           PaymentMethod
+  amount         Decimal       @db.Decimal(12, 2)
+  reference      String?
+  paidAt         DateTime      @default(now())
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  invoice        Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([organizationId, mode])
+  @@index([organizationId, paidAt])
+  @@index([organizationId, mode, paidAt])
+}
+
+model SystemConfig {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+
+  @@index([key])
 }
 
 enum OrganizationRole {
@@ -627,24 +627,24 @@ enum PaymentMethod {
   CASH
   UPI
   BANK_TRANSFER
+  CHEQUE
+  CARD
+  OTHER
   NEFT
   RTGS
   IMPS
-  CHEQUE
-  CARD
   OLD_GOLD
   CREDIT
-  OTHER
 }
 
 enum InvoiceStatus {
   DRAFT
-  CONFIRMED
   SENT
   PAID
   PARTIAL
   UNPAID
   CANCELLED
+  CONFIRMED
 }
 
 enum TaxType {
@@ -670,33 +670,4 @@ enum LedgerType {
   PAYMENT
   ADJUSTMENT
   RETURN
-}
-
-model InvoicePayment {
-  id             String         @id @default(uuid())
-  invoiceId      String
-  organizationId String
-  mode           PaymentMethod
-  amount         Decimal        @db.Decimal(12, 2)
-  reference      String?
-  paidAt         DateTime       @default(now())
-  notes          String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  invoice        Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@index([invoiceId])
-  @@index([organizationId])
-  @@index([organizationId, mode])
-  @@index([organizationId, paidAt])
-  @@index([organizationId, mode, paidAt])
-}
-
-model SystemConfig {
-  id    String @id @default(uuid())
-  key   String @unique
-  value String
-
-  @@index([key])
 }

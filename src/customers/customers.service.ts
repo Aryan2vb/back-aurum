@@ -92,6 +92,7 @@ export class CustomersService {
           customerCode,
           createdById: userId,
           fullName: createCustomerDto.fullName,
+          gstin: createCustomerDto.gstin,
           fatherName: createCustomerDto.fatherName,
           motherName: createCustomerDto.motherName,
           spouseName: createCustomerDto.spouseName,
@@ -617,10 +618,15 @@ export class CustomersService {
 
   async update(id: string, updateCustomerDto: UpdateCustomerDto, user: CurrentUserData) {
     const { organizationId } = user;
+    this.logger.debug(`Updating customer ${id} with DTO: ${JSON.stringify(updateCustomerDto)}`);
     const data: Prisma.CustomerUpdateManyMutationInput = {};
 
     if (updateCustomerDto.fullName !== undefined) {
       data.fullName = updateCustomerDto.fullName;
+    }
+
+    if (updateCustomerDto.gstin !== undefined) {
+      data.gstin = updateCustomerDto.gstin;
     }
 
     if (updateCustomerDto.fatherName !== undefined) {
@@ -655,20 +661,42 @@ export class CustomersService {
       return this.findOne(id, organizationId);
     }
 
-    const result = await this.prisma.customer.updateMany({
+    const customer = await this.prisma.customer.update({
       where: {
         id,
         organizationId,
         deletedAt: null,
       },
       data,
+      include: {
+        contactDetails: {
+          where: { deletedAt: null },
+        },
+        locations: {
+          where: { deletedAt: null },
+        },
+        socialContexts: {
+          where: { deletedAt: null },
+        },
+        documents: {
+          where: { deletedAt: null },
+        },
+        accounts: {
+          where: { deletedAt: null },
+        },
+        metaTrackings: {
+          where: { deletedAt: null },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            email: true,
+          },
+        },
+      },
     });
 
-    if (result.count === 0) {
-      throw new NotFoundException(`Customer with ID ${id} not found in this organization`);
-    }
-
-    return this.findOne(id, organizationId);
+    return customer;
   }
 
   async remove(id: string, user: CurrentUserData) {

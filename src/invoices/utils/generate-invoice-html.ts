@@ -3,6 +3,7 @@
  * Server-side port of bill/src/lib/invoice/generateInvoiceHtml.ts
  * Browser-only helpers (printInvoice, downloadInvoiceHtml) removed.
  */
+import { MakingChargesType } from '@prisma/client';
 import { InvoiceData } from './invoice-types';
 
 export function generateInvoiceHtml(data: InvoiceData): string {
@@ -29,9 +30,14 @@ export function generateInvoiceHtml(data: InvoiceData): string {
 
   const itemRows = items
     .map((item) => {
+      const makingChargeLabel =
+        item.makingChargesType === MakingChargesType.PERCENTAGE_ON_METAL
+          ? `${item.makingCharges}%`
+          : formatCurrency(item.makingCharges || 0);
+
       const rateDisplay =
         item.makingCharges && item.makingCharges > 0
-          ? `<strong>${formatCurrency(item.rate)}</strong><br/><span class="text-sm" style="font-size:11px;">+ ${formatCurrency(item.makingCharges)} Making Charge</span>`
+          ? `<strong>${formatCurrency(item.rate)}</strong><br/><span class="text-sm" style="font-size:11px;">+ ${makingChargeLabel} Making Charge</span>`
           : formatCurrency(item.rate);
 
       const descLines = item.description.split('\n');
@@ -105,17 +111,18 @@ export function generateInvoiceHtml(data: InvoiceData): string {
     .py-1 { padding-top: 4px; padding-bottom: 4px; }
     .py-2 { padding-top: 8px; padding-bottom: 8px; }
     .mb-1 { margin-bottom: 4px; } .mb-2 { margin-bottom: 8px; }
-    .mantra-text { text-align: center; font-size: 11px; font-style: italic; padding: 6px 8px; }
-    .logo-container { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border: 1px solid #000; border-bottom: none; }
-    .logo-container .main-logo img { width: 85px; height: 85px; object-fit: cover; border-radius: 50%; border: 1px solid #eee; }
-    .logo-container .bis-logo img { max-height: 45px; max-width: 90px; object-fit: contain; }
-    .signature-area-box { text-align: center; width: 140px; }
-    .signature-img { max-height: 50px; max-width: 130px; object-fit: contain; margin-bottom: 2px; }
+    .mantra-text { text-align: center; font-size: 10px; font-style: italic; padding: 2px 8px; }
+    .logo-container { display: flex; justify-content: space-between; align-items: center; padding: 4px 12px; border: 1px solid #000; border-bottom: none; }
+    .logo-container .main-logo img { width: 60px; height: 60px; object-fit: cover; border-radius: 50%; border: 1px solid #eee; }
+    .logo-container .bis-logo img { max-height: 32px; max-width: 80px; object-fit: contain; }
+    .signature-area-box { text-align: center; }
+    .signature-img { max-height: 90px; max-width: 180px; object-fit: contain; margin-bottom: 2px; }
     .qr-footer-box { text-align: center; }
     .qr-footer-img { max-height: 70px; max-width: 70px; object-fit: contain; }
-    .header-title { text-align: center; font-size: 16px; font-weight: bold; padding: 8px; border: 1px solid #000; border-bottom: none; }
+    .header-title { text-align: center; font-size: 14px; font-weight: bold; padding: 4px; }
     .company-section { display: grid; grid-template-columns: 1fr 1fr; }
     .company-left, .company-right { border: 1px solid #000; padding: 8px; }
+    .company-left { text-transform: uppercase; }
     .company-right { border-left: none; }
     .meta-row { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #000; }
     .meta-row:last-child { border-bottom: none; }
@@ -126,8 +133,8 @@ export function generateInvoiceHtml(data: InvoiceData): string {
     .total-row { font-weight: bold; background: #f5f5f5; }
     .total-row td { border-top: 1px solid #000; border-bottom: 1px solid #000; }
     .footer-section { border: 1px solid #000; border-top: none; }
-    .declaration-section { display: grid; grid-template-columns: 2fr 1fr; }
-    .signature-box { text-align: right; padding: 20px 10px 10px; border-left: 1px solid #000; }
+    .declaration-section { display: grid; grid-template-columns: 3fr 1fr; }
+    .signature-box { text-align: right; padding: 20px 0 10px 10px; border-left: 1px solid #000; }
     .computer-generated { text-align: center; padding: 8px; font-style: italic; font-size: 11px; border-top: 1px solid #000; }
     .bank-details-box { margin-top: 8px; font-size: 11px; }
     .bank-table-std { width: auto; border-collapse: collapse; }
@@ -168,6 +175,7 @@ export function generateInvoiceHtml(data: InvoiceData): string {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
     Save as PDF / Print
   </button>
+  <div class="header-title">Tax Invoice</div>
   <div class="invoice-container">
     ${company.mantra ? `<div class="mantra-text">${company.mantra}</div>` : ''}
     ${
@@ -178,18 +186,18 @@ export function generateInvoiceHtml(data: InvoiceData): string {
     </div>`
         : ''
     }
-    <div class="header-title">Tax Invoice</div>
     <div class="company-section">
       <div class="company-left">
         <div class="font-bold text-lg mb-1">${company.name}</div>
         <div class="mb-1">${company.address}</div>
         <div class="mb-1">GSTIN/UIN: ${company.gstin}</div>
-        <div class="mb-2">State Name: ${company.state}, Code: ${company.stateCode}</div>
+        <div class="mb-2">State Name: ${company.state}</div>
         <div class="font-bold mb-1">Buyer (Bill to)</div>
         <div class="font-bold">${buyer.name}</div>
         <div>${buyer.address}</div>
         ${buyer.phone ? `<div>Phn No-${buyer.phone}</div>` : ''}
-        <div>State Name: ${buyer.state}, Code: ${buyer.stateCode}</div>
+        ${buyer.gstin ? `<div>GSTIN/UIN: ${buyer.gstin}</div>` : ''}
+        <div>State Name: ${buyer.state}</div>
       </div>
       <div class="company-right">
         <div class="meta-row"><div class="meta-cell"><div class="meta-label">Invoice No.</div><div class="font-bold">${metadata.invoiceNo}</div></div><div class="meta-cell"><div class="meta-label">Dated</div><div class="font-bold">${metadata.date}</div></div></div>
@@ -198,7 +206,6 @@ export function generateInvoiceHtml(data: InvoiceData): string {
         <div class="meta-row"><div class="meta-cell"><div class="meta-label">Buyer's Order No.</div><div>${metadata.buyerOrderNo || ''}</div></div><div class="meta-cell"><div class="meta-label">Dated</div><div>${metadata.buyerOrderDate || ''}</div></div></div>
         <div class="meta-row"><div class="meta-cell"><div class="meta-label">Dispatch Doc No.</div><div>${metadata.dispatchDocNo || ''}</div></div><div class="meta-cell"><div class="meta-label">Delivery Note Date</div><div>${metadata.deliveryNoteDate || ''}</div></div></div>
         <div class="meta-row"><div class="meta-cell"><div class="meta-label">Dispatched through</div><div>${metadata.dispatchedThrough || ''}</div></div><div class="meta-cell"><div class="meta-label">Destination</div><div>${metadata.destination || ''}</div></div></div>
-        <div class="meta-row"><div class="meta-cell" style="grid-column:span 2;"><div class="meta-label">Terms of Delivery</div><div>${metadata.termsOfDelivery || ''}</div></div></div>
       </div>
     </div>
     <table class="items-table">
@@ -213,7 +220,7 @@ export function generateInvoiceHtml(data: InvoiceData): string {
       </tr></thead>
       <tbody>
         ${itemRows}
-        ${Array(Math.max(0, 8 - items.length))
+        ${Array(Math.max(0, 2 - items.length))
           .fill(
             '<tr style="height:24px;"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>',
           )
@@ -311,14 +318,17 @@ export function generateInvoiceHtml(data: InvoiceData): string {
     </table>
     <div class="border border-t-0 px-2 py-1">Tax Amount (in words) : <strong>${taxAmountInWords}</strong></div>
     <div class="footer-section declaration-section">
-      <div class="px-2 py-2" style="display: flex; justify-content: space-between; align-items: flex-start;">
-        <div>
-          <div class="font-bold mb-1">Declaration</div>
-          <div class="text-sm">${declaration}</div>
+      <div class="px-2 py-2">
+        <div class="font-bold mb-1">Declaration</div>
+        <div class="text-sm">${declaration}</div>
+        ${
+          company.bankDetails || company.qrCode
+            ? `
+        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 8px;">
           ${
             company.bankDetails
               ? `
-          <div class="bank-details-box">
+          <div class="bank-details-box" style="margin-top: 0;">
             <div class="font-bold mb-1" style="font-size: 12px;">Bank Details</div>
             <table class="bank-table-std">
               <tr><td class="blabel">Bank Name</td><td>: ${company.bankDetails.bankName}</td></tr>
@@ -326,30 +336,40 @@ export function generateInvoiceHtml(data: InvoiceData): string {
               <tr><td class="blabel">IFSC Code</td><td>: ${company.bankDetails.ifsc}</td></tr>
             </table>
           </div>`
+              : '<div></div>'
+          }
+          ${
+            company.qrCode
+              ? `
+          <div class="qr-footer-box" style="margin-left: 20px;">
+            <div style="font-size: 8px; font-weight: bold; margin-bottom: 2px;">SCAN TO PAY</div>
+            <img src="${company.qrCode}" class="qr-footer-img" alt="Payment QR"/>
+          </div>`
               : ''
           }
-        </div>
-        <!--
-        ${
-          company.qrCode
-            ? `
-        <div class="qr-footer-box">
-          <div style="font-size: 8px; font-weight: bold; margin-bottom: 2px;">SCAN TO PAY</div>
-          <img src="${company.qrCode}" class="qr-footer-img" alt="Payment QR"/>
         </div>`
             : ''
         }
-        -->
       </div>
-      <div class="signature-box">
-        <div class="mb-1">for ${company.name}</div>
-        <div class="signature-area-box" style="margin: 0 0 0 auto;">
-          ${company.signature ? `<img src="${company.signature}" class="signature-img" alt="Authorized Signature"/>` : '<div style="height:40px;"></div>'}
-          <div style="font-size: 11px; font-weight: bold; border-top: 1px dashed #ccc; padding-top: 2px;">Authorised Signatory</div>
-        </div>
-      </div>
+      <div class="signature-box" style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; padding: 10px; min-height: 140px;">
+  
+  <div style="width: 100%; text-align: right; margin-bottom: 10px;">
+    for ${company.name}
+  </div>
+
+  <div class="signature-area-box" style="display: flex; flex-direction: column; justify-content: center; align-items: center; flex: 1; width: 100%;">
+    
+    ${company.signature 
+      ? `<img src="${company.signature}" class="signature-img" alt="Authorized Signature" style="display:block; margin-bottom:5px;"/>` 
+      : '<div style="height:50px;"></div>'}
+    
+    <div style="font-size: 11px; font-weight: bold; border-top: 1px dashed #ccc; padding-top: 5px; width: 85%; text-align: center;">
+      Authorised Signatory
     </div>
-    <div class="computer-generated">This is a Computer Generated Invoice</div>
+
+  </div>
+</div>
+    </div>
   </div>
 </body>
 </html>`.trim();
