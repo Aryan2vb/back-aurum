@@ -33,6 +33,8 @@ export function generateInvoiceHtml(data: InvoiceData): string {
       const makingChargeLabel =
         item.makingChargesType === MakingChargesType.PERCENTAGE_ON_METAL
           ? `${item.makingCharges}%`
+          : item.makingChargesType === MakingChargesType.PER_GRAM
+          ? `${item.makingCharges}/gm`
           : formatCurrency(item.makingCharges || 0);
 
       const rateDisplay =

@@ -42,17 +42,17 @@ export class CreateInvoiceItemDto {
   metalRate: number; // ₹/gm at 24K or 999 fine
 
   @IsString()
-  @IsNotEmpty()
-  purityLabel: string; // e.g. "22K", "18K", "925"
+  @IsOptional()
+  purityLabel?: string; // e.g. "22K", "18K", "925"
 
   @IsNumber()
   @Min(0)
-  @IsNotEmpty()
-  purityValue: number; // e.g. 22.00, 18.00, 92.50
+  @IsOptional()
+  purityValue?: number; // e.g. 22.00, 18.00, 92.50
 
   @IsNumber()
-  @IsNotEmpty()
-  purityBasis: number; // 24 or 1000
+  @IsOptional()
+  purityBasis?: number; // 24 or 1000
 
   // Weight Details
   @IsNumber()
