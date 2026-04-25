@@ -3,6 +3,7 @@ import { Decimal } from 'decimal.js';
 import { MakingChargesType, TaxType } from '@prisma/client';
 
 export interface ItemInput {
+  quantity: string | number | Decimal;
   metalRate: string | number | Decimal;
   purityValue: string | number | Decimal;
   purityBasis: number;
@@ -41,13 +42,14 @@ export class InvoiceCalculationService {
    * Computes individual item financials
    */
   computeItem(input: ItemInput): ComputedItem {
+    const quantity = new Decimal(input.quantity || 1);
     const metalRate = new Decimal(input.metalRate);
     const grossWeight = new Decimal(input.grossWeight);
     const stoneWeight = new Decimal(input.stoneWeight || 0);
     const makingCharges = new Decimal(input.makingCharges || 0);
     const stoneCharges = new Decimal(input.stoneCharges || 0);
     const hallmarkingCharge = input.isHallmarked
-      ? new Decimal(input.hallmarkingCharge || 0)
+      ? new Decimal(input.hallmarkingCharge || 0).mul(quantity)
       : new Decimal(0);
 
     // 1. Calculate weights
@@ -67,7 +69,7 @@ export class InvoiceCalculationService {
         makingChargesAmount = makingCharges.mul(netWeight);
         break;
       case MakingChargesType.FLAT_PER_ITEM:
-        makingChargesAmount = makingCharges;
+        makingChargesAmount = makingCharges.mul(quantity);
         break;
       case MakingChargesType.PERCENTAGE_ON_METAL:
         makingChargesAmount = metalValue.mul(makingCharges.div(100));

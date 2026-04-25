@@ -1205,6 +1205,7 @@ export class InvoicesService {
           taxType: financials.taxType,
           placeOfSupply: financials.placeOfSupply,
           subtotal: new Decimal(financials.subtotal),
+          taxableAmount: new Decimal(financials.taxableAmount),
           cgstRate: new Decimal(financials.cgstRate),
           sgstRate: new Decimal(financials.sgstRate),
           igstRate: new Decimal(financials.igstRate),
@@ -1387,6 +1388,7 @@ export class InvoicesService {
     // 3. Process Line Items
     const lineItems = dto.items.map((item, index) => {
       const computed = this.calcService.computeItem({
+        quantity: item.quantity,
         metalRate: item.metalRate,
         purityValue: item.purityValue,
         purityBasis: item.purityBasis,
@@ -1403,7 +1405,6 @@ export class InvoicesService {
         ...item,
         slNo: index + 1,
         ...computed,
-        hallmarkingCharge: item.isHallmarked ? hallmarkingChargePerItem : new Decimal(0),
       };
     });
 
