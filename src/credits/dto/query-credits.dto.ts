@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsEnum, IsDateString, IsBoolean, IsInt, Min } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsDateString, IsBoolean, IsInt, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreditStatus } from '@prisma/client';
 
@@ -46,6 +46,7 @@ export class QueryCreditsDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(1000)
   @Type(() => Number)
   limit?: number = 20;
 
