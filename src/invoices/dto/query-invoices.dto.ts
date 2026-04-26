@@ -46,7 +46,7 @@ export class QueryInvoicesDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(1000)
   @IsOptional()
   limit?: number = 20;
 
