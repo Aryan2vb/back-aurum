@@ -49,7 +49,7 @@ export class InvoiceCalculationService {
     const makingCharges = new Decimal(input.makingCharges || 0);
     const stoneCharges = new Decimal(input.stoneCharges || 0);
     const hallmarkingCharge = input.isHallmarked
-      ? new Decimal(input.hallmarkingCharge || 0).mul(quantity)
+      ? new Decimal(input.hallmarkingCharge || 0)
       : new Decimal(0);
 
     // 1. Calculate weights

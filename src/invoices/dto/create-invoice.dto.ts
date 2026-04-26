@@ -85,6 +85,11 @@ export class CreateInvoiceItemDto {
   @IsOptional()
   isHallmarked?: boolean = false;
 
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  hallmarkingCharge?: number;
+
   @IsString()
   @IsOptional()
   huid?: string;
@@ -187,4 +192,8 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsBoolean()
   autoCreateUdhar?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  finalize?: boolean;
 }

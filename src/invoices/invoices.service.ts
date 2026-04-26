@@ -770,6 +770,7 @@ export class InvoicesService {
         netWeight: item.netWeight ? new Decimal(item.netWeight).toNumber() : undefined,
         grossWeight: item.grossWeight ? new Decimal(item.grossWeight).toNumber() : undefined,
         huid: item.huid || undefined,
+        hallmarkingCharge: item.hallmarkingCharge ? new Decimal(item.hallmarkingCharge).toNumber() : undefined,
         amount: new Decimal(item.taxableAmount).toNumber(),
       })),
       taxType: invoice.taxType,
@@ -812,6 +813,7 @@ export class InvoicesService {
       amtBalance: new Decimal(invoice.totalAmount)
         .minus(new Decimal(invoice.paidAmount))
         .toNumber(),
+      hallmarkingCharge: new Decimal(invoice.totalHallmarkingCharges || 0).toNumber(),
       payments:
         invoice.payments?.map((p: any) => ({
           mode: p.mode,
@@ -1374,7 +1376,6 @@ export class InvoicesService {
     if (!customer) throw new BadRequestException('Customer not found');
 
     const config = Object.fromEntries(configItems.map((c) => [c.key, c.value]));
-    const hallmarkingChargePerItem = new Decimal(config['HALLMARKING_CHARGE_PER_ITEM'] || '45.00');
 
     // 2. Tax classification based on settings ONLY
     const placeOfSupply = settings.stateCode || '';
@@ -1398,7 +1399,7 @@ export class InvoicesService {
         makingChargesType: item.makingChargesType ?? MakingChargesType.PER_GRAM,
         stoneCharges: item.stoneCharges ?? 0,
         isHallmarked: !!item.isHallmarked,
-        hallmarkingCharge: hallmarkingChargePerItem,
+        hallmarkingCharge: item.hallmarkingCharge ? new Decimal(item.hallmarkingCharge) : new Decimal(0),
       });
 
       return {
@@ -1706,6 +1707,7 @@ export class InvoicesService {
         grossWeight: 10,
         netWeight: 9.5,
         huid: 'A12345',
+        hallmarkingCharge: 45,
         amount: 25500,
       },
       {
@@ -1773,6 +1775,7 @@ export class InvoicesService {
       declaration: settings.declaration || '',
       cashReceived: paidAmount,
       amtBalance: totalAmount - paidAmount,
+      hallmarkingCharge: 45, // Sample value for preview
     };
 
     const templateType = settings.defaultTemplate || 'default';

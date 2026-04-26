@@ -78,6 +78,7 @@ export interface InvoiceItem {
   netWeight?: number;
   grossWeight?: number;
   huid?: string;
+  hallmarkingCharge?: number;
   amount: number;
 }
 
