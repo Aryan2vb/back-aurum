@@ -770,6 +770,9 @@ export class InvoicesService {
         netWeight: item.netWeight ? new Decimal(item.netWeight).toNumber() : undefined,
         grossWeight: item.grossWeight ? new Decimal(item.grossWeight).toNumber() : undefined,
         huid: item.huid || undefined,
+        hallmarkingCharge: item.hallmarkingCharge
+          ? new Decimal(item.hallmarkingCharge).toNumber()
+          : undefined,
         amount: new Decimal(item.taxableAmount).toNumber(),
       })),
       taxType: invoice.taxType,
@@ -812,6 +815,7 @@ export class InvoicesService {
       amtBalance: new Decimal(invoice.totalAmount)
         .minus(new Decimal(invoice.paidAmount))
         .toNumber(),
+      hallmarkingCharge: new Decimal(invoice.totalHallmarkingCharges || 0).toNumber(),
       payments:
         invoice.payments?.map((p: any) => ({
           mode: p.mode,
@@ -1205,6 +1209,7 @@ export class InvoicesService {
           taxType: financials.taxType,
           placeOfSupply: financials.placeOfSupply,
           subtotal: new Decimal(financials.subtotal),
+          taxableAmount: new Decimal(financials.taxableAmount),
           cgstRate: new Decimal(financials.cgstRate),
           sgstRate: new Decimal(financials.sgstRate),
           igstRate: new Decimal(financials.igstRate),
@@ -1357,23 +1362,17 @@ export class InvoicesService {
     const { organizationId } = user;
 
     // 1. Fetch dependencies context
-    const [settings, customer, configItems] = await Promise.all([
+    const [settings, customer] = await Promise.all([
       this.prisma.orgInvoiceSettings.findUnique({ where: { organizationId } }),
       // findFirst enforces organizationId via the middleware check (findUnique with compound where also works but findFirst is explicit)
       this.prisma.customer.findFirst({
         where: { id: dto.customerId, organizationId, deletedAt: null },
         include: { contactDetails: true, locations: true },
       }),
-      this.prisma.systemConfig.findMany({
-        where: { key: { in: ['HALLMARKING_CHARGE_PER_ITEM', 'GOLD_GST_RATE', 'SILVER_GST_RATE'] } },
-      }),
     ]);
 
     if (!settings) throw new BadRequestException('Invoice settings not found');
     if (!customer) throw new BadRequestException('Customer not found');
-
-    const config = Object.fromEntries(configItems.map((c) => [c.key, c.value]));
-    const hallmarkingChargePerItem = new Decimal(config['HALLMARKING_CHARGE_PER_ITEM'] || '45.00');
 
     // 2. Tax classification based on settings ONLY
     const placeOfSupply = settings.stateCode || '';
@@ -1387,6 +1386,7 @@ export class InvoicesService {
     // 3. Process Line Items
     const lineItems = dto.items.map((item, index) => {
       const computed = this.calcService.computeItem({
+        quantity: item.quantity,
         metalRate: item.metalRate,
         purityValue: item.purityValue,
         purityBasis: item.purityBasis,
@@ -1396,14 +1396,15 @@ export class InvoicesService {
         makingChargesType: item.makingChargesType ?? MakingChargesType.PER_GRAM,
         stoneCharges: item.stoneCharges ?? 0,
         isHallmarked: !!item.isHallmarked,
-        hallmarkingCharge: hallmarkingChargePerItem,
+        hallmarkingCharge: item.hallmarkingCharge
+          ? new Decimal(item.hallmarkingCharge)
+          : new Decimal(0),
       });
 
       return {
         ...item,
         slNo: index + 1,
         ...computed,
-        hallmarkingCharge: item.isHallmarked ? hallmarkingChargePerItem : new Decimal(0),
       };
     });
 
@@ -1705,6 +1706,7 @@ export class InvoicesService {
         grossWeight: 10,
         netWeight: 9.5,
         huid: 'A12345',
+        hallmarkingCharge: 45,
         amount: 25500,
       },
       {
@@ -1772,6 +1774,7 @@ export class InvoicesService {
       declaration: settings.declaration || '',
       cashReceived: paidAmount,
       amtBalance: totalAmount - paidAmount,
+      hallmarkingCharge: 45, // Sample value for preview
     };
 
     const templateType = settings.defaultTemplate || 'default';

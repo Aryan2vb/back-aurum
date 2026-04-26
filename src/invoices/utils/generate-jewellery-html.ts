@@ -19,7 +19,9 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
   } = data;
 
   const fmt = (n: number) =>
-    new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+    new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+      n,
+    );
 
   const subtotal = items.reduce((s, i) => s + i.amount, 0);
   const cashReceived = data.cashReceived !== undefined ? data.cashReceived : totalAmount;
@@ -65,11 +67,11 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
                 ? item.makingChargesType === 'PERCENTAGE_ON_METAL'
                   ? item.makingCharges + '%'
                   : item.makingChargesType === 'PER_GRAM'
-                  ? item.makingCharges + '/gm'
-                  : fmt(item.makingCharges)
+                    ? item.makingCharges + '/gm'
+                    : fmt(item.makingCharges)
                 : '-'
             }</td>
-            <td class="rgt">${item.huid ? '45.00' : '-'}</td>
+            <td class="rgt">${item.hallmarkingCharge ? fmt(item.hallmarkingCharge) : item.huid ? '0.00' : '-'}</td>
             <td class="rgt">${fmt(item.amount)}</td>
         </tr>`,
     )
@@ -440,8 +442,8 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         <!-- Amount Balance -->
         <div class="balance-row">
             AMT BALANCE: ${fmt(Math.abs(amtBalance))} <span class="dr-text">${
-    amtBalance >= 0 ? 'DR' : 'CR'
-  }</span>
+              amtBalance >= 0 ? 'DR' : 'CR'
+            }</span>
         </div>
 
         <!-- Payable Amount & Bank Details -->
