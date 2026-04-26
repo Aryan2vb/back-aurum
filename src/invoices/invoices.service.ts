@@ -770,7 +770,9 @@ export class InvoicesService {
         netWeight: item.netWeight ? new Decimal(item.netWeight).toNumber() : undefined,
         grossWeight: item.grossWeight ? new Decimal(item.grossWeight).toNumber() : undefined,
         huid: item.huid || undefined,
-        hallmarkingCharge: item.hallmarkingCharge ? new Decimal(item.hallmarkingCharge).toNumber() : undefined,
+        hallmarkingCharge: item.hallmarkingCharge
+          ? new Decimal(item.hallmarkingCharge).toNumber()
+          : undefined,
         amount: new Decimal(item.taxableAmount).toNumber(),
       })),
       taxType: invoice.taxType,
@@ -1360,22 +1362,17 @@ export class InvoicesService {
     const { organizationId } = user;
 
     // 1. Fetch dependencies context
-    const [settings, customer, configItems] = await Promise.all([
+    const [settings, customer] = await Promise.all([
       this.prisma.orgInvoiceSettings.findUnique({ where: { organizationId } }),
       // findFirst enforces organizationId via the middleware check (findUnique with compound where also works but findFirst is explicit)
       this.prisma.customer.findFirst({
         where: { id: dto.customerId, organizationId, deletedAt: null },
         include: { contactDetails: true, locations: true },
       }),
-      this.prisma.systemConfig.findMany({
-        where: { key: { in: ['HALLMARKING_CHARGE_PER_ITEM', 'GOLD_GST_RATE', 'SILVER_GST_RATE'] } },
-      }),
     ]);
 
     if (!settings) throw new BadRequestException('Invoice settings not found');
     if (!customer) throw new BadRequestException('Customer not found');
-
-    const config = Object.fromEntries(configItems.map((c) => [c.key, c.value]));
 
     // 2. Tax classification based on settings ONLY
     const placeOfSupply = settings.stateCode || '';
@@ -1399,7 +1396,9 @@ export class InvoicesService {
         makingChargesType: item.makingChargesType ?? MakingChargesType.PER_GRAM,
         stoneCharges: item.stoneCharges ?? 0,
         isHallmarked: !!item.isHallmarked,
-        hallmarkingCharge: item.hallmarkingCharge ? new Decimal(item.hallmarkingCharge) : new Decimal(0),
+        hallmarkingCharge: item.hallmarkingCharge
+          ? new Decimal(item.hallmarkingCharge)
+          : new Decimal(0),
       });
 
       return {

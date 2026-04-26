@@ -34,8 +34,8 @@ export function generateInvoiceHtml(data: InvoiceData): string {
         item.makingChargesType === MakingChargesType.PERCENTAGE_ON_METAL
           ? `${item.makingCharges}%`
           : item.makingChargesType === MakingChargesType.PER_GRAM
-          ? `${item.makingCharges}/gm`
-          : formatCurrency(item.makingCharges || 0);
+            ? `${item.makingCharges}/gm`
+            : formatCurrency(item.makingCharges || 0);
 
       const rateDisplay =
         item.makingCharges && item.makingCharges > 0
@@ -361,9 +361,11 @@ export function generateInvoiceHtml(data: InvoiceData): string {
 
   <div class="signature-area-box" style="display: flex; flex-direction: column; justify-content: center; align-items: center; flex: 1; width: 100%;">
     
-    ${company.signature 
-      ? `<img src="${company.signature}" class="signature-img" alt="Authorized Signature" style="display:block; margin-bottom:5px;"/>` 
-      : '<div style="height:50px;"></div>'}
+    ${
+      company.signature
+        ? `<img src="${company.signature}" class="signature-img" alt="Authorized Signature" style="display:block; margin-bottom:5px;"/>`
+        : '<div style="height:50px;"></div>'
+    }
     
     <div style="font-size: 11px; font-weight: bold; border-top: 1px dashed #ccc; padding-top: 5px; width: 85%; text-align: center;">
       Authorised Signatory

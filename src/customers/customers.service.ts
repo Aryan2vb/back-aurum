@@ -703,7 +703,7 @@ export class CustomersService {
     const { organizationId } = user;
 
     // We use deleteMany so it doesn't fail if already gone, and to check organizationId
- const result = await this.prisma.customer.updateMany({
+    const result = await this.prisma.customer.updateMany({
       where: {
         id,
         organizationId,
@@ -715,7 +715,9 @@ export class CustomersService {
     });
 
     if (result.count === 0) {
-      throw new NotFoundException(`Customer with ID ${id} not found in this organization or already deleted`);
+      throw new NotFoundException(
+        `Customer with ID ${id} not found in this organization or already deleted`,
+      );
     }
 
     return { message: 'Customer successfully removed and archived' };
