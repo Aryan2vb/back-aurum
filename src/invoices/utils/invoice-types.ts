@@ -77,8 +77,11 @@ export interface InvoiceItem {
   purityBasis?: number;
   netWeight?: number;
   grossWeight?: number;
+  stoneWeight?: number;
+  stoneCharges?: number;
   huid?: string;
   hallmarkingCharge?: number;
+  isHallmarked?: boolean;
   amount: number;
 }
 

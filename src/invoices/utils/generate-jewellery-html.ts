@@ -37,6 +37,9 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
     paymentsHtml = `<div>CASH RECEIVED : &nbsp; ${fmt(cashReceived)}</div>`;
   }
 
+  const hasStoneWeight = items.some((i) => i.stoneWeight && Number(i.stoneWeight) > 0);
+  const hasStoneCharges = items.some((i) => i.stoneCharges && Number(i.stoneCharges) > 0);
+
   const itemRows = items
     .map(
       (item) => `
@@ -50,9 +53,9 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
             }</td>
             <td class="ctr">${item.quantity}</td>
             <td class="ctr">${item.hsnSac}</td>
-            <td class="ctr">${
-              item.grossWeight ? fmt(item.grossWeight) + ' GM' : item.quantity + ' ' + item.unit
-            }</td>
+            <td class="ctr">${item.grossWeight ? fmt(item.grossWeight) : '-'}</td>
+            ${hasStoneWeight ? `<td class="ctr">${item.stoneWeight ? fmt(item.stoneWeight) : '-'}</td>` : ''}
+            <td class="ctr">${item.netWeight ? fmt(item.netWeight) : '-'}</td>
             <td class="ctr">${
               !item.purityLabel ||
               item.purityLabel === 'None' ||
@@ -61,8 +64,8 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
                 ? '-'
                 : item.purityLabel
             }</td>
-            <td class="rgt">${fmt(item.rate)}</td>
-            <td class="rgt">${
+            <td class="ctr">${fmt(item.rate)} /gm</td>
+            <td class="ctr">${
               item.makingCharges
                 ? item.makingChargesType === 'PERCENTAGE_ON_METAL'
                   ? item.makingCharges + '%'
@@ -71,16 +74,20 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
                     : fmt(item.makingCharges)
                 : '-'
             }</td>
-            <td class="rgt">${item.hallmarkingCharge ? fmt(item.hallmarkingCharge) : item.huid ? '0.00' : '-'}</td>
+            ${hasStoneCharges ? `<td class="ctr">${item.stoneCharges ? fmt(item.stoneCharges) : '-'}</td>` : ''}
+            <td class="ctr">${item.hallmarkingCharge ? fmt(item.hallmarkingCharge) : (item.huid || item.isHallmarked) ? '0.00' : '-'}</td>
             <td class="rgt">${fmt(item.amount)}</td>
         </tr>`,
     )
     .join('');
 
   // Fill table with empty rows to maintain layout if needed (set to 0 here as per bill's latest)
+  const columnCount = 10 + (hasStoneWeight ? 1 : 0) + (hasStoneCharges ? 1 : 0);
   const emptyRows = Array(Math.max(0, 0 - items.length))
     .fill(
-      '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>',
+      `<tr>${Array(columnCount)
+        .fill('<td></td>')
+        .join('')}</tr>`,
     )
     .join('');
 
@@ -367,12 +374,8 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         <div class="buyer-meta">
             <div class="buyer-info">
                 <div><strong>NAME &nbsp; : &nbsp; ${buyer.name}</strong></div>
-                <div><strong>ADDRESS : </strong> ${buyer.address}</div>
-                ${
-                  buyer.state
-                    ? `<div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${buyer.state}</div>`
-                    : ''
-                }
+                ${buyer.phone ? `<div><strong>PHONE &nbsp;: &nbsp; ${buyer.phone}</strong></div>` : ''}
+                <div><strong>ADDRESS : </strong> ${buyer.address}${buyer.state ? `, ${buyer.state}` : ''}</div>
             </div>
             <div class="meta-info">
                 <div><strong>INVOICE NO:</strong> ${metadata.invoiceNo}</div>
@@ -386,15 +389,18 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
         <table class="items-table">
             <thead>
                 <tr>
-                    <th class="lft" style="width:120px;">PROD DESC</th>
-                    <th style="width:40px;">QTY</th>
-                    <th style="width:70px;">HSN</th>
-                    <th style="width:85px;">GS WT</th>
-                    <th style="width:60px;">PURITY</th>
-                    <th style="width:80px;">RATE</th>
-                    <th style="width:65px;">MKG</th>
+                    <th class="lft" style="width: ${100 + (!hasStoneWeight ? 25 : 0) + (!hasStoneCharges ? 25 : 0)}px;">PROD DESC</th>
+                    <th style="width:30px;">QTY</th>
+                    <th style="width:55px;">HSN</th>
+                    <th style="width:45px;">GR WT</th>
+                    ${hasStoneWeight ? '<th style="width:45px;">ST WT</th>' : ''}
+                    <th style="width:45px;">NT WT</th>
+                    <th style="width:45px;">PURITY</th>
+                    <th style="width:70px;">METAL RATE</th>
+                    <th style="width:50px;">MKG</th>
+                    ${hasStoneCharges ? '<th style="width:50px;">STONE</th>' : ''}
                     <th style="width:50px;">HMC</th>
-                    <th style="width:100px;">FINAL AMT</th>
+                    <th style="width:85px;">FINAL AMT</th>
                 </tr>
             </thead>
             <tbody>
