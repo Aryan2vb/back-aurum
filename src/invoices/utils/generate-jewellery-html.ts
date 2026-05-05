@@ -76,7 +76,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
             }</td>
             ${hasStoneCharges ? `<td class="ctr">${item.stoneCharges ? fmt(item.stoneCharges) : '-'}</td>` : ''}
             <td class="ctr">${item.hallmarkingCharge ? fmt(item.hallmarkingCharge) : (item.huid || item.isHallmarked) ? '0.00' : '-'}</td>
-            <td class="rgt">${fmt(item.amount)}</td>
+            <td class="ctr">${fmt(item.amount)}</td>
         </tr>`,
     )
     .join('');
