@@ -114,6 +114,15 @@ export class InvoicesController {
     return this.invoicesService.create(dto, user);
   }
 
+  @Get('next-sequence')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  getNextSequence(
+    @Query('date') date: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.invoicesService.getNextSequence(user.organizationId, date);
+  }
+
   @Get()
   @Roles(
     OrganizationRole.OWNER,
