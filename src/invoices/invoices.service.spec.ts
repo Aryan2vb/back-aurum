@@ -145,6 +145,36 @@ describe('InvoicesService invoice sequence allocation', () => {
     expect(tx.invoiceSequence.upsert).not.toHaveBeenCalled();
   });
 
+  it('allows manual sequence when the matching reserved draft is excluded', async () => {
+    const service = buildService();
+    const tx = buildTx({
+      currentSequence: { nextSequence: 120 },
+    });
+
+    const result = await service._allocateInvoiceNumber(tx, {
+      organizationId,
+      financialYear,
+      settings,
+      manualSequence: 115,
+      excludeInvoiceId: 'draft-invoice',
+    });
+
+    expect(result).toEqual({
+      invoiceNumber: 'INV/115/2025-26',
+      sequenceVal: 115,
+    });
+    expect(tx.invoice.findFirst).toHaveBeenCalledWith({
+      where: {
+        organizationId,
+        OR: [
+          { invoiceNumber: 'INV/115/2025-26' },
+          { financialYear, sequence: 115 },
+        ],
+        NOT: { id: 'draft-invoice' },
+      },
+    });
+  });
+
   it('reports whether a manual sequence is available', async () => {
     const prisma = {
       orgInvoiceSettings: {
@@ -174,6 +204,80 @@ describe('InvoicesService invoice sequence allocation', () => {
       invoiceNumber: 'INV/115/25-26',
       financialYear: '25-26',
       available: false,
+    });
+  });
+
+  it('reports sequence availability while excluding the current draft invoice', async () => {
+    const prisma = {
+      orgInvoiceSettings: {
+        findUnique: jest.fn().mockResolvedValue(settings),
+      },
+      invoice: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any) as any;
+
+    await service.getSequenceAvailability(organizationId, 115, '2025-04-01', 'draft-invoice');
+
+    expect(prisma.invoice.findFirst).toHaveBeenCalledWith({
+      where: {
+        organizationId,
+        OR: [
+          { invoiceNumber: 'INV/115/25-26' },
+          { financialYear: '25-26', sequence: 115 },
+        ],
+        NOT: { id: 'draft-invoice' },
+      },
+    });
+  });
+
+  it('excludes the draft itself when finalizing a reserved draft sequence', async () => {
+    const tx = {
+      ...buildTx({ currentSequence: { nextSequence: 120 } }),
+      invoice: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
+      },
+    };
+    const prisma = {
+      invoice: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'invoice-1',
+          organizationId,
+          customerId: 'customer-1',
+          status: 'DRAFT',
+          sequence: 115,
+          paidAmount: new Decimal(0),
+          totalAmount: new Decimal(103),
+          invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
+          buyerSnapshot: { data: {} },
+          items: [],
+        }),
+      },
+      orgInvoiceSettings: {
+        findUnique: jest.fn().mockResolvedValue(settings),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any) as any;
+    service._createInvoiceBalanceRecord = jest.fn();
+
+    await service.finalize(
+      'invoice-1',
+      { organizationId, userId: 'user-1' },
+      { invoiceDate: '2025-04-01' },
+    );
+
+    expect(tx.invoice.findFirst).toHaveBeenCalledWith({
+      where: {
+        organizationId,
+        OR: [
+          { invoiceNumber: 'INV/115/25-26' },
+          { financialYear: '25-26', sequence: 115 },
+        ],
+        NOT: { id: 'invoice-1' },
+      },
     });
   });
 

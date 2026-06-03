@@ -218,7 +218,12 @@ export class InvoicesService {
     };
   }
 
-  async getSequenceAvailability(organizationId: string, sequence: number, dateStr?: string) {
+  async getSequenceAvailability(
+    organizationId: string,
+    sequence: number,
+    dateStr?: string,
+    excludeInvoiceId?: string,
+  ) {
     const settings = await this.prisma.orgInvoiceSettings.findUnique({
       where: { organizationId },
     });
@@ -228,12 +233,13 @@ export class InvoicesService {
     const financialYear = getFinancialYear(invoiceDate);
     const prefix = settings.invoiceNumberPrefix ?? 'INV';
     const invoiceNumber = `${prefix}/${sequence}/${financialYear}`;
-    const existing = await this.prisma.invoice.findFirst({
-      where: {
-        organizationId,
-        OR: [{ invoiceNumber }, { financialYear, sequence }],
-      },
-    });
+    const duplicateWhere: any = {
+      organizationId,
+      OR: [{ invoiceNumber }, { financialYear, sequence }],
+    };
+    if (excludeInvoiceId) duplicateWhere.NOT = { id: excludeInvoiceId };
+
+    const existing = await this.prisma.invoice.findFirst({ where: duplicateWhere });
 
     return {
       sequence,
@@ -251,24 +257,27 @@ export class InvoicesService {
       settings,
       manualSequence,
       manualInvoiceNumber,
+      excludeInvoiceId,
     }: {
       organizationId: string;
       financialYear: string;
       settings: { invoiceNumberPrefix?: string | null; startingSequence?: number | null };
       manualSequence?: number | null;
       manualInvoiceNumber?: string | null;
+      excludeInvoiceId?: string;
     },
   ): Promise<{ invoiceNumber: string; sequenceVal: number | null }> {
     const prefix = settings.invoiceNumberPrefix ?? 'INV';
 
     if (manualSequence !== undefined && manualSequence !== null) {
       const invoiceNumber = `${prefix}/${manualSequence}/${financialYear}`;
-      const existing = await tx.invoice.findFirst({
-        where: {
-          organizationId,
-          OR: [{ invoiceNumber }, { financialYear, sequence: manualSequence }],
-        },
-      });
+      const duplicateWhere: any = {
+        organizationId,
+        OR: [{ invoiceNumber }, { financialYear, sequence: manualSequence }],
+      };
+      if (excludeInvoiceId) duplicateWhere.NOT = { id: excludeInvoiceId };
+
+      const existing = await tx.invoice.findFirst({ where: duplicateWhere });
       if (existing) {
         throw new BadRequestException(`Invoice number ${invoiceNumber} already exists`);
       }
@@ -417,6 +426,7 @@ export class InvoicesService {
         settings,
         manualSequence: dto.manualSequence ?? draft.sequence,
         manualInvoiceNumber: dto.manualInvoiceNumber,
+        excludeInvoiceId: draft.id,
       });
 
       const updatedInvoice = await tx.invoice.update({
@@ -1378,6 +1388,7 @@ export class InvoicesService {
           financialYear,
           settings,
           manualSequence: dto.manualSequence ?? existing.sequence,
+          excludeInvoiceId: id,
         });
         invoiceNumber = allocation.invoiceNumber;
         sequenceVal = allocation.sequenceVal;

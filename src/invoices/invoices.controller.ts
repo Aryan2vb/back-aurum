@@ -137,12 +137,14 @@ export class InvoicesController {
   getSequenceAvailability(
     @Query('sequence') sequence: string,
     @Query('date') date: string,
+    @Query('excludeInvoiceId') excludeInvoiceId: string,
     @CurrentUser() user: CurrentUserData,
   ) {
     return this.invoicesService.getSequenceAvailability(
       user.organizationId,
       Number(sequence),
       date,
+      excludeInvoiceId,
     );
   }
 
