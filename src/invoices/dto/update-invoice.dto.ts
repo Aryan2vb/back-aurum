@@ -83,4 +83,11 @@ export class UpdateInvoiceDto {
   @IsOptional()
   @IsBoolean()
   finalize?: boolean;
+
+  /** Optional manual sequence number to override auto-increment while finalizing a draft. */
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  @Type(() => Number)
+  manualSequence?: number;
 }

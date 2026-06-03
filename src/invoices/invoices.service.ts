@@ -136,6 +136,255 @@ export class InvoicesService {
   // INVOICE CREATION
   // ===========================
 
+  async getNextSequence(organizationId: string, dateStr?: string) {
+    const settings = await this.prisma.orgInvoiceSettings.findUnique({
+      where: { organizationId },
+    });
+    if (!settings) throw new BadRequestException('Invoice settings not found');
+
+    const invoiceDate = dateStr ? new Date(dateStr) : new Date();
+    const financialYear = getFinancialYear(invoiceDate);
+
+    const seq = await this.prisma.invoiceSequence.findUnique({
+      where: { organizationId_financialYear: { organizationId, financialYear } },
+    });
+
+    const nextSequence = seq ? seq.nextSequence : (settings.startingSequence ?? 1);
+    const prefix = settings.invoiceNumberPrefix ?? 'INV';
+
+    return {
+      nextSequence,
+      prefix,
+      financialYear,
+      preview: `${prefix}/${nextSequence}/${financialYear}`,
+    };
+  }
+
+  async getMissingSequences(organizationId: string, dateStr?: string) {
+    const settings = await this.prisma.orgInvoiceSettings.findUnique({
+      where: { organizationId },
+    });
+    if (!settings) throw new BadRequestException('Invoice settings not found');
+
+    const invoiceDate = dateStr ? new Date(dateStr) : new Date();
+    const financialYear = getFinancialYear(invoiceDate);
+    const prefix = settings.invoiceNumberPrefix ?? 'INV';
+    const startingSequence = settings.startingSequence ?? 1;
+
+    const seq = await this.prisma.invoiceSequence.findUnique({
+      where: { organizationId_financialYear: { organizationId, financialYear } },
+    });
+    const nextSequence = seq ? seq.nextSequence : startingSequence;
+
+    if (nextSequence <= startingSequence) {
+      return {
+        prefix,
+        financialYear,
+        nextSequence,
+        missingSequences: [],
+        missingInvoiceNumbers: [],
+      };
+    }
+
+    const existing = await this.prisma.invoice.findMany({
+      where: {
+        organizationId,
+        financialYear,
+        sequence: { gte: startingSequence, lt: nextSequence },
+      },
+      select: { sequence: true },
+    });
+    const usedSequences = new Set(
+      existing
+        .map((invoice) => invoice.sequence)
+        .filter((sequence): sequence is number => typeof sequence === 'number'),
+    );
+    const missingSequences: number[] = [];
+
+    for (let sequence = startingSequence; sequence < nextSequence; sequence += 1) {
+      if (!usedSequences.has(sequence)) {
+        missingSequences.push(sequence);
+      }
+    }
+
+    return {
+      prefix,
+      financialYear,
+      nextSequence,
+      missingSequences,
+      missingInvoiceNumbers: missingSequences.map(
+        (sequence) => `${prefix}/${sequence}/${financialYear}`,
+      ),
+    };
+  }
+
+  async getSequenceAvailability(
+    organizationId: string,
+    sequence: number,
+    dateStr?: string,
+    excludeInvoiceId?: string,
+  ) {
+    const settings = await this.prisma.orgInvoiceSettings.findUnique({
+      where: { organizationId },
+    });
+    if (!settings) throw new BadRequestException('Invoice settings not found');
+
+    const invoiceDate = dateStr ? new Date(dateStr) : new Date();
+    const financialYear = getFinancialYear(invoiceDate);
+    const prefix = settings.invoiceNumberPrefix ?? 'INV';
+    const invoiceNumber = `${prefix}/${sequence}/${financialYear}`;
+    const duplicateWhere: any = {
+      organizationId,
+      OR: [{ invoiceNumber }, { financialYear, sequence }],
+    };
+    if (excludeInvoiceId) duplicateWhere.NOT = { id: excludeInvoiceId };
+
+    const existing = await this.prisma.invoice.findFirst({ where: duplicateWhere });
+
+    return {
+      sequence,
+      invoiceNumber,
+      financialYear,
+      available: !existing,
+    };
+  }
+
+  private async _allocateInvoiceNumber(
+    tx: any,
+    {
+      organizationId,
+      financialYear,
+      settings,
+      manualSequence,
+      manualInvoiceNumber,
+      excludeInvoiceId,
+    }: {
+      organizationId: string;
+      financialYear: string;
+      settings: { invoiceNumberPrefix?: string | null; startingSequence?: number | null };
+      manualSequence?: number | null;
+      manualInvoiceNumber?: string | null;
+      excludeInvoiceId?: string;
+    },
+  ): Promise<{ invoiceNumber: string; sequenceVal: number | null }> {
+    const prefix = settings.invoiceNumberPrefix ?? 'INV';
+
+    if (manualSequence !== undefined && manualSequence !== null) {
+      const invoiceNumber = `${prefix}/${manualSequence}/${financialYear}`;
+      const duplicateWhere: any = {
+        organizationId,
+        OR: [{ invoiceNumber }, { financialYear, sequence: manualSequence }],
+      };
+      if (excludeInvoiceId) duplicateWhere.NOT = { id: excludeInvoiceId };
+
+      const existing = await tx.invoice.findFirst({ where: duplicateWhere });
+      if (existing) {
+        throw new BadRequestException(`Invoice number ${invoiceNumber} already exists`);
+      }
+
+      const currentSeq = await tx.invoiceSequence.findUnique({
+        where: { organizationId_financialYear: { organizationId, financialYear } },
+      });
+      const currentNext = currentSeq ? currentSeq.nextSequence : (settings.startingSequence ?? 1);
+      if (manualSequence >= currentNext) {
+        await tx.invoiceSequence.upsert({
+          where: { organizationId_financialYear: { organizationId, financialYear } },
+          create: { organizationId, financialYear, nextSequence: manualSequence + 1 },
+          update: { nextSequence: manualSequence + 1 },
+        });
+      }
+
+      return { invoiceNumber, sequenceVal: manualSequence };
+    }
+
+    if (manualInvoiceNumber) {
+      const existing = await tx.invoice.findFirst({
+        where: { organizationId, invoiceNumber: manualInvoiceNumber },
+      });
+      if (existing) {
+        throw new BadRequestException(`Invoice number ${manualInvoiceNumber} already exists`);
+      }
+
+      return { invoiceNumber: manualInvoiceNumber, sequenceVal: null };
+    }
+
+    let attempts = 0;
+    const maxAttempts = 3;
+    while (attempts < maxAttempts) {
+      try {
+        const seqRec = await tx.invoiceSequence.upsert({
+          where: { organizationId_financialYear: { organizationId, financialYear } },
+          create: {
+            organizationId,
+            financialYear,
+            nextSequence: (settings.startingSequence ?? 1) + 1,
+          },
+          update: { nextSequence: { increment: 1 } },
+        });
+
+        const sequenceVal = seqRec.nextSequence - 1;
+        return {
+          invoiceNumber: `${prefix}/${sequenceVal}/${financialYear}`,
+          sequenceVal,
+        };
+      } catch (error: any) {
+        attempts++;
+        if (attempts >= maxAttempts || !error.code || error.code !== 'P2002') {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50 * attempts));
+      }
+    }
+
+    throw new BadRequestException('Unable to allocate invoice number');
+  }
+
+  private async _reserveDraftSequence(
+    tx: any,
+    {
+      organizationId,
+      financialYear,
+      settings,
+      manualSequence,
+      excludeInvoiceId,
+    }: {
+      organizationId: string;
+      financialYear: string;
+      settings: { invoiceNumberPrefix?: string | null; startingSequence?: number | null };
+      manualSequence?: number | null;
+      excludeInvoiceId?: string;
+    },
+  ): Promise<number | null> {
+    if (manualSequence === undefined || manualSequence === null) return null;
+
+    const prefix = settings.invoiceNumberPrefix ?? 'INV';
+    const invoiceNumber = `${prefix}/${manualSequence}/${financialYear}`;
+    const duplicateWhere: any = {
+      organizationId,
+      OR: [{ invoiceNumber }, { financialYear, sequence: manualSequence }],
+    };
+    if (excludeInvoiceId) duplicateWhere.NOT = { id: excludeInvoiceId };
+
+    const existing = await tx.invoice.findFirst({ where: duplicateWhere });
+    if (existing) {
+      throw new BadRequestException(`Invoice number ${invoiceNumber} already exists`);
+    }
+
+    const currentSeq = await tx.invoiceSequence.findUnique({
+      where: { organizationId_financialYear: { organizationId, financialYear } },
+    });
+    const currentNext = currentSeq ? currentSeq.nextSequence : (settings.startingSequence ?? 1);
+    if (manualSequence >= currentNext) {
+      await tx.invoiceSequence.upsert({
+        where: { organizationId_financialYear: { organizationId, financialYear } },
+        create: { organizationId, financialYear, nextSequence: manualSequence + 1 },
+        update: { nextSequence: manualSequence + 1 },
+      });
+    }
+
+    return manualSequence;
+  }
+
   async create(dto: CreateInvoiceDto, user: CurrentUserData) {
     return this._persistInvoice(dto, user, false);
   }
@@ -171,44 +420,14 @@ export class InvoicesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      let invoiceNumber = dto.manualInvoiceNumber;
-      let sequenceVal = draft.sequence;
-
-      if (!invoiceNumber) {
-        // Retry loop to handle race condition on first sequence creation
-        let attempts = 0;
-        const maxAttempts = 3;
-        while (attempts < maxAttempts) {
-          try {
-            const seqRec = await tx.invoiceSequence.upsert({
-              where: { organizationId_financialYear: { organizationId, financialYear } },
-              create: {
-                organizationId,
-                financialYear,
-                nextSequence: (settings.startingSequence ?? 1) + 1,
-              },
-              update: { nextSequence: { increment: 1 } },
-            });
-
-            sequenceVal = seqRec.nextSequence - 1;
-            const prefix = settings.invoiceNumberPrefix ?? 'INV';
-            invoiceNumber = `${prefix}/${sequenceVal}/${financialYear}`;
-            break;
-          } catch (error: any) {
-            attempts++;
-            if (attempts >= maxAttempts || !error.code || error.code !== 'P2002') {
-              throw error;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 50 * attempts));
-          }
-        }
-      } else {
-        const existing = await tx.invoice.findFirst({
-          where: { organizationId, invoiceNumber },
-        });
-        if (existing)
-          throw new BadRequestException(`Invoice number ${invoiceNumber} already exists`);
-      }
+      const { invoiceNumber, sequenceVal } = await this._allocateInvoiceNumber(tx, {
+        organizationId,
+        financialYear,
+        settings,
+        manualSequence: dto.manualSequence ?? draft.sequence,
+        manualInvoiceNumber: dto.manualInvoiceNumber,
+        excludeInvoiceId: draft.id,
+      });
 
       const updatedInvoice = await tx.invoice.update({
         where: { id, organizationId },
@@ -324,34 +543,22 @@ export class InvoicesService {
       let invoiceNumber: string | null = null;
       let sequenceVal: number | null = null;
 
-      // Generate invoice number for non-draft invoices
       if (!isDraft) {
-        let attempts = 0;
-        const maxAttempts = 3;
-        while (attempts < maxAttempts) {
-          try {
-            const seqRec = await tx.invoiceSequence.upsert({
-              where: { organizationId_financialYear: { organizationId, financialYear } },
-              create: {
-                organizationId,
-                financialYear,
-                nextSequence: (settings.startingSequence ?? 1) + 1,
-              },
-              update: { nextSequence: { increment: 1 } },
-            });
-
-            sequenceVal = seqRec.nextSequence - 1;
-            const prefix = settings.invoiceNumberPrefix ?? 'INV';
-            invoiceNumber = `${prefix}/${sequenceVal}/${financialYear}`;
-            break;
-          } catch (error: any) {
-            attempts++;
-            if (attempts >= maxAttempts || !error.code || error.code !== 'P2002') {
-              throw error;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 50 * attempts));
-          }
-        }
+        const allocation = await this._allocateInvoiceNumber(tx, {
+          organizationId,
+          financialYear,
+          settings,
+          manualSequence: dto.manualSequence,
+        });
+        invoiceNumber = allocation.invoiceNumber;
+        sequenceVal = allocation.sequenceVal;
+      } else {
+        sequenceVal = await this._reserveDraftSequence(tx, {
+          organizationId,
+          financialYear,
+          settings,
+          manualSequence: dto.manualSequence,
+        });
       }
 
       // 1. Create Invoice
@@ -1066,6 +1273,7 @@ export class InvoicesService {
       buyerState: dto.buyerState ?? (existing.buyerSnapshot as any)?.data?.state,
       buyerStateCode: dto.buyerStateCode ?? (existing.buyerSnapshot as any)?.data?.stateCode,
       autoCreateUdhar: dto.autoCreateUdhar ?? (existing as any).autoCreateUdhar,
+      manualSequence: dto.manualSequence,
     };
 
     const financials = await this._calculateInvoiceFinancials(dummyDto, user, true);
@@ -1175,32 +1383,23 @@ export class InvoicesService {
       // Generate invoice number if finalizing a draft
       if (isFinalizing) {
         const financialYear = financials.financialYear;
-        let attempts = 0;
-        const maxAttempts = 3;
-        while (attempts < maxAttempts) {
-          try {
-            const seqRec = await tx.invoiceSequence.upsert({
-              where: { organizationId_financialYear: { organizationId, financialYear } },
-              create: {
-                organizationId,
-                financialYear,
-                nextSequence: (settings.startingSequence ?? 1) + 1,
-              },
-              update: { nextSequence: { increment: 1 } },
-            });
-
-            sequenceVal = seqRec.nextSequence - 1;
-            const prefix = settings.invoiceNumberPrefix ?? 'INV';
-            invoiceNumber = `${prefix}/${sequenceVal}/${financialYear}`;
-            break;
-          } catch (error: any) {
-            attempts++;
-            if (attempts >= maxAttempts || !error.code || error.code !== 'P2002') {
-              throw error;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 50 * attempts));
-          }
-        }
+        const allocation = await this._allocateInvoiceNumber(tx, {
+          organizationId,
+          financialYear,
+          settings,
+          manualSequence: dto.manualSequence ?? existing.sequence,
+          excludeInvoiceId: id,
+        });
+        invoiceNumber = allocation.invoiceNumber;
+        sequenceVal = allocation.sequenceVal;
+      } else if (existing.status === InvoiceStatus.DRAFT && dto.manualSequence !== undefined) {
+        sequenceVal = await this._reserveDraftSequence(tx, {
+          organizationId,
+          financialYear: financials.financialYear,
+          settings,
+          manualSequence: dto.manualSequence,
+          excludeInvoiceId: id,
+        });
       }
 
       const updated = await tx.invoice.update({

@@ -196,4 +196,11 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsBoolean()
   finalize?: boolean;
+
+  /** Optional manual sequence number to override auto-increment. */
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  @Type(() => Number)
+  manualSequence?: number;
 }

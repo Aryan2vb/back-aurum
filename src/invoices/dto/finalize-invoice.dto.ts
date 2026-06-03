@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import { IsString, IsOptional, IsNumber, IsDateString, Min } from 'class-validator';
 
 export class FinalizeInvoiceDto {
@@ -8,6 +9,13 @@ export class FinalizeInvoiceDto {
   @IsString()
   @IsOptional()
   manualInvoiceNumber?: string;
+
+  /** Optional manual sequence number to override auto-increment. */
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  @Type(() => Number)
+  manualSequence?: number;
 
   /**
    * Amount paid at the time of finalization.
