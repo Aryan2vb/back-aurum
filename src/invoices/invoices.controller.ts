@@ -123,6 +123,29 @@ export class InvoicesController {
     return this.invoicesService.getNextSequence(user.organizationId, date);
   }
 
+  @Get('missing-sequences')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  getMissingSequences(
+    @Query('date') date: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.invoicesService.getMissingSequences(user.organizationId, date);
+  }
+
+  @Get('sequence-availability')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  getSequenceAvailability(
+    @Query('sequence') sequence: string,
+    @Query('date') date: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.invoicesService.getSequenceAvailability(
+      user.organizationId,
+      Number(sequence),
+      date,
+    );
+  }
+
   @Get()
   @Roles(
     OrganizationRole.OWNER,

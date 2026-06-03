@@ -118,6 +118,133 @@ describe('InvoicesService invoice sequence allocation', () => {
     expect(tx.invoiceSequence.upsert).not.toHaveBeenCalled();
   });
 
+  it('rejects manual sequence reserved by a draft invoice', async () => {
+    const service = buildService();
+    const tx = buildTx({
+      existingInvoice: { id: 'draft-invoice', invoiceNumber: null, sequence: 115 },
+      currentSequence: { nextSequence: 120 },
+    });
+
+    await expect(
+      service._allocateInvoiceNumber(tx, {
+        organizationId,
+        financialYear,
+        settings,
+        manualSequence: 115,
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(tx.invoice.findFirst).toHaveBeenCalledWith({
+      where: {
+        organizationId,
+        OR: [
+          { invoiceNumber: 'INV/115/2025-26' },
+          { financialYear, sequence: 115 },
+        ],
+      },
+    });
+    expect(tx.invoiceSequence.upsert).not.toHaveBeenCalled();
+  });
+
+  it('reports whether a manual sequence is available', async () => {
+    const prisma = {
+      orgInvoiceSettings: {
+        findUnique: jest.fn().mockResolvedValue(settings),
+      },
+      invoice: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({ id: 'invoice-1' }),
+      },
+    };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any) as any;
+
+    await expect(
+      service.getSequenceAvailability(organizationId, 112, '2025-04-01'),
+    ).resolves.toEqual({
+      sequence: 112,
+      invoiceNumber: 'INV/112/25-26',
+      financialYear: '25-26',
+      available: true,
+    });
+    await expect(
+      service.getSequenceAvailability(organizationId, 115, '2025-04-01'),
+    ).resolves.toEqual({
+      sequence: 115,
+      invoiceNumber: 'INV/115/25-26',
+      financialYear: '25-26',
+      available: false,
+    });
+  });
+
+  it('reports missing invoice sequences before the current next sequence using settings prefix', async () => {
+    const prisma = {
+      orgInvoiceSettings: {
+        findUnique: jest.fn().mockResolvedValue({
+          invoiceNumberPrefix: 'BILL',
+          startingSequence: 10,
+        }),
+      },
+      invoiceSequence: {
+        findUnique: jest.fn().mockResolvedValue({ nextSequence: 18 }),
+      },
+      invoice: {
+        findMany: jest.fn().mockResolvedValue([
+          { sequence: 10 },
+          { sequence: 11 },
+          { sequence: 13 },
+          { sequence: 16 },
+          { sequence: 17 },
+        ]),
+      },
+    };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any);
+
+    await expect(
+      service.getMissingSequences(organizationId, '2025-04-01'),
+    ).resolves.toEqual({
+      prefix: 'BILL',
+      financialYear: '25-26',
+      nextSequence: 18,
+      missingSequences: [12, 14, 15],
+      missingInvoiceNumbers: ['BILL/12/25-26', 'BILL/14/25-26', 'BILL/15/25-26'],
+    });
+    expect(prisma.invoice.findMany).toHaveBeenCalledWith({
+      where: {
+        organizationId,
+        financialYear: '25-26',
+        sequence: { gte: 10, lt: 18 },
+      },
+      select: { sequence: true },
+    });
+  });
+
+  it('reports no missing invoice sequences when the sequence has not advanced past the start', async () => {
+    const prisma = {
+      orgInvoiceSettings: {
+        findUnique: jest.fn().mockResolvedValue(settings),
+      },
+      invoiceSequence: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      invoice: {
+        findMany: jest.fn(),
+      },
+    };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any);
+
+    await expect(
+      service.getMissingSequences(organizationId, '2025-04-01'),
+    ).resolves.toEqual({
+      prefix: 'INV',
+      financialYear: '25-26',
+      nextSequence: 100,
+      missingSequences: [],
+      missingInvoiceNumbers: [],
+    });
+    expect(prisma.invoice.findMany).not.toHaveBeenCalled();
+  });
+
   it('accepts legacy manual invoice numbers without consuming numeric sequence', async () => {
     const service = buildService();
     const tx = buildTx();

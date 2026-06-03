@@ -160,6 +160,89 @@ export class InvoicesService {
     };
   }
 
+  async getMissingSequences(organizationId: string, dateStr?: string) {
+    const settings = await this.prisma.orgInvoiceSettings.findUnique({
+      where: { organizationId },
+    });
+    if (!settings) throw new BadRequestException('Invoice settings not found');
+
+    const invoiceDate = dateStr ? new Date(dateStr) : new Date();
+    const financialYear = getFinancialYear(invoiceDate);
+    const prefix = settings.invoiceNumberPrefix ?? 'INV';
+    const startingSequence = settings.startingSequence ?? 1;
+
+    const seq = await this.prisma.invoiceSequence.findUnique({
+      where: { organizationId_financialYear: { organizationId, financialYear } },
+    });
+    const nextSequence = seq ? seq.nextSequence : startingSequence;
+
+    if (nextSequence <= startingSequence) {
+      return {
+        prefix,
+        financialYear,
+        nextSequence,
+        missingSequences: [],
+        missingInvoiceNumbers: [],
+      };
+    }
+
+    const existing = await this.prisma.invoice.findMany({
+      where: {
+        organizationId,
+        financialYear,
+        sequence: { gte: startingSequence, lt: nextSequence },
+      },
+      select: { sequence: true },
+    });
+    const usedSequences = new Set(
+      existing
+        .map((invoice) => invoice.sequence)
+        .filter((sequence): sequence is number => typeof sequence === 'number'),
+    );
+    const missingSequences: number[] = [];
+
+    for (let sequence = startingSequence; sequence < nextSequence; sequence += 1) {
+      if (!usedSequences.has(sequence)) {
+        missingSequences.push(sequence);
+      }
+    }
+
+    return {
+      prefix,
+      financialYear,
+      nextSequence,
+      missingSequences,
+      missingInvoiceNumbers: missingSequences.map(
+        (sequence) => `${prefix}/${sequence}/${financialYear}`,
+      ),
+    };
+  }
+
+  async getSequenceAvailability(organizationId: string, sequence: number, dateStr?: string) {
+    const settings = await this.prisma.orgInvoiceSettings.findUnique({
+      where: { organizationId },
+    });
+    if (!settings) throw new BadRequestException('Invoice settings not found');
+
+    const invoiceDate = dateStr ? new Date(dateStr) : new Date();
+    const financialYear = getFinancialYear(invoiceDate);
+    const prefix = settings.invoiceNumberPrefix ?? 'INV';
+    const invoiceNumber = `${prefix}/${sequence}/${financialYear}`;
+    const existing = await this.prisma.invoice.findFirst({
+      where: {
+        organizationId,
+        OR: [{ invoiceNumber }, { financialYear, sequence }],
+      },
+    });
+
+    return {
+      sequence,
+      invoiceNumber,
+      financialYear,
+      available: !existing,
+    };
+  }
+
   private async _allocateInvoiceNumber(
     tx: any,
     {
@@ -181,7 +264,10 @@ export class InvoicesService {
     if (manualSequence !== undefined && manualSequence !== null) {
       const invoiceNumber = `${prefix}/${manualSequence}/${financialYear}`;
       const existing = await tx.invoice.findFirst({
-        where: { organizationId, invoiceNumber },
+        where: {
+          organizationId,
+          OR: [{ invoiceNumber }, { financialYear, sequence: manualSequence }],
+        },
       });
       if (existing) {
         throw new BadRequestException(`Invoice number ${invoiceNumber} already exists`);
