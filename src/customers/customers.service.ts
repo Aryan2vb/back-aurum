@@ -78,12 +78,12 @@ export class CustomersService {
         )
         .map((loc) => ({
           organizationId,
-          village: loc.village,
-          tehsil: loc.tehsil,
-          district: loc.district,
-          state: loc.state,
+          village: this.toStoredUppercase(loc.village),
+          tehsil: this.toStoredUppercase(loc.tehsil),
+          district: this.toStoredUppercase(loc.district),
+          state: this.toStoredUppercase(loc.state),
           pincode: loc.pincode,
-          landmark: loc.landmark,
+          landmark: this.toStoredUppercase(loc.landmark),
         }));
 
       const customer = await tx.customer.create({
@@ -91,11 +91,11 @@ export class CustomersService {
           organizationId,
           customerCode,
           createdById: userId,
-          fullName: createCustomerDto.fullName,
-          gstin: createCustomerDto.gstin,
-          fatherName: createCustomerDto.fatherName,
-          motherName: createCustomerDto.motherName,
-          spouseName: createCustomerDto.spouseName,
+          fullName: this.toStoredUppercase(createCustomerDto.fullName),
+          gstin: this.toStoredUppercase(createCustomerDto.gstin),
+          fatherName: this.toStoredUppercase(createCustomerDto.fatherName),
+          motherName: this.toStoredUppercase(createCustomerDto.motherName),
+          spouseName: this.toStoredUppercase(createCustomerDto.spouseName),
           gender: createCustomerDto.gender,
           dateOfBirth: createCustomerDto.dateOfBirth
             ? new Date(createCustomerDto.dateOfBirth)
@@ -206,10 +206,10 @@ export class CustomersService {
           organizationId,
           customerCode,
           createdById: userId,
-          fullName: dto.fullName,
-          fatherName: dto.fatherName,
-          motherName: dto.motherName,
-          spouseName: dto.spouseName,
+          fullName: this.toStoredUppercase(dto.fullName),
+          fatherName: this.toStoredUppercase(dto.fatherName),
+          motherName: this.toStoredUppercase(dto.motherName),
+          spouseName: this.toStoredUppercase(dto.spouseName),
           gender: dto.gender,
           dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
           isDobEstimated: dto.isDobEstimated === undefined ? undefined : dto.isDobEstimated,
@@ -622,23 +622,23 @@ export class CustomersService {
     const data: Prisma.CustomerUpdateManyMutationInput = {};
 
     if (updateCustomerDto.fullName !== undefined) {
-      data.fullName = updateCustomerDto.fullName;
+      data.fullName = this.toStoredUppercase(updateCustomerDto.fullName);
     }
 
     if (updateCustomerDto.gstin !== undefined) {
-      data.gstin = updateCustomerDto.gstin;
+      data.gstin = this.toStoredUppercase(updateCustomerDto.gstin);
     }
 
     if (updateCustomerDto.fatherName !== undefined) {
-      data.fatherName = updateCustomerDto.fatherName;
+      data.fatherName = this.toStoredUppercase(updateCustomerDto.fatherName);
     }
 
     if (updateCustomerDto.motherName !== undefined) {
-      data.motherName = updateCustomerDto.motherName;
+      data.motherName = this.toStoredUppercase(updateCustomerDto.motherName);
     }
 
     if (updateCustomerDto.spouseName !== undefined) {
-      data.spouseName = updateCustomerDto.spouseName;
+      data.spouseName = this.toStoredUppercase(updateCustomerDto.spouseName);
     }
 
     if (updateCustomerDto.gender !== undefined) {
@@ -892,12 +892,12 @@ export class CustomersService {
       data: {
         organizationId,
         customerId,
-        village: createLocationDto.village,
-        tehsil: createLocationDto.tehsil,
-        district: createLocationDto.district,
-        state: createLocationDto.state,
+        village: this.toStoredUppercase(createLocationDto.village),
+        tehsil: this.toStoredUppercase(createLocationDto.tehsil),
+        district: this.toStoredUppercase(createLocationDto.district),
+        state: this.toStoredUppercase(createLocationDto.state),
         pincode: createLocationDto.pincode,
-        landmark: createLocationDto.landmark,
+        landmark: this.toStoredUppercase(createLocationDto.landmark),
       },
     });
   }
@@ -915,19 +915,19 @@ export class CustomersService {
     const data: Prisma.LocationUpdateManyMutationInput = {};
 
     if (updateLocationDto.village !== undefined) {
-      data.village = updateLocationDto.village;
+      data.village = this.toStoredUppercase(updateLocationDto.village);
     }
 
     if (updateLocationDto.tehsil !== undefined) {
-      data.tehsil = updateLocationDto.tehsil;
+      data.tehsil = this.toStoredUppercase(updateLocationDto.tehsil);
     }
 
     if (updateLocationDto.district !== undefined) {
-      data.district = updateLocationDto.district;
+      data.district = this.toStoredUppercase(updateLocationDto.district);
     }
 
     if (updateLocationDto.state !== undefined) {
-      data.state = updateLocationDto.state;
+      data.state = this.toStoredUppercase(updateLocationDto.state);
     }
 
     if (updateLocationDto.pincode !== undefined) {
@@ -935,7 +935,7 @@ export class CustomersService {
     }
 
     if (updateLocationDto.landmark !== undefined) {
-      data.landmark = updateLocationDto.landmark;
+      data.landmark = this.toStoredUppercase(updateLocationDto.landmark);
     }
 
     if (Object.keys(data).length === 0) {
@@ -1556,6 +1556,11 @@ export class CustomersService {
     if (!hasData) {
       throw new BadRequestException('At least one location field is required');
     }
+  }
+
+  private toStoredUppercase(value?: string | null) {
+    if (typeof value !== 'string') return value;
+    return value.trim().toUpperCase();
   }
 
   private ensureSocialContextPayloadHasData(dto: CreateSocialContextDto | UpdateSocialContextDto) {

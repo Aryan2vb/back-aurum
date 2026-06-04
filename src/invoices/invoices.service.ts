@@ -1269,9 +1269,9 @@ export class InvoicesService {
       destination: dto.destination ?? existing.destination,
       termsOfDelivery: dto.termsOfDelivery ?? existing.termsOfDelivery,
       invoiceDate: dto.invoiceDate ?? existing.invoiceDate?.toISOString(),
-      buyerAddress: dto.buyerAddress ?? (existing.buyerSnapshot as any)?.data?.address,
-      buyerState: dto.buyerState ?? (existing.buyerSnapshot as any)?.data?.state,
-      buyerStateCode: dto.buyerStateCode ?? (existing.buyerSnapshot as any)?.data?.stateCode,
+      buyerAddress: dto.buyerAddress,
+      buyerState: dto.buyerState,
+      buyerStateCode: dto.buyerStateCode,
       autoCreateUdhar: dto.autoCreateUdhar ?? (existing as any).autoCreateUdhar,
       manualSequence: dto.manualSequence,
     };
