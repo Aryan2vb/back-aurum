@@ -8,7 +8,9 @@ describe('CustomersService input normalization', () => {
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ nextCustomerNumber: 2 }]),
       customer: {
-        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'customer-1', ...data })),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'customer-1', ...data })),
       },
       ...txOverrides,
     };

@@ -14,8 +14,7 @@ describe('InvoicesService invoice sequence allocation', () => {
     startingSequence: 100,
   };
 
-  const buildService = () =>
-    new InvoicesService({} as any, {} as any, {} as any, {} as any) as any;
+  const buildService = () => new InvoicesService({} as any, {} as any, {} as any, {} as any) as any;
 
   const buildTx = ({
     existingInvoice = null,
@@ -136,10 +135,7 @@ describe('InvoicesService invoice sequence allocation', () => {
     expect(tx.invoice.findFirst).toHaveBeenCalledWith({
       where: {
         organizationId,
-        OR: [
-          { invoiceNumber: 'INV/115/2025-26' },
-          { financialYear, sequence: 115 },
-        ],
+        OR: [{ invoiceNumber: 'INV/115/2025-26' }, { financialYear, sequence: 115 }],
       },
     });
     expect(tx.invoiceSequence.upsert).not.toHaveBeenCalled();
@@ -166,10 +162,7 @@ describe('InvoicesService invoice sequence allocation', () => {
     expect(tx.invoice.findFirst).toHaveBeenCalledWith({
       where: {
         organizationId,
-        OR: [
-          { invoiceNumber: 'INV/115/2025-26' },
-          { financialYear, sequence: 115 },
-        ],
+        OR: [{ invoiceNumber: 'INV/115/2025-26' }, { financialYear, sequence: 115 }],
         NOT: { id: 'draft-invoice' },
       },
     });
@@ -181,10 +174,7 @@ describe('InvoicesService invoice sequence allocation', () => {
         findUnique: jest.fn().mockResolvedValue(settings),
       },
       invoice: {
-        findFirst: jest
-          .fn()
-          .mockResolvedValueOnce(null)
-          .mockResolvedValueOnce({ id: 'invoice-1' }),
+        findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'invoice-1' }),
       },
     };
     const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any) as any;
@@ -223,10 +213,7 @@ describe('InvoicesService invoice sequence allocation', () => {
     expect(prisma.invoice.findFirst).toHaveBeenCalledWith({
       where: {
         organizationId,
-        OR: [
-          { invoiceNumber: 'INV/115/25-26' },
-          { financialYear: '25-26', sequence: 115 },
-        ],
+        OR: [{ invoiceNumber: 'INV/115/25-26' }, { financialYear: '25-26', sequence: 115 }],
         NOT: { id: 'draft-invoice' },
       },
     });
@@ -237,7 +224,9 @@ describe('InvoicesService invoice sequence allocation', () => {
       ...buildTx({ currentSequence: { nextSequence: 120 } }),
       invoice: {
         findFirst: jest.fn().mockResolvedValue(null),
-        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
       },
     };
     const prisma = {
@@ -272,10 +261,7 @@ describe('InvoicesService invoice sequence allocation', () => {
     expect(tx.invoice.findFirst).toHaveBeenCalledWith({
       where: {
         organizationId,
-        OR: [
-          { invoiceNumber: 'INV/115/25-26' },
-          { financialYear: '25-26', sequence: 115 },
-        ],
+        OR: [{ invoiceNumber: 'INV/115/25-26' }, { financialYear: '25-26', sequence: 115 }],
         NOT: { id: 'invoice-1' },
       },
     });
@@ -293,20 +279,20 @@ describe('InvoicesService invoice sequence allocation', () => {
         findUnique: jest.fn().mockResolvedValue({ nextSequence: 18 }),
       },
       invoice: {
-        findMany: jest.fn().mockResolvedValue([
-          { sequence: 10 },
-          { sequence: 11 },
-          { sequence: 13 },
-          { sequence: 16 },
-          { sequence: 17 },
-        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { sequence: 10 },
+            { sequence: 11 },
+            { sequence: 13 },
+            { sequence: 16 },
+            { sequence: 17 },
+          ]),
       },
     };
     const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any);
 
-    await expect(
-      service.getMissingSequences(organizationId, '2025-04-01'),
-    ).resolves.toEqual({
+    await expect(service.getMissingSequences(organizationId, '2025-04-01')).resolves.toEqual({
       prefix: 'BILL',
       financialYear: '25-26',
       nextSequence: 18,
@@ -337,9 +323,7 @@ describe('InvoicesService invoice sequence allocation', () => {
     };
     const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any);
 
-    await expect(
-      service.getMissingSequences(organizationId, '2025-04-01'),
-    ).resolves.toEqual({
+    await expect(service.getMissingSequences(organizationId, '2025-04-01')).resolves.toEqual({
       prefix: 'INV',
       financialYear: '25-26',
       nextSequence: 100,
@@ -375,7 +359,9 @@ describe('InvoicesService invoice sequence allocation', () => {
       ...buildTx({ currentSequence: { nextSequence: 110 } }),
       invoice: {
         findFirst: jest.fn().mockResolvedValue(null),
-        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
       },
       invoiceItem: {
         deleteMany: jest.fn(),
@@ -457,7 +443,9 @@ describe('InvoicesService invoice sequence allocation', () => {
   it('does not carry stale buyer snapshot address when update sends no buyer override', async () => {
     const tx = {
       invoice: {
-        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
       },
       invoiceItem: {
         deleteMany: jest.fn(),
@@ -572,9 +560,11 @@ describe('InvoicesService invoice sequence allocation', () => {
       ...buildTx({ currentSequence: { nextSequence: 18 } }),
       invoice: {
         findFirst: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockImplementation(({ data }) =>
-          Promise.resolve({ id: 'invoice-1', ...data, items: [] }),
-        ),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'invoice-1', ...data, items: [] }),
+          ),
       },
     };
     const prisma = {
@@ -641,9 +631,11 @@ describe('InvoicesService invoice sequence allocation', () => {
       ...buildTx({ currentSequence: { nextSequence: 18 } }),
       invoice: {
         findFirst: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockImplementation(({ data }) =>
-          Promise.resolve({ id: 'invoice-1', ...data, items: [] }),
-        ),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'invoice-1', ...data, items: [] }),
+          ),
       },
     };
     const prisma = {
@@ -709,7 +701,9 @@ describe('InvoicesService invoice sequence allocation', () => {
       ...buildTx({ currentSequence: { nextSequence: 26 } }),
       invoice: {
         findFirst: jest.fn().mockResolvedValue(null),
-        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
       },
     };
     const prisma = {

@@ -116,19 +116,13 @@ export class InvoicesController {
 
   @Get('next-sequence')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
-  getNextSequence(
-    @Query('date') date: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  getNextSequence(@Query('date') date: string, @CurrentUser() user: CurrentUserData) {
     return this.invoicesService.getNextSequence(user.organizationId, date);
   }
 
   @Get('missing-sequences')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
-  getMissingSequences(
-    @Query('date') date: string,
-    @CurrentUser() user: CurrentUserData,
-  ) {
+  getMissingSequences(@Query('date') date: string, @CurrentUser() user: CurrentUserData) {
     return this.invoicesService.getMissingSequences(user.organizationId, date);
   }
 
