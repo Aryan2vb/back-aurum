@@ -1,8 +1,10 @@
-name: aurum · deploy
+name: back-aurum · deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ["back-aurum · CI/CD"]
     branches: [main]
+    types: [completed]
 
 concurrency:
   group: deploy-production
@@ -12,6 +14,8 @@ jobs:
   deploy:
     name: Deploy → EC2 (dynamic IP)
     runs-on: ubuntu-latest
+
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     # ── OIDC permissions (no stored AWS keys needed) ──────
     permissions:

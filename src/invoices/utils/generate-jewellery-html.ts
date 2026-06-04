@@ -75,7 +75,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
                 : '-'
             }</td>
             ${hasStoneCharges ? `<td class="ctr">${item.stoneCharges ? fmt(item.stoneCharges) : '-'}</td>` : ''}
-            <td class="ctr">${item.hallmarkingCharge ? fmt(item.hallmarkingCharge) : (item.huid || item.isHallmarked) ? '0.00' : '-'}</td>
+            <td class="ctr">${item.hallmarkingCharge ? fmt(item.hallmarkingCharge) : item.huid || item.isHallmarked ? '0.00' : '-'}</td>
             <td class="ctr">${fmt(item.amount)}</td>
         </tr>`,
     )
@@ -84,11 +84,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
   // Fill table with empty rows to maintain layout if needed (set to 0 here as per bill's latest)
   const columnCount = 10 + (hasStoneWeight ? 1 : 0) + (hasStoneCharges ? 1 : 0);
   const emptyRows = Array(Math.max(0, 0 - items.length))
-    .fill(
-      `<tr>${Array(columnCount)
-        .fill('<td></td>')
-        .join('')}</tr>`,
-    )
+    .fill(`<tr>${Array(columnCount).fill('<td></td>').join('')}</tr>`)
     .join('');
 
   const termsDefault = `1. All disputes are subject to REWA Jurisdiction Only.

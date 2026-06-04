@@ -32,7 +32,7 @@ jobs:
         run: npm ci
 
       - name: ESLint
-        run: npm run lint
+        run: npx eslint "{src,apps,libs}/**/*.ts"
 
       - name: TypeScript check
         run: npx tsc --noEmit
@@ -92,5 +92,4 @@ jobs:
           name: backend-coverage
           path: coverage/
           retention-days: 7
-
 
