@@ -454,6 +454,119 @@ describe('InvoicesService invoice sequence allocation', () => {
     });
   });
 
+  it('does not carry stale buyer snapshot address when update sends no buyer override', async () => {
+    const tx = {
+      invoice: {
+        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
+      },
+      invoiceItem: {
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+      },
+      invoicePayment: {
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+      },
+      orgInvoiceSettings: {
+        findUnique: jest.fn().mockResolvedValue(settings),
+      },
+    };
+    const prisma = {
+      invoice: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'invoice-1',
+          organizationId,
+          customerId: 'new-customer',
+          status: 'PAID',
+          paidAmount: new Decimal(103),
+          modeOfPayment: 'CASH',
+          templateType: 'jewellery',
+          invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
+          buyerSnapshot: {
+            data: {
+              name: 'OLD CUSTOMER',
+              address: 'GERUAR',
+              state: 'Madhya Pradesh',
+              stateCode: '',
+            },
+          },
+          items: [],
+          payments: [],
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any) as any;
+    service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
+      taxType: 'CGST_SGST',
+      placeOfSupply: '07',
+      subtotal: new Decimal(100),
+      taxableAmount: new Decimal(100),
+      cgstRate: new Decimal(1.5),
+      sgstRate: new Decimal(1.5),
+      igstRate: new Decimal(0),
+      cgstAmount: new Decimal(1.5),
+      sgstAmount: new Decimal(1.5),
+      igstAmount: new Decimal(0),
+      totalHallmarkingCharges: new Decimal(0),
+      roundOff: new Decimal(0),
+      grandTotal: new Decimal(103),
+      paidAmount: new Decimal(103),
+      metalRateSource: 'MANUAL',
+      metalRateDate: new Date('2025-04-01T00:00:00.000Z'),
+      companySnapshot: { version: 1, data: {} },
+      buyerSnapshot: {
+        version: 1,
+        data: {
+          name: 'NEW CUSTOMER',
+          address: 'DEHRADOON',
+          phone: '9997947068',
+          state: 'UTTARAKHAND',
+          stateCode: '',
+        },
+      },
+      invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
+      financialYear,
+      notes: '',
+      lineItems: [],
+    });
+    service._syncInvoiceFinancialsWithLedger = jest.fn();
+
+    await service.update(
+      'invoice-1',
+      { customerId: 'new-customer' },
+      { organizationId, userId: 'user-1' },
+    );
+
+    expect(service._calculateInvoiceFinancials).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: 'new-customer',
+        buyerAddress: undefined,
+        buyerState: undefined,
+        buyerStateCode: undefined,
+      }),
+      expect.anything(),
+      true,
+    );
+    expect(tx.invoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          customerId: 'new-customer',
+          buyerSnapshot: {
+            version: 1,
+            data: {
+              name: 'NEW CUSTOMER',
+              address: 'DEHRADOON',
+              phone: '9997947068',
+              state: 'UTTARAKHAND',
+              stateCode: '',
+            },
+          },
+        }),
+      }),
+    );
+  });
+
   it('uses manual sequence when creating a finalized invoice directly', async () => {
     const tx = {
       ...buildTx({ currentSequence: { nextSequence: 18 } }),
