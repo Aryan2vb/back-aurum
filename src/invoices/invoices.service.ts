@@ -704,9 +704,14 @@ export class InvoicesService {
 
     const skip = (page - 1) * limit;
 
+    const orderBy: any[] = [{ [sortField]: sortOrder }];
+    if (sortField !== 'sequence') {
+      orderBy.push({ sequence: sortOrder });
+    }
+
     const findOptions: any = {
       where,
-      orderBy: { [sortField]: sortOrder },
+      orderBy,
       skip,
       take: limit,
       ...(includeItems
