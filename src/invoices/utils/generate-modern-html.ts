@@ -1,3 +1,4 @@
+import { getInvoiceDocumentTitle } from './invoice-document-title';
 import { InvoiceData } from './invoice-types';
 
 /**
@@ -69,7 +70,7 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invoice ${metadata.invoiceNo}</title>
+    <title>${getInvoiceDocumentTitle(buyer, metadata)}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 13px; color: #1a1a2e; background: #fff; }

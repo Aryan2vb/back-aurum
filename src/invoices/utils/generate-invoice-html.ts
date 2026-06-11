@@ -4,6 +4,7 @@
  * Browser-only helpers (printInvoice, downloadInvoiceHtml) removed.
  */
 import { MakingChargesType } from '@prisma/client';
+import { getInvoiceDocumentTitle } from './invoice-document-title';
 import { InvoiceData } from './invoice-types';
 
 export function generateInvoiceHtml(data: InvoiceData): string {
@@ -91,7 +92,7 @@ export function generateInvoiceHtml(data: InvoiceData): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tax Invoice - ${metadata.invoiceNo}</title>
+  <title>${getInvoiceDocumentTitle(buyer, metadata)}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, sans-serif; font-size: 12px; line-height: 1.4; color: #000; background: #fff; }
