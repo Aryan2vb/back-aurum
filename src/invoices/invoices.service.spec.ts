@@ -746,3 +746,104 @@ describe('InvoicesService invoice sequence allocation', () => {
     expect(tx.invoiceSequence.upsert).not.toHaveBeenCalled();
   });
 });
+
+describe('InvoicesService bill book', () => {
+  const organizationId = 'org-1';
+
+  it('loads complete selected invoices in batches and renders them oldest first', async () => {
+    const prisma = {
+      invoice: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'invoice-2', invoiceDate: new Date('2026-04-02') },
+          { id: 'invoice-1', invoiceDate: new Date('2026-04-01') },
+        ]),
+      },
+    };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any) as any;
+    service._renderInvoiceHtml = jest.fn((invoice: any) => `<html>${invoice.id}</html>`);
+
+    const html = await service.generateBillBook(
+      { invoiceIds: ['invoice-2', 'invoice-1', 'invoice-2'] },
+      organizationId,
+    );
+
+    expect(prisma.invoice.findMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['invoice-2', 'invoice-1'] },
+        organizationId,
+        deletedAt: null,
+        status: { notIn: ['DRAFT', 'CANCELLED'] },
+      },
+      include: expect.any(Object),
+      orderBy: [{ invoiceDate: 'asc' }, { sequence: 'asc' }],
+    });
+    expect(service._renderInvoiceHtml.mock.calls.map(([invoice]: [any]) => invoice.id)).toEqual([
+      'invoice-1',
+      'invoice-2',
+    ]);
+    expect(html).toContain('Bill Book - 2 Bills');
+  });
+
+  it('loads and renders all filtered invoices with one full query per database batch', async () => {
+    const firstBatch = Array.from({ length: 100 }, (_, index) => ({
+      id: `invoice-${index}`,
+      invoiceDate: new Date('2026-04-01'),
+    }));
+    const prisma = {
+      invoice: {
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce(firstBatch)
+          .mockResolvedValueOnce([{ id: 'invoice-100', invoiceDate: new Date('2026-04-02') }]),
+      },
+    };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any) as any;
+    service._renderInvoiceHtml = jest.fn((invoice: any) => `<html>${invoice.id}</html>`);
+
+    await service.generateBillBook(
+      {
+        search: 'MJ',
+        status: 'PAID',
+        dateFrom: '2026-04-01',
+        dateTo: '2026-04-30',
+      },
+      organizationId,
+    );
+
+    expect(prisma.invoice.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        skip: 0,
+        take: 100,
+        where: expect.objectContaining({
+          organizationId,
+          deletedAt: null,
+          status: 'PAID',
+        }),
+      }),
+    );
+    expect(prisma.invoice.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ skip: 100, take: 100 }),
+    );
+    expect(prisma.invoice.findMany).toHaveBeenCalledTimes(2);
+    expect(service._renderInvoiceHtml).toHaveBeenCalledTimes(101);
+  });
+
+  it('rejects a bill book with no eligible invoices', async () => {
+    const prisma = { invoice: { findMany: jest.fn().mockResolvedValue([]) } };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any);
+
+    await expect(service.generateBillBook({}, organizationId)).rejects.toThrow(BadRequestException);
+  });
+
+  it('does not export other statuses when filters request drafts', async () => {
+    const prisma = { invoice: { findMany: jest.fn() } };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any);
+
+    await expect(
+      service.generateBillBook({ status: 'DRAFT' as any }, organizationId),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.invoice.findMany).not.toHaveBeenCalled();
+  });
+});

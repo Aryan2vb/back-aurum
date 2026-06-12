@@ -27,6 +27,10 @@ import { generateModernInvoiceHtml } from './utils/generate-modern-html';
 import { PdfService } from './utils/pdf.service';
 import { InvoiceData } from './utils/invoice-types';
 import { InvoiceCalculationService } from './utils/invoice-calculation.service';
+import { CreateBillBookDto } from './dto/create-bill-book.dto';
+import { buildBillBookHtml, getBillBookTitle } from './utils/bill-book-html';
+
+const BILL_BOOK_QUERY_BATCH_SIZE = 100;
 
 @Injectable()
 export class InvoicesService {
@@ -899,27 +903,125 @@ export class InvoicesService {
     return this.pdfService.generatePdf(html);
   }
 
+  async generateBillBook(dto: CreateBillBookDto, organizationId: string): Promise<string> {
+    const startedAt = Date.now();
+    const selectedIds = Array.from(new Set(dto.invoiceIds || []));
+    const invoices: any[] = [];
+
+    if (selectedIds.length > 0) {
+      for (let offset = 0; offset < selectedIds.length; offset += BILL_BOOK_QUERY_BATCH_SIZE) {
+        invoices.push(
+          ...(await this.prisma.invoice.findMany({
+            where: {
+              id: { in: selectedIds.slice(offset, offset + BILL_BOOK_QUERY_BATCH_SIZE) },
+              organizationId,
+              deletedAt: null,
+              status: { notIn: [InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED] },
+            },
+            include: this._invoiceRenderInclude(),
+            orderBy: [{ invoiceDate: 'asc' }, { sequence: 'asc' }],
+          })),
+        );
+      }
+      invoices.sort(
+        (a, b) =>
+          a.invoiceDate.getTime() - b.invoiceDate.getTime() ||
+          (a.sequence ?? 0) - (b.sequence ?? 0),
+      );
+    } else {
+      if (dto.status === InvoiceStatus.DRAFT || dto.status === InvoiceStatus.CANCELLED) {
+        throw new BadRequestException(
+          'Draft and cancelled invoices cannot be added to a Bill Book',
+        );
+      }
+
+      const where: Prisma.InvoiceWhereInput = {
+        organizationId,
+        deletedAt: null,
+        status: dto.status || { notIn: [InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED] },
+      };
+
+      if (dto.dateFrom || dto.dateTo) {
+        where.invoiceDate = {};
+        if (dto.dateFrom) (where.invoiceDate as Prisma.DateTimeFilter).gte = new Date(dto.dateFrom);
+        if (dto.dateTo) {
+          const toDate = new Date(dto.dateTo);
+          toDate.setUTCHours(23, 59, 59, 999);
+          (where.invoiceDate as Prisma.DateTimeFilter).lte = toDate;
+        }
+      }
+      if (dto.search) {
+        where.OR = [
+          { invoiceNumber: { contains: dto.search, mode: 'insensitive' } },
+          { customer: { fullName: { contains: dto.search, mode: 'insensitive' } } },
+          { notes: { contains: dto.search, mode: 'insensitive' } },
+        ];
+      }
+
+      for (let offset = 0; ; offset += BILL_BOOK_QUERY_BATCH_SIZE) {
+        const batch = await this.prisma.invoice.findMany({
+          where,
+          include: this._invoiceRenderInclude(),
+          orderBy: [{ invoiceDate: 'asc' }, { sequence: 'asc' }],
+          skip: offset,
+          take: BILL_BOOK_QUERY_BATCH_SIZE,
+        });
+        invoices.push(...batch);
+        if (batch.length < BILL_BOOK_QUERY_BATCH_SIZE) break;
+      }
+    }
+
+    if (invoices.length === 0) {
+      throw new BadRequestException('No finalized invoices match the Bill Book selection');
+    }
+
+    const html = buildBillBookHtml({
+      title: getBillBookTitle({
+        selectedCount: selectedIds.length > 0 ? invoices.length : undefined,
+        dateFrom: dto.dateFrom,
+        dateTo: dto.dateTo,
+      }),
+      invoices: invoices.map((invoice) => this._renderInvoiceHtml(invoice)),
+    });
+    this.logger.log(
+      `Generated Bill Book with ${invoices.length} bills in ${Date.now() - startedAt}ms`,
+    );
+    return html;
+  }
+
   async generateHtml(id: string, organizationId: string): Promise<string> {
     const invoice = await this.prisma.invoice.findFirst({
       where: { id, organizationId, deletedAt: null },
-      include: {
-        items: { orderBy: { slNo: 'asc' } },
-        customer: {
-          select: {
-            id: true,
-            fullName: true,
-            gstin: true,
-            customerCode: true,
-            contactDetails: { where: { deletedAt: null }, select: { primaryPhone: true }, take: 1 },
-            locations: { where: { deletedAt: null }, take: 1 },
-          },
-        },
-        payments: { orderBy: { createdAt: 'asc' } },
-      },
+      include: this._invoiceRenderInclude(),
     });
 
     if (!invoice) throw new NotFoundException('Invoice not found');
 
+    return this._renderInvoiceHtml(invoice);
+  }
+
+  private _invoiceRenderInclude() {
+    return {
+      items: { orderBy: { slNo: 'asc' as const } },
+      customer: {
+        select: {
+          id: true,
+          fullName: true,
+          gstin: true,
+          customerCode: true,
+          contactDetails: {
+            where: { deletedAt: null },
+            select: { primaryPhone: true },
+            take: 1,
+          },
+          locations: { where: { deletedAt: null }, take: 1 },
+        },
+      },
+      payments: { orderBy: { createdAt: 'asc' as const } },
+    };
+  }
+
+  private _renderInvoiceHtml(invoice: any): string {
     const customer = invoice.customer;
     const loc = customer.locations && customer.locations.length > 0 ? customer.locations[0] : null;
     const companySnapshotRaw =

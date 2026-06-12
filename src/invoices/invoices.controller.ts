@@ -31,6 +31,7 @@ import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { OrganizationRole } from '@prisma/client';
 import { Public } from '../auth/public.decorator';
 import { InvoiceNegotiationService } from './utils/invoice-negotiation.service';
+import { CreateBillBookDto } from './dto/create-bill-book.dto';
 
 @Controller('invoices')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -238,6 +239,24 @@ export class InvoicesController {
   // ===========================
   // PDF
   // ===========================
+
+  @Post('bill-book')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  async getBillBook(
+    @Body() dto: CreateBillBookDto,
+    @CurrentUser() user: CurrentUserData,
+    @Res() res: Response,
+  ) {
+    this.logger.log(`POST /invoices/bill-book for org ${user.organizationId}`);
+    const html = await this.invoicesService.generateBillBook(dto, user.organizationId);
+    res.set({ 'Content-Type': 'text/html; charset=utf-8' });
+    res.send(html);
+  }
 
   @Get(':id/pdf')
   @Public()
