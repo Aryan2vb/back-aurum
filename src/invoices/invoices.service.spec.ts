@@ -6,6 +6,85 @@ jest.mock('./utils/pdf.service', () => ({
   PdfService: jest.fn(),
 }));
 
+describe('InvoicesService payment dates', () => {
+  const buildService = () => new InvoicesService({} as any, {} as any, {} as any, {} as any) as any;
+
+  it('normalizes a selected payment date to the start of that UTC day', () => {
+    const service = buildService();
+
+    expect(service._parsePaymentPaidAt('2026-05-22', new Date('2026-06-01'))).toEqual(
+      new Date('2026-05-22T00:00:00.000Z'),
+    );
+  });
+
+  it('uses the invoice date when legacy clients omit paidAt', () => {
+    const service = buildService();
+
+    expect(service._parsePaymentPaidAt(undefined, new Date('2026-06-01'))).toEqual(
+      new Date('2026-06-01T00:00:00.000Z'),
+    );
+  });
+
+  it('rejects payment dates after the invoice date', () => {
+    const service = buildService();
+
+    expect(() => service._parsePaymentPaidAt('2026-06-12', new Date('2026-06-01'))).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects future payment dates even when the invoice date is later', () => {
+    const service = buildService();
+
+    expect(() => service._parsePaymentPaidAt('2999-01-01', new Date('2999-02-01'))).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects invalid calendar dates', () => {
+    const service = buildService();
+
+    expect(() => service._parsePaymentPaidAt('2026-02-31', new Date('2026-06-01'))).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('allows an unchanged existing later payment only once', () => {
+    const service = buildService();
+    const existingPayments = [
+      {
+        mode: 'CASH',
+        amount: new Decimal(100),
+        paidAt: new Date('2026-06-12T00:00:00.000Z'),
+        reference: null,
+      },
+    ];
+    const payment = { mode: 'CASH', amount: 100, paidAt: '2026-06-12', reference: undefined };
+
+    expect(service._consumeMatchingExistingPayment(payment, existingPayments)).toBe(true);
+    expect(service._consumeMatchingExistingPayment(payment, existingPayments)).toBe(false);
+  });
+
+  it('does not preserve an existing future payment date', () => {
+    const service = buildService();
+    const existingPayments = [
+      {
+        mode: 'CASH',
+        amount: new Decimal(100),
+        paidAt: new Date('2999-01-01T00:00:00.000Z'),
+        reference: null,
+      },
+    ];
+
+    expect(
+      service._consumeMatchingExistingPayment(
+        { mode: 'CASH', amount: 100, paidAt: '2999-01-01' },
+        existingPayments,
+      ),
+    ).toBe(false);
+  });
+});
+
 describe('InvoicesService invoice sequence allocation', () => {
   const organizationId = 'org-1';
   const financialYear = '2025-26';

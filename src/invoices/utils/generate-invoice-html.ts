@@ -6,6 +6,7 @@
 import { MakingChargesType } from '@prisma/client';
 import { getInvoiceDocumentTitle } from './invoice-document-title';
 import { InvoiceData } from './invoice-types';
+import { formatPaymentLine } from './payment-date';
 
 export function generateInvoiceHtml(data: InvoiceData): string {
   const {
@@ -269,8 +270,7 @@ export function generateInvoiceHtml(data: InvoiceData): string {
                 .map(
                   (p: any) => `
         <tr class="tax-row">
-          <td colspan="6" class="text-right">${p.mode} Received</td>
-          <td class="text-right">${formatCurrency(p.amount || 0)}</td>
+          <td colspan="7" class="text-right">${formatPaymentLine(p, formatCurrency)}</td>
         </tr>`,
                 )
                 .join('')

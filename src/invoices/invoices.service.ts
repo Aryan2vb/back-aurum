@@ -43,6 +43,53 @@ export class InvoicesService {
     private readonly calcService: InvoiceCalculationService,
   ) {}
 
+  private _parsePaymentPaidAt(value: string | undefined, invoiceDate: Date): Date {
+    const normalizedInvoiceDate = new Date(invoiceDate);
+    normalizedInvoiceDate.setUTCHours(0, 0, 0, 0);
+
+    if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      throw new BadRequestException('Payment date must use YYYY-MM-DD format');
+    }
+
+    const paidAt = value ? new Date(`${value}T00:00:00.000Z`) : normalizedInvoiceDate;
+    if (value && (Number.isNaN(paidAt.getTime()) || paidAt.toISOString().slice(0, 10) !== value)) {
+      throw new BadRequestException('Payment date is invalid');
+    }
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    if (paidAt > today) {
+      throw new BadRequestException('Payment date cannot be in the future');
+    }
+
+    if (paidAt > normalizedInvoiceDate) {
+      throw new BadRequestException('Payment date cannot be after the invoice date');
+    }
+
+    return paidAt;
+  }
+
+  private _consumeMatchingExistingPayment(payment: any, existingPayments: any[]): boolean {
+    if (!payment.paidAt) return false;
+
+    const requestedPaidAt = new Date(`${payment.paidAt}T00:00:00.000Z`);
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    if (Number.isNaN(requestedPaidAt.getTime()) || requestedPaidAt > today) return false;
+
+    const matchIndex = existingPayments.findIndex(
+      (existing) =>
+        existing.mode === payment.mode &&
+        new Decimal(existing.amount).equals(new Decimal(payment.amount)) &&
+        (existing.reference || '') === (payment.reference || '') &&
+        existing.paidAt.toISOString().slice(0, 10) === payment.paidAt,
+    );
+    if (matchIndex === -1) return false;
+
+    existingPayments.splice(matchIndex, 1);
+    return true;
+  }
+
   // ===========================
   // ORG INVOICE SETTINGS
   // ===========================
@@ -609,6 +656,7 @@ export class InvoicesService {
                   amount: new Decimal(p.amount),
                   reference: p.reference,
                   notes: p.notes,
+                  paidAt: this._parsePaymentPaidAt(p.paidAt, invoiceDate),
                 })),
               }
             : undefined,
@@ -780,7 +828,7 @@ export class InvoicesService {
         },
         udharEntries: { where: { deletedAt: null } },
         createdBy: { select: { id: true, fullName: true, email: true } },
-        payments: { orderBy: { createdAt: 'desc' } },
+        payments: { orderBy: { paidAt: 'desc' } },
       },
     });
 
@@ -1017,7 +1065,7 @@ export class InvoicesService {
           locations: { where: { deletedAt: null }, take: 1 },
         },
       },
-      payments: { orderBy: { createdAt: 'asc' as const } },
+      payments: { orderBy: { paidAt: 'asc' as const } },
     };
   }
 
@@ -1137,6 +1185,7 @@ export class InvoicesService {
         invoice.payments?.map((p: any) => ({
           mode: p.mode,
           amount: new Decimal(p.amount).toNumber(),
+          paidAt: p.paidAt,
         })) || [],
     };
 
@@ -1454,6 +1503,8 @@ export class InvoicesService {
 
       // Synchronize payments if provided
       if (dto.payments !== undefined) {
+        const existingPaymentsToPreserve = [...existing.payments];
+
         // Delete all existing payments
         if (existing.payments.length > 0) {
           await tx.invoicePayment.deleteMany({
@@ -1474,6 +1525,9 @@ export class InvoicesService {
               amount: new Decimal(p.amount),
               reference: p.reference,
               notes: p.notes,
+              paidAt: this._consumeMatchingExistingPayment(p, existingPaymentsToPreserve)
+                ? new Date(`${p.paidAt}T00:00:00.000Z`)
+                : this._parsePaymentPaidAt(p.paidAt, financials.invoiceDate),
             })),
           });
         }
