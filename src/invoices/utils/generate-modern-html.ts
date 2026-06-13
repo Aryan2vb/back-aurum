@@ -1,5 +1,6 @@
 import { getInvoiceDocumentTitle } from './invoice-document-title';
 import { InvoiceData } from './invoice-types';
+import { formatPaymentLine } from './payment-date';
 
 /**
  * Generates a modern/clean themed HTML invoice
@@ -234,8 +235,7 @@ export function generateModernInvoiceHtml(data: InvoiceData): string {
                         .map(
                           (p: any) => `
                 <div class="subtotal-row" style="margin-top:4px;">
-                  <span style="font-size:11px;color:#64748b;">${p.mode} Received</span>
-                  <span style="font-size:11px;color:#64748b;font-weight:600;">₹${fmt(Number(p.amount))}</span>
+                  <span style="font-size:11px;color:#64748b;font-weight:600;">${formatPaymentLine(p, fmt)}</span>
                 </div>`,
                         )
                         .join('')

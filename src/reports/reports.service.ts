@@ -113,13 +113,10 @@ export class ReportsService {
   }
 
   async getCollectionsReport(organizationId: string, filters: ReportFiltersDto) {
-    const where = this.getWhereClause(organizationId, filters, 'createdAt', false, false);
+    const where = this.getWhereClause(organizationId, filters, 'paidAt', false, false);
 
-    // Add customer filter through invoice relationship if needed
     if (filters.customerId) {
-      where.invoice = {
-        customerId: filters.customerId,
-      };
+      where.invoice = { customerId: filters.customerId };
     }
 
     const payments = await this.prisma.invoicePayment.findMany({
@@ -127,11 +124,11 @@ export class ReportsService {
       select: {
         mode: true,
         amount: true,
-        createdAt: true,
+        paidAt: true,
         reference: true,
         invoice: { select: { invoiceNumber: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { paidAt: 'desc' },
     });
 
     const groupedByMode = payments.reduce(

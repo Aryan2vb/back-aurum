@@ -5,6 +5,7 @@
  */
 import { getInvoiceDocumentTitle } from './invoice-document-title';
 import { InvoiceData } from './invoice-types';
+import { formatPaymentLine } from './payment-date';
 
 export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
   const {
@@ -32,7 +33,7 @@ export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
   let paymentsHtml = '';
   if (data.payments && data.payments.length > 0) {
     paymentsHtml = data.payments
-      .map((p: any) => `<div>${p.mode}: &nbsp; ${fmt(Number(p.amount))}</div>`)
+      .map((p: any) => `<div>${formatPaymentLine(p, fmt)}</div>`)
       .join('');
   } else {
     paymentsHtml = `<div>CASH RECEIVED : &nbsp; ${fmt(cashReceived)}</div>`;

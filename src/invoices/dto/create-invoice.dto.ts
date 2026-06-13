@@ -10,6 +10,7 @@ import {
   IsDateString,
   IsPositive,
   IsBoolean,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MetalType, MakingChargesType, PaymentMethod } from '@prisma/client';
@@ -112,6 +113,11 @@ export class CreateInvoicePaymentDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsOptional()
+  paidAt?: string;
 }
 
 export class CreateInvoiceDto {

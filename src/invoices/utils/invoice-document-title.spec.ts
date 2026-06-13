@@ -47,3 +47,18 @@ describe('invoice document titles', () => {
     );
   });
 });
+
+describe('invoice payment dates', () => {
+  it.each([
+    ['default', generateInvoiceHtml],
+    ['jewellery', generateJewelleryInvoiceHtml],
+    ['modern', generateModernInvoiceHtml],
+  ])('includes the selected payment date in the %s template', (_template, generateHtml) => {
+    expect(
+      generateHtml({
+        ...invoiceData,
+        payments: [{ mode: 'CASH', amount: 100, paidAt: '2026-05-22' }],
+      }),
+    ).toContain('CASH: ₹100.00 · 22/05/26');
+  });
+});
