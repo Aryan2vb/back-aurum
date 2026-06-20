@@ -1605,12 +1605,9 @@ export class CustomersService {
   }
 
   private ensureDocumentPayloadHasData(dto: CreateDocumentDto | UpdateDocumentDto) {
-    const hasData = [
-      dto.aadharNumber,
-      dto.aadharVerified,
-      dto.panNumber,
-      dto.panVerified,
-    ].some((value) => value !== undefined);
+    const hasData = [dto.aadharNumber, dto.aadharVerified, dto.panNumber, dto.panVerified].some(
+      (value) => value !== undefined,
+    );
 
     if (!hasData) {
       throw new BadRequestException('At least one document field is required');
