@@ -361,11 +361,11 @@ describe('InvoicesService invoice sequence allocation', () => {
         findMany: jest
           .fn()
           .mockResolvedValue([
-            { sequence: 10 },
-            { sequence: 11 },
-            { sequence: 13 },
-            { sequence: 16 },
-            { sequence: 17 },
+            { sequence: 10, invoiceDate: new Date('2025-04-01') },
+            { sequence: 11, invoiceDate: new Date('2025-04-02') },
+            { sequence: 13, invoiceDate: new Date('2025-04-04') },
+            { sequence: 16, invoiceDate: new Date('2025-04-07') },
+            { sequence: 17, invoiceDate: new Date('2025-04-08') },
           ]),
       },
     };
@@ -377,6 +377,26 @@ describe('InvoicesService invoice sequence allocation', () => {
       nextSequence: 18,
       missingSequences: [12, 14, 15],
       missingInvoiceNumbers: ['BILL/12/25-26', 'BILL/14/25-26', 'BILL/15/25-26'],
+      missingDetails: [
+        {
+          sequence: 12,
+          invoiceNumber: 'BILL/12/25-26',
+          minDate: new Date('2025-04-02'),
+          maxDate: new Date('2025-04-04'),
+        },
+        {
+          sequence: 14,
+          invoiceNumber: 'BILL/14/25-26',
+          minDate: new Date('2025-04-04'),
+          maxDate: new Date('2025-04-07'),
+        },
+        {
+          sequence: 15,
+          invoiceNumber: 'BILL/15/25-26',
+          minDate: new Date('2025-04-04'),
+          maxDate: new Date('2025-04-07'),
+        },
+      ],
     });
     expect(prisma.invoice.findMany).toHaveBeenCalledWith({
       where: {
@@ -384,7 +404,8 @@ describe('InvoicesService invoice sequence allocation', () => {
         financialYear: '25-26',
         sequence: { gte: 10, lt: 18 },
       },
-      select: { sequence: true },
+      select: { sequence: true, invoiceDate: true },
+      orderBy: { sequence: 'asc' },
     });
   });
 
