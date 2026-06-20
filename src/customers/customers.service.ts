@@ -1124,12 +1124,12 @@ export class CustomersService {
     await this.ensureCustomerAccess(customerId, organizationId);
     this.ensureDocumentPayloadHasData(createDocumentDto);
 
-    // Check for duplicate Aadhar last 4 digits
-    if (createDocumentDto.aadharLast4) {
+    // Check for duplicate Aadhaar
+    if (createDocumentDto.aadharNumber) {
       const existingAadhar = await this.prisma.document.findFirst({
         where: {
           organizationId,
-          aadharLast4: createDocumentDto.aadharLast4,
+          aadharNumber: createDocumentDto.aadharNumber,
           deletedAt: null,
         },
         include: {
@@ -1140,7 +1140,28 @@ export class CustomersService {
       });
       if (existingAadhar) {
         throw new ConflictException(
-          `Aadhar ending with ${createDocumentDto.aadharLast4} already exists for customer ${existingAadhar.customer.customerCode} (${existingAadhar.customer.fullName})`,
+          `Aadhaar ${createDocumentDto.aadharNumber} already exists for customer ${existingAadhar.customer.customerCode} (${existingAadhar.customer.fullName})`,
+        );
+      }
+    }
+
+    // Check for duplicate PAN
+    if (createDocumentDto.panNumber) {
+      const existingPan = await this.prisma.document.findFirst({
+        where: {
+          organizationId,
+          panNumber: createDocumentDto.panNumber,
+          deletedAt: null,
+        },
+        include: {
+          customer: {
+            select: { customerCode: true, fullName: true },
+          },
+        },
+      });
+      if (existingPan) {
+        throw new ConflictException(
+          `PAN ${createDocumentDto.panNumber} already exists for customer ${existingPan.customer.customerCode} (${existingPan.customer.fullName})`,
         );
       }
     }
@@ -1149,8 +1170,10 @@ export class CustomersService {
       data: {
         organizationId,
         customerId,
-        aadharLast4: createDocumentDto.aadharLast4,
+        aadharNumber: createDocumentDto.aadharNumber,
         aadharVerified: createDocumentDto.aadharVerified ?? false,
+        panNumber: createDocumentDto.panNumber,
+        panVerified: createDocumentDto.panVerified ?? false,
       },
     });
   }
@@ -1167,12 +1190,20 @@ export class CustomersService {
 
     const data: Prisma.DocumentUpdateManyMutationInput = {};
 
-    if (updateDocumentDto.aadharLast4 !== undefined) {
-      data.aadharLast4 = updateDocumentDto.aadharLast4;
+    if (updateDocumentDto.aadharNumber !== undefined) {
+      data.aadharNumber = updateDocumentDto.aadharNumber;
     }
 
     if (updateDocumentDto.aadharVerified !== undefined) {
       data.aadharVerified = updateDocumentDto.aadharVerified;
+    }
+
+    if (updateDocumentDto.panNumber !== undefined) {
+      data.panNumber = updateDocumentDto.panNumber;
+    }
+
+    if (updateDocumentDto.panVerified !== undefined) {
+      data.panVerified = updateDocumentDto.panVerified;
     }
 
     if (Object.keys(data).length === 0) {
@@ -1574,7 +1605,9 @@ export class CustomersService {
   }
 
   private ensureDocumentPayloadHasData(dto: CreateDocumentDto | UpdateDocumentDto) {
-    const hasData = [dto.aadharLast4, dto.aadharVerified].some((value) => value !== undefined);
+    const hasData = [dto.aadharNumber, dto.aadharVerified, dto.panNumber, dto.panVerified].some(
+      (value) => value !== undefined,
+    );
 
     if (!hasData) {
       throw new BadRequestException('At least one document field is required');

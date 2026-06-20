@@ -824,6 +824,7 @@ export class InvoicesService {
             customerCode: true,
             contactDetails: { where: { deletedAt: null }, select: { primaryPhone: true }, take: 1 },
             locations: { where: { deletedAt: null }, take: 1 },
+            documents: { where: { deletedAt: null } },
           },
         },
         udharEntries: { where: { deletedAt: null } },

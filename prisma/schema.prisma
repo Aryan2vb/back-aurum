@@ -16,6 +16,7 @@ model User {
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
   passwordHash         String?
+  mfaEnabled           Boolean                  @default(false)
   fullName             String?
   accountsCreated      Account[]
   auditLogsPerformed   AuditLog[]
@@ -220,15 +221,18 @@ model Document {
   id             String       @id @default(uuid())
   customerId     String
   organizationId String
-  aadharLast4    String?      @db.Char(4)
+  aadharNumber   String?      @db.Char(12)
   aadharVerified Boolean      @default(false)
+  panNumber      String?      @db.Char(10)
+  panVerified    Boolean      @default(false)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
   customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, aadharLast4])
+  @@unique([organizationId, aadharNumber])
+  @@unique([organizationId, panNumber])
   @@index([organizationId])
   @@index([customerId])
   @@index([deletedAt])
