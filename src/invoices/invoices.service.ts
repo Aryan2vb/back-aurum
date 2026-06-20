@@ -246,7 +246,7 @@ export class InvoicesService {
       select: { sequence: true, invoiceDate: true },
       orderBy: { sequence: 'asc' },
     });
-    
+
     const usedMap = new Map<number, Date>();
     for (const inv of existing) {
       if (inv.sequence != null) usedMap.set(inv.sequence, inv.invoiceDate);
