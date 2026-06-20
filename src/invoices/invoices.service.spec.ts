@@ -358,15 +358,13 @@ describe('InvoicesService invoice sequence allocation', () => {
         findUnique: jest.fn().mockResolvedValue({ nextSequence: 18 }),
       },
       invoice: {
-        findMany: jest
-          .fn()
-          .mockResolvedValue([
-            { sequence: 10, invoiceDate: new Date('2025-04-01') },
-            { sequence: 11, invoiceDate: new Date('2025-04-02') },
-            { sequence: 13, invoiceDate: new Date('2025-04-04') },
-            { sequence: 16, invoiceDate: new Date('2025-04-07') },
-            { sequence: 17, invoiceDate: new Date('2025-04-08') },
-          ]),
+        findMany: jest.fn().mockResolvedValue([
+          { sequence: 10, invoiceDate: new Date('2025-04-01') },
+          { sequence: 11, invoiceDate: new Date('2025-04-02') },
+          { sequence: 13, invoiceDate: new Date('2025-04-04') },
+          { sequence: 16, invoiceDate: new Date('2025-04-07') },
+          { sequence: 17, invoiceDate: new Date('2025-04-08') },
+        ]),
       },
     };
     const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any);
