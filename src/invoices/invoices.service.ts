@@ -243,18 +243,44 @@ export class InvoicesService {
         financialYear,
         sequence: { gte: startingSequence, lt: nextSequence },
       },
-      select: { sequence: true },
+      select: { sequence: true, invoiceDate: true },
+      orderBy: { sequence: 'asc' },
     });
-    const usedSequences = new Set(
-      existing
-        .map((invoice) => invoice.sequence)
-        .filter((sequence): sequence is number => typeof sequence === 'number'),
-    );
+
+    const usedMap = new Map<number, Date>();
+    for (const inv of existing) {
+      if (inv.sequence != null) usedMap.set(inv.sequence, inv.invoiceDate);
+    }
+
     const missingSequences: number[] = [];
+    const missingDetails = [];
 
     for (let sequence = startingSequence; sequence < nextSequence; sequence += 1) {
-      if (!usedSequences.has(sequence)) {
+      if (!usedMap.has(sequence)) {
         missingSequences.push(sequence);
+
+        let minDate = null;
+        for (let i = sequence - 1; i >= startingSequence; i--) {
+          if (usedMap.has(i)) {
+            minDate = usedMap.get(i);
+            break;
+          }
+        }
+
+        let maxDate = null;
+        for (let i = sequence + 1; i < nextSequence; i++) {
+          if (usedMap.has(i)) {
+            maxDate = usedMap.get(i);
+            break;
+          }
+        }
+
+        missingDetails.push({
+          sequence,
+          invoiceNumber: `${prefix}/${sequence}/${financialYear}`,
+          minDate,
+          maxDate,
+        });
       }
     }
 
@@ -263,9 +289,8 @@ export class InvoicesService {
       financialYear,
       nextSequence,
       missingSequences,
-      missingInvoiceNumbers: missingSequences.map(
-        (sequence) => `${prefix}/${sequence}/${financialYear}`,
-      ),
+      missingInvoiceNumbers: missingDetails.map((d) => d.invoiceNumber),
+      missingDetails,
     };
   }
 
