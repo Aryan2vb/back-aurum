@@ -56,6 +56,17 @@ export class ReportsController {
     return this.reportsService.getOutstandingDues(user.organizationId);
   }
 
+  @Get('advances')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getAdvancesReport(@CurrentUser() user: CurrentUserData) {
+    return this.reportsService.getAdvancesReport(user.organizationId);
+  }
+
   @Get('inventory-flow')
   @Roles(
     OrganizationRole.OWNER,

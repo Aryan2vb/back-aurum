@@ -38,6 +38,10 @@ import { Roles } from '../auth/roles.decorator';
 import { OrganizationRole } from '@prisma/client';
 import { InvoicesService } from '../invoices/invoices.service';
 import { QueryInvoicesDto } from '../invoices/dto/query-invoices.dto';
+import { AdvanceService } from '../credits/advance.service';
+import { ReceiveAdvanceDto } from '../credits/dto/receive-advance.dto';
+import { RefundAdvanceDto } from '../credits/dto/refund-advance.dto';
+import { TransferAdvanceDto } from '../credits/dto/transfer-advance.dto';
 
 @Controller('customers')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -47,6 +51,7 @@ export class CustomersController {
   constructor(
     private readonly customersService: CustomersService,
     private readonly invoicesService: InvoicesService,
+    private readonly advanceService: AdvanceService,
   ) {
     this.logger.log('CustomersController initialized');
   }
@@ -473,5 +478,105 @@ export class CustomersController {
     @CurrentUser() user: CurrentUserData,
   ) {
     return this.customersService.deleteMetaTracking(customerId, metaTrackingId, user);
+  }
+
+  // ===========================
+  // ADVANCE / CREDIT
+  // ===========================
+
+  /**
+   * GET /customers/:id/advance-balance
+   * Returns the customer's available advance credit balance.
+   */
+  @Get(':id/advance-balance')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getAdvanceBalance(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+    return this.advanceService.getCustomerAdvanceBalance(id, user.organizationId);
+  }
+
+  /**
+   * GET /customers/:id/advance-ledger
+   * Full advance ledger history with running balance for the customer.
+   */
+  @Get(':id/advance-ledger')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getAdvanceLedger(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+    return this.advanceService.getCustomerAdvanceLedger(id, user.organizationId);
+  }
+
+  /**
+   * POST /customers/:id/advance
+   * Record an advance payment received from a customer.
+   */
+  @Post(':id/advance')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  receiveAdvance(
+    @Param('id') id: string,
+    @Body() dto: ReceiveAdvanceDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    this.logger.log(`POST /customers/${id}/advance — amount: ${dto.amount}`);
+    return this.advanceService.receiveAdvance(id, dto, user);
+  }
+
+  /**
+   * POST /customers/:id/advance/refund
+   * Refund advance balance back to the customer.
+   */
+  @Post(':id/advance/refund')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  refundAdvance(
+    @Param('id') id: string,
+    @Body() dto: RefundAdvanceDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    this.logger.log(`POST /customers/${id}/advance/refund — amount: ${dto.amount}`);
+    return this.advanceService.refundAdvance(id, dto, user);
+  }
+
+  /**
+   * POST /customers/:id/advance/transfer
+   * Transfer advance balance from this customer to another.
+   */
+  @Post(':id/advance/transfer')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  transferAdvance(
+    @Param('id') id: string,
+    @Body() dto: TransferAdvanceDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    this.logger.log(
+      `POST /customers/${id}/advance/transfer — to: ${dto.toCustomerId} amount: ${dto.amount}`,
+    );
+    return this.advanceService.transferAdvance(id, dto, user);
+  }
+
+  /**
+   * DELETE /customers/:id/advance/:ledgerEntryId
+   * Soft-delete a single advance ledger entry (OWNER only — irreversible balance change).
+   */
+  @Delete(':id/advance/:ledgerEntryId')
+  @HttpCode(HttpStatus.OK)
+  @Roles(OrganizationRole.OWNER)
+  deleteAdvanceEntry(
+    @Param('id') customerId: string,
+    @Param('ledgerEntryId') ledgerEntryId: string,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    this.logger.log(`DELETE /customers/${customerId}/advance/${ledgerEntryId}`);
+    return this.advanceService.deleteAdvanceEntry(customerId, ledgerEntryId, user);
   }
 }

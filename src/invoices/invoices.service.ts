@@ -860,11 +860,26 @@ export class InvoicesService {
 
     if (!invoice) throw new NotFoundException('Invoice not found');
 
+    // Sum all advance amounts applied directly to this invoice
+    const advanceApplications = await this.prisma.ledgerEntry.aggregate({
+      where: {
+        organizationId,
+        invoiceId: id,
+        type: LedgerType.ADVANCE_APPLIED,
+        deletedAt: null,
+      },
+      _sum: { amount: true },
+    });
+    const advanceAdjustedAmount = new Decimal(advanceApplications._sum.amount ?? 0);
+    const remainingPayable = new Decimal(invoice.totalAmount)
+      .minus(new Decimal(invoice.paidAmount))
+      .toDecimalPlaces(2);
+
     return {
       ...invoice,
-      remainingBalance: new Decimal(invoice.totalAmount)
-        .minus(new Decimal(invoice.paidAmount))
-        .toNumber(),
+      remainingBalance: remainingPayable.toNumber(),
+      advanceAdjustedAmount: advanceAdjustedAmount.toNumber(),
+      remainingPayable: remainingPayable.toNumber(),
     };
   }
 
