@@ -24,6 +24,7 @@ import { SendInvoiceDto } from './dto/send-invoice.dto';
 import { FinalizeInvoiceDto } from './dto/finalize-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { NegotiatePreviewQueryDto, NegotiateCommitDto } from './dto/negotiate-invoice.dto';
+import { ApplyAdvanceDto } from './dto/apply-advance.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -32,6 +33,7 @@ import { OrganizationRole } from '@prisma/client';
 import { Public } from '../auth/public.decorator';
 import { InvoiceNegotiationService } from './utils/invoice-negotiation.service';
 import { CreateBillBookDto } from './dto/create-bill-book.dto';
+import { AdvanceService } from '../credits/advance.service';
 
 @Controller('invoices')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -41,6 +43,7 @@ export class InvoicesController {
   constructor(
     private readonly invoicesService: InvoicesService,
     private readonly negotiationService: InvoiceNegotiationService,
+    private readonly advanceService: AdvanceService,
   ) {}
 
   // ===========================
@@ -338,5 +341,26 @@ export class InvoicesController {
   cancel(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     this.logger.log(`DELETE /invoices/${id} (cancel)`);
     return this.invoicesService.cancel(id, user);
+  }
+
+  // ===========================
+  // ADVANCE APPLICATION
+  // ===========================
+
+  /**
+   * POST /invoices/:id/apply-advance
+   * Applies customer advance balance to reduce invoice outstanding amount.
+   * The customerId is derived from the invoice itself (no risk of cross-customer abuse).
+   */
+  @Post(':id/apply-advance')
+  @HttpCode(HttpStatus.OK)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  applyAdvance(
+    @Param('id') id: string,
+    @Body() dto: ApplyAdvanceDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    this.logger.log(`POST /invoices/${id}/apply-advance — amount: ${dto.amount}`);
+    return this.advanceService.applyAdvanceToInvoice(id, dto.amount, user, dto.paidAt, dto.notes);
   }
 }
