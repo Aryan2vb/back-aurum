@@ -354,7 +354,20 @@ export class ReportsService {
         if (item.netWeight) acc[mt].totalNetWeight = acc[mt].totalNetWeight.plus(item.netWeight);
 
         const purity = item.purityLabel || 'UNKNOWN';
-        acc[mt].purities[purity] = (acc[mt].purities[purity] || 0) + 1;
+        if (!acc[mt].purities[purity]) {
+          acc[mt].purities[purity] = {
+            count: 0,
+            grossWeight: new Decimal(0),
+            netWeight: new Decimal(0),
+          };
+        }
+        acc[mt].purities[purity].count += 1;
+        if (item.grossWeight) {
+          acc[mt].purities[purity].grossWeight = acc[mt].purities[purity].grossWeight.plus(item.grossWeight);
+        }
+        if (item.netWeight) {
+          acc[mt].purities[purity].netWeight = acc[mt].purities[purity].netWeight.plus(item.netWeight);
+        }
 
         return acc;
       },
