@@ -847,6 +847,10 @@ export class InvoicesService {
             id: true,
             fullName: true,
             customerCode: true,
+            fatherName: true,
+            motherName: true,
+            spouseName: true,
+            gender: true,
             contactDetails: { where: { deletedAt: null }, select: { primaryPhone: true }, take: 1 },
             locations: { where: { deletedAt: null }, take: 1 },
             documents: { where: { deletedAt: null } },
@@ -860,11 +864,26 @@ export class InvoicesService {
 
     if (!invoice) throw new NotFoundException('Invoice not found');
 
+    // Sum all advance amounts applied directly to this invoice
+    const advanceApplications = await this.prisma.ledgerEntry.aggregate({
+      where: {
+        organizationId,
+        invoiceId: id,
+        type: LedgerType.ADVANCE_APPLIED,
+        deletedAt: null,
+      },
+      _sum: { amount: true },
+    });
+    const advanceAdjustedAmount = new Decimal(advanceApplications._sum.amount ?? 0);
+    const remainingPayable = new Decimal(invoice.totalAmount)
+      .minus(new Decimal(invoice.paidAmount))
+      .toDecimalPlaces(2);
+
     return {
       ...invoice,
-      remainingBalance: new Decimal(invoice.totalAmount)
-        .minus(new Decimal(invoice.paidAmount))
-        .toNumber(),
+      remainingBalance: remainingPayable.toNumber(),
+      advanceAdjustedAmount: advanceAdjustedAmount.toNumber(),
+      remainingPayable: remainingPayable.toNumber(),
     };
   }
 
@@ -1451,6 +1470,7 @@ export class InvoicesService {
       destination: dto.destination ?? existing.destination,
       termsOfDelivery: dto.termsOfDelivery ?? existing.termsOfDelivery,
       invoiceDate: dto.invoiceDate ?? existing.invoiceDate?.toISOString(),
+      buyerName: dto.buyerName,
       buyerAddress: dto.buyerAddress,
       buyerState: dto.buyerState,
       buyerStateCode: dto.buyerStateCode,
@@ -1844,7 +1864,7 @@ export class InvoicesService {
     const buyerSnapshot = {
       version: 1,
       data: {
-        name: customer.fullName,
+        name: dto.buyerName || customer.fullName,
         address:
           dto.buyerAddress || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
         phone: customer.contactDetails?.[0]?.primaryPhone ?? '',

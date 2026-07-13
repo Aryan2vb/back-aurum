@@ -310,8 +310,16 @@ model LedgerEntry {
   amount         Decimal      @db.Decimal(12, 2)
   type           LedgerType
   description    String?
-  /// ID of the related entity (Invoice ID, Payment ID, etc.)
+  /// ID of the related entity (Invoice ID, UdharEntry ID, AdvanceEntry ID, etc.)
   entityId       String?
+  /// For ADVANCE_TRANSFER_OUT/IN pairs — points to the counterpart LedgerEntry id.
+  /// For ADVANCE_APPLIED — points to the UdharEntry being offset.
+  /// For ADVANCE_REFUND  — points to the source ADVANCE_RECEIVED LedgerEntry id.
+  referenceLedgerEntryId String?
+  /// Direct invoice FK for ADVANCE_APPLIED entries — enables fast advance lookup per invoice.
+  invoiceId      String?
+  /// Payment method stored on ADVANCE_RECEIVED / ADVANCE_REFUND entries.
+  paymentMethod  PaymentMethod?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
@@ -326,6 +334,8 @@ model LedgerEntry {
   @@index([organizationId, customerId])
   @@index([type])
   @@index([createdAt])
+  @@index([organizationId, customerId, type])
+  @@index([invoiceId])
 }
 
 model UdharEntry {
@@ -674,4 +684,15 @@ enum LedgerType {
   PAYMENT
   ADJUSTMENT
   RETURN
+  // ── Advance / credit system ──────────────────────────────────────────────
+  /// Customer deposits money before an invoice is raised.
+  ADVANCE_RECEIVED
+  /// Advance balance consumed against a specific invoice / UdharEntry.
+  ADVANCE_APPLIED
+  /// Advance moved OUT from this customer to another.
+  ADVANCE_TRANSFER_OUT
+  /// Advance moved IN to this customer from another.
+  ADVANCE_TRANSFER_IN
+  /// Advance balance returned to the customer in cash / UPI / etc.
+  ADVANCE_REFUND
 }

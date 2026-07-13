@@ -182,6 +182,151 @@ export class ReportsService {
     return results;
   }
 
+  /**
+   * Returns all customers that have a non-zero advance (credit) balance,
+   * sorted by balance descending. Also includes per-customer breakdown of
+   * received / applied / transferred / refunded amounts for a full picture.
+   */
+  async getAdvancesReport(organizationId: string) {
+    const { LedgerType } = await import('@prisma/client');
+
+    // Fetch all advance ledger entries with dates — one query covers both aggregation and dates
+    const allEntries = await this.prisma.ledgerEntry.findMany({
+      where: {
+        organizationId,
+        deletedAt: null,
+        type: {
+          in: [
+            LedgerType.ADVANCE_RECEIVED,
+            LedgerType.ADVANCE_APPLIED,
+            LedgerType.ADVANCE_TRANSFER_OUT,
+            LedgerType.ADVANCE_TRANSFER_IN,
+            LedgerType.ADVANCE_REFUND,
+          ],
+        },
+      },
+      select: {
+        id: true,
+        customerId: true,
+        type: true,
+        amount: true,
+        description: true,
+        paymentMethod: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (!allEntries.length) {
+      return { summary: { totalAdvanceHeld: new Decimal(0), customersCount: 0 }, customers: [] };
+    }
+
+    // Build per-customer buckets with amounts AND date tracking
+    const CREDIT_TYPES = [LedgerType.ADVANCE_RECEIVED, LedgerType.ADVANCE_TRANSFER_IN];
+    const DEBIT_TYPES = [
+      LedgerType.ADVANCE_APPLIED,
+      LedgerType.ADVANCE_TRANSFER_OUT,
+      LedgerType.ADVANCE_REFUND,
+    ];
+
+    const byCustomer = new Map<
+      string,
+      {
+        amounts: Record<string, Decimal>;
+        deposits: Array<{
+          id: string;
+          amount: Decimal;
+          date: Date;
+          paymentMethod: string | null;
+          description: string | null;
+        }>;
+        firstReceivedAt: Date | null;
+        lastReceivedAt: Date | null;
+      }
+    >();
+
+    for (const e of allEntries) {
+      if (!byCustomer.has(e.customerId)) {
+        byCustomer.set(e.customerId, {
+          amounts: {},
+          deposits: [],
+          firstReceivedAt: null,
+          lastReceivedAt: null,
+        });
+      }
+      const bucket = byCustomer.get(e.customerId)!;
+      const amount = new Decimal(e.amount);
+      bucket.amounts[e.type] = (bucket.amounts[e.type] ?? new Decimal(0)).plus(amount);
+
+      if (e.type === LedgerType.ADVANCE_RECEIVED) {
+        bucket.deposits.push({
+          id: e.id,
+          amount,
+          date: e.createdAt,
+          paymentMethod: e.paymentMethod,
+          description: e.description,
+        });
+        if (!bucket.firstReceivedAt || e.createdAt < bucket.firstReceivedAt) {
+          bucket.firstReceivedAt = e.createdAt;
+        }
+        if (!bucket.lastReceivedAt || e.createdAt > bucket.lastReceivedAt) {
+          bucket.lastReceivedAt = e.createdAt;
+        }
+      }
+    }
+
+    // Fetch customer details
+    const customerIds = [...byCustomer.keys()];
+    const customers = await this.prisma.customer.findMany({
+      where: { id: { in: customerIds }, organizationId, deletedAt: null },
+      select: {
+        id: true,
+        fullName: true,
+        customerCode: true,
+        contactDetails: {
+          where: { deletedAt: null },
+          select: { primaryPhone: true },
+          take: 1,
+        },
+      },
+    });
+
+    const result = customers
+      .map((c) => {
+        const bucket = byCustomer.get(c.id)!;
+        const { amounts, deposits, firstReceivedAt, lastReceivedAt } = bucket;
+
+        let balance = new Decimal(0);
+        for (const type of CREDIT_TYPES) balance = balance.plus(amounts[type] ?? 0);
+        for (const type of DEBIT_TYPES) balance = balance.minus(amounts[type] ?? 0);
+
+        return {
+          customerId: c.id,
+          customerName: c.fullName,
+          customerCode: c.customerCode,
+          phone: c.contactDetails?.[0]?.primaryPhone ?? '',
+          totalReceived: new Decimal(amounts[LedgerType.ADVANCE_RECEIVED] ?? 0),
+          totalApplied: new Decimal(amounts[LedgerType.ADVANCE_APPLIED] ?? 0),
+          totalTransferOut: new Decimal(amounts[LedgerType.ADVANCE_TRANSFER_OUT] ?? 0),
+          totalTransferIn: new Decimal(amounts[LedgerType.ADVANCE_TRANSFER_IN] ?? 0),
+          totalRefunded: new Decimal(amounts[LedgerType.ADVANCE_REFUND] ?? 0),
+          availableBalance: balance,
+          firstReceivedAt,
+          lastReceivedAt,
+          deposits, // individual receipt entries with date + method
+        };
+      })
+      .filter((r) => r.availableBalance.greaterThan(0))
+      .sort((a, b) => b.availableBalance.toNumber() - a.availableBalance.toNumber());
+
+    const totalAdvanceHeld = result.reduce((s, r) => s.plus(r.availableBalance), new Decimal(0));
+
+    return {
+      summary: { totalAdvanceHeld, customersCount: result.length },
+      customers: result,
+    };
+  }
+
   async getInventoryFlow(organizationId: string, filters: ReportFiltersDto) {
     const invWhere = this.getWhereClause(organizationId, filters, 'invoiceDate');
     invWhere.status = { not: InvoiceStatus.DRAFT };
@@ -219,7 +364,24 @@ export class ReportsService {
         if (item.netWeight) acc[mt].totalNetWeight = acc[mt].totalNetWeight.plus(item.netWeight);
 
         const purity = item.purityLabel || 'UNKNOWN';
-        acc[mt].purities[purity] = (acc[mt].purities[purity] || 0) + 1;
+        if (!acc[mt].purities[purity]) {
+          acc[mt].purities[purity] = {
+            count: 0,
+            grossWeight: new Decimal(0),
+            netWeight: new Decimal(0),
+          };
+        }
+        acc[mt].purities[purity].count += 1;
+        if (item.grossWeight) {
+          acc[mt].purities[purity].grossWeight = acc[mt].purities[purity].grossWeight.plus(
+            item.grossWeight,
+          );
+        }
+        if (item.netWeight) {
+          acc[mt].purities[purity].netWeight = acc[mt].purities[purity].netWeight.plus(
+            item.netWeight,
+          );
+        }
 
         return acc;
       },
@@ -230,7 +392,12 @@ export class ReportsService {
   }
 
   async getCustomerStatement(organizationId: string, customerId: string) {
-    // Combines ledgers to form a chronology
+    // Combines all ledger entries into a chronological account statement.
+    // Convention (from the customer's perspective relative to the business):
+    //   Debit  (+) = customer OWES us more  (e.g. invoice raised, advance consumed)
+    //   Credit (-) = customer is OWED more  (e.g. payment received, advance deposited)
+    // A positive runningBalance means the customer still owes the business.
+    // A negative runningBalance means the business owes the customer (credit on account).
     const ledgers = await this.prisma.ledgerEntry.findMany({
       where: { organizationId, customerId, deletedAt: null },
       orderBy: { createdAt: 'asc' },
@@ -240,16 +407,55 @@ export class ReportsService {
     const statement = ledgers.map((l) => {
       let debit = new Decimal(0);
       let credit = new Decimal(0);
+      const amount = l.amount as Decimal;
 
-      // Depending on logic:
-      // DEBT (Udhar/Invoice) adds to runningBalance (Customer owes us) -> Debit
-      // PAYMENT reduces runningBalance (Customer pays us) -> Credit
-      if (['UDHAR', 'LOAN'].includes(l.type)) {
-        debit = l.amount as Decimal;
-        runningBalance = runningBalance.plus(debit);
-      } else if (['PAYMENT', 'REPAYMENT'].includes(l.type)) {
-        credit = l.amount as Decimal;
-        runningBalance = runningBalance.minus(credit);
+      switch (l.type) {
+        // ── Existing debt types ──────────────────────────────────────────
+        case 'UDHAR':
+        case 'LOAN' as any:
+          // Invoice / udhar raised → customer owes us → Debit
+          debit = amount;
+          runningBalance = runningBalance.plus(debit);
+          break;
+
+        case 'PAYMENT':
+        case 'REPAYMENT' as any:
+          // Customer pays against a debt → Credit
+          credit = amount;
+          runningBalance = runningBalance.minus(credit);
+          break;
+
+        case 'ADJUSTMENT':
+          // Signed adjustment: positive amount = reduces balance (credit), negative = increases (debit)
+          credit = amount;
+          runningBalance = runningBalance.minus(credit);
+          break;
+
+        case 'RETURN':
+          // Goods returned → reduces amount owed → Credit
+          credit = amount;
+          runningBalance = runningBalance.minus(credit);
+          break;
+
+        // ── Advance / credit types ───────────────────────────────────────
+        case 'ADVANCE_RECEIVED':
+        case 'ADVANCE_TRANSFER_IN':
+          // Customer deposits money with us → business owes customer → Credit (negative balance)
+          credit = amount;
+          runningBalance = runningBalance.minus(credit);
+          break;
+
+        case 'ADVANCE_APPLIED':
+        case 'ADVANCE_TRANSFER_OUT':
+        case 'ADVANCE_REFUND':
+          // Advance consumed / moved out → reduces what business owes customer → Debit
+          debit = amount;
+          runningBalance = runningBalance.plus(debit);
+          break;
+
+        default:
+          // Unknown future types — treat as neutral, don't move balance
+          break;
       }
 
       return {
@@ -265,6 +471,7 @@ export class ReportsService {
 
     return {
       statement,
+      // Positive = customer owes us. Negative = we owe customer (advance on account).
       currentBalance: runningBalance,
     };
   }
