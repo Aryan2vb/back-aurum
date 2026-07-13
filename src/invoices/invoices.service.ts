@@ -847,6 +847,10 @@ export class InvoicesService {
             id: true,
             fullName: true,
             customerCode: true,
+            fatherName: true,
+            motherName: true,
+            spouseName: true,
+            gender: true,
             contactDetails: { where: { deletedAt: null }, select: { primaryPhone: true }, take: 1 },
             locations: { where: { deletedAt: null }, take: 1 },
             documents: { where: { deletedAt: null } },
@@ -1466,6 +1470,7 @@ export class InvoicesService {
       destination: dto.destination ?? existing.destination,
       termsOfDelivery: dto.termsOfDelivery ?? existing.termsOfDelivery,
       invoiceDate: dto.invoiceDate ?? existing.invoiceDate?.toISOString(),
+      buyerName: dto.buyerName,
       buyerAddress: dto.buyerAddress,
       buyerState: dto.buyerState,
       buyerStateCode: dto.buyerStateCode,
@@ -1859,7 +1864,7 @@ export class InvoicesService {
     const buyerSnapshot = {
       version: 1,
       data: {
-        name: customer.fullName,
+        name: dto.buyerName || customer.fullName,
         address:
           dto.buyerAddress || (loc ? `${loc.village ?? ''} ${loc.district ?? ''}`.trim() : ''),
         phone: customer.contactDetails?.[0]?.primaryPhone ?? '',
