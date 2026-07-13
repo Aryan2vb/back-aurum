@@ -223,14 +223,27 @@ export class ReportsService {
 
     // Build per-customer buckets with amounts AND date tracking
     const CREDIT_TYPES = [LedgerType.ADVANCE_RECEIVED, LedgerType.ADVANCE_TRANSFER_IN];
-    const DEBIT_TYPES  = [LedgerType.ADVANCE_APPLIED, LedgerType.ADVANCE_TRANSFER_OUT, LedgerType.ADVANCE_REFUND];
+    const DEBIT_TYPES = [
+      LedgerType.ADVANCE_APPLIED,
+      LedgerType.ADVANCE_TRANSFER_OUT,
+      LedgerType.ADVANCE_REFUND,
+    ];
 
-    const byCustomer = new Map<string, {
-      amounts: Record<string, Decimal>;
-      deposits: Array<{ id: string; amount: Decimal; date: Date; paymentMethod: string | null; description: string | null }>;
-      firstReceivedAt: Date | null;
-      lastReceivedAt: Date | null;
-    }>();
+    const byCustomer = new Map<
+      string,
+      {
+        amounts: Record<string, Decimal>;
+        deposits: Array<{
+          id: string;
+          amount: Decimal;
+          date: Date;
+          paymentMethod: string | null;
+          description: string | null;
+        }>;
+        firstReceivedAt: Date | null;
+        lastReceivedAt: Date | null;
+      }
+    >();
 
     for (const e of allEntries) {
       if (!byCustomer.has(e.customerId)) {
@@ -285,18 +298,18 @@ export class ReportsService {
 
         let balance = new Decimal(0);
         for (const type of CREDIT_TYPES) balance = balance.plus(amounts[type] ?? 0);
-        for (const type of DEBIT_TYPES)  balance = balance.minus(amounts[type] ?? 0);
+        for (const type of DEBIT_TYPES) balance = balance.minus(amounts[type] ?? 0);
 
         return {
           customerId: c.id,
           customerName: c.fullName,
           customerCode: c.customerCode,
           phone: c.contactDetails?.[0]?.primaryPhone ?? '',
-          totalReceived:    new Decimal(amounts[LedgerType.ADVANCE_RECEIVED]     ?? 0),
-          totalApplied:     new Decimal(amounts[LedgerType.ADVANCE_APPLIED]      ?? 0),
+          totalReceived: new Decimal(amounts[LedgerType.ADVANCE_RECEIVED] ?? 0),
+          totalApplied: new Decimal(amounts[LedgerType.ADVANCE_APPLIED] ?? 0),
           totalTransferOut: new Decimal(amounts[LedgerType.ADVANCE_TRANSFER_OUT] ?? 0),
-          totalTransferIn:  new Decimal(amounts[LedgerType.ADVANCE_TRANSFER_IN]  ?? 0),
-          totalRefunded:    new Decimal(amounts[LedgerType.ADVANCE_REFUND]       ?? 0),
+          totalTransferIn: new Decimal(amounts[LedgerType.ADVANCE_TRANSFER_IN] ?? 0),
+          totalRefunded: new Decimal(amounts[LedgerType.ADVANCE_REFUND] ?? 0),
           availableBalance: balance,
           firstReceivedAt,
           lastReceivedAt,
@@ -306,10 +319,7 @@ export class ReportsService {
       .filter((r) => r.availableBalance.greaterThan(0))
       .sort((a, b) => b.availableBalance.toNumber() - a.availableBalance.toNumber());
 
-    const totalAdvanceHeld = result.reduce(
-      (s, r) => s.plus(r.availableBalance),
-      new Decimal(0),
-    );
+    const totalAdvanceHeld = result.reduce((s, r) => s.plus(r.availableBalance), new Decimal(0));
 
     return {
       summary: { totalAdvanceHeld, customersCount: result.length },
