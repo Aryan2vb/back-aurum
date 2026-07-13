@@ -38,7 +38,7 @@ export class OrganizationsController {
   }
 
   @Get('members')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN ,  OrganizationRole.STAFF , OrganizationRole.VIEWER)
   getMembers(@CurrentUser() user: CurrentUserData) {
     return this.organizationsService.getMembers(user);
   }
