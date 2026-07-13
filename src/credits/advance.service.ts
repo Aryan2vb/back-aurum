@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUserData } from '../auth/current-user.decorator';
 import { CreditStatus, LedgerType, Prisma } from '@prisma/client';
@@ -13,10 +8,7 @@ import { RefundAdvanceDto } from './dto/refund-advance.dto';
 import { TransferAdvanceDto } from './dto/transfer-advance.dto';
 
 /** Ledger types that INCREASE the customer's advance credit balance. */
-const ADVANCE_CREDIT_TYPES = [
-  LedgerType.ADVANCE_RECEIVED,
-  LedgerType.ADVANCE_TRANSFER_IN,
-] as const;
+const ADVANCE_CREDIT_TYPES = [LedgerType.ADVANCE_RECEIVED, LedgerType.ADVANCE_TRANSFER_IN] as const;
 
 /** Ledger types that DECREASE the customer's advance credit balance. */
 const ADVANCE_DEBIT_TYPES = [
@@ -25,10 +17,7 @@ const ADVANCE_DEBIT_TYPES = [
   LedgerType.ADVANCE_REFUND,
 ] as const;
 
-export const ALL_ADVANCE_TYPES = [
-  ...ADVANCE_CREDIT_TYPES,
-  ...ADVANCE_DEBIT_TYPES,
-] as const;
+export const ALL_ADVANCE_TYPES = [...ADVANCE_CREDIT_TYPES, ...ADVANCE_DEBIT_TYPES] as const;
 
 @Injectable()
 export class AdvanceService {
@@ -119,11 +108,7 @@ export class AdvanceService {
   // Receive Advance
   // ─────────────────────────────────────────────────────────────────────────
 
-  async receiveAdvance(
-    customerId: string,
-    dto: ReceiveAdvanceDto,
-    user: CurrentUserData,
-  ) {
+  async receiveAdvance(customerId: string, dto: ReceiveAdvanceDto, user: CurrentUserData) {
     const { organizationId, userId } = user;
 
     const customer = await this.prisma.customer.findFirst({
@@ -265,7 +250,7 @@ export class AdvanceService {
         data: {
           organizationId,
           invoiceId,
-          mode: 'CREDIT',   // PaymentMethod.CREDIT — "advance credit used"
+          mode: 'CREDIT', // PaymentMethod.CREDIT — "advance credit used"
           amount: applyAmount,
           paidAt: paymentDate,
           notes: notes ?? 'Advance payment',
@@ -320,11 +305,7 @@ export class AdvanceService {
   // Transfer Advance
   // ─────────────────────────────────────────────────────────────────────────
 
-  async transferAdvance(
-    fromCustomerId: string,
-    dto: TransferAdvanceDto,
-    user: CurrentUserData,
-  ) {
+  async transferAdvance(fromCustomerId: string, dto: TransferAdvanceDto, user: CurrentUserData) {
     const { organizationId, userId } = user;
     const transferAmount = new Decimal(dto.amount);
 
@@ -353,8 +334,7 @@ export class AdvanceService {
           customerId: fromCustomerId,
           amount: transferAmount,
           type: LedgerType.ADVANCE_TRANSFER_OUT,
-          description:
-            dto.notes ?? `Advance transferred to ${toCustomer.fullName}`,
+          description: dto.notes ?? `Advance transferred to ${toCustomer.fullName}`,
           createdById: userId,
           // referenceLedgerEntryId will be updated after inEntry is created
         },
@@ -366,8 +346,7 @@ export class AdvanceService {
           customerId: dto.toCustomerId,
           amount: transferAmount,
           type: LedgerType.ADVANCE_TRANSFER_IN,
-          description:
-            dto.notes ?? `Advance received from ${fromCustomer.fullName}`,
+          description: dto.notes ?? `Advance received from ${fromCustomer.fullName}`,
           referenceLedgerEntryId: outEntry.id,
           createdById: userId,
         },
@@ -395,11 +374,7 @@ export class AdvanceService {
   // Refund Advance
   // ─────────────────────────────────────────────────────────────────────────
 
-  async refundAdvance(
-    customerId: string,
-    dto: RefundAdvanceDto,
-    user: CurrentUserData,
-  ) {
+  async refundAdvance(customerId: string, dto: RefundAdvanceDto, user: CurrentUserData) {
     const { organizationId, userId } = user;
     const refundAmount = new Decimal(dto.amount);
 
@@ -481,11 +456,7 @@ export class AdvanceService {
    * entries represent transactions that have already happened and should not
    * be deleted individually (use a correcting refund/transfer instead).
    */
-  async deleteAdvanceEntry(
-    customerId: string,
-    ledgerEntryId: string,
-    user: CurrentUserData,
-  ) {
+  async deleteAdvanceEntry(customerId: string, ledgerEntryId: string, user: CurrentUserData) {
     const { organizationId } = user;
 
     const entry = await this.prisma.ledgerEntry.findFirst({

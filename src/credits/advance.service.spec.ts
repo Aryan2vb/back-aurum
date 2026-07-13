@@ -18,11 +18,12 @@ const ORG = 'org-1';
 const ARYAN = 'customer-aryan';
 const MRS_ARYAN = 'customer-mrs-aryan';
 
-const user = (customerId = ARYAN) => ({
-  organizationId: ORG,
-  userId: 'user-staff',
-  // other fields not needed by advance service
-} as any);
+const user = () =>
+  ({
+    organizationId: ORG,
+    userId: 'user-staff',
+    // other fields not needed by advance service
+  }) as any;
 
 function makeDecimal(n: number) {
   return new Decimal(n);
@@ -193,9 +194,11 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
 
     const tx = {
       ledgerEntry: {
-        groupBy: jest.fn().mockResolvedValue([
-          { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(100000) } },
-        ]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([
+            { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(100000) } },
+          ]),
         create: jest.fn().mockResolvedValue({ id: 'le-002' }),
       },
       udharEntry: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -222,9 +225,11 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
 
     const tx = {
       ledgerEntry: {
-        groupBy: jest.fn().mockResolvedValue([
-          { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(100000) } },
-        ]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([
+            { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(100000) } },
+          ]),
         create: jest.fn().mockResolvedValue({ id: 'le-002' }),
       },
       udharEntry: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -253,9 +258,9 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
 
     const service = new AdvanceService(prisma);
 
-    await expect(
-      service.applyAdvanceToInvoice(INVOICE_ID, 50000, user()),
-    ).rejects.toThrow(BadRequestException);
+    await expect(service.applyAdvanceToInvoice(INVOICE_ID, 50000, user())).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('throws when customer has insufficient advance balance', async () => {
@@ -263,9 +268,11 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
 
     const tx = {
       ledgerEntry: {
-        groupBy: jest.fn().mockResolvedValue([
-          { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(5000) } },
-        ]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([
+            { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(5000) } },
+          ]),
       },
     };
 
@@ -276,9 +283,9 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
 
     const service = new AdvanceService(prisma);
 
-    await expect(
-      service.applyAdvanceToInvoice(INVOICE_ID, 40000, user()),
-    ).rejects.toThrow(BadRequestException);
+    await expect(service.applyAdvanceToInvoice(INVOICE_ID, 40000, user())).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('also updates the linked UdharEntry when present', async () => {
@@ -292,9 +299,11 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
 
     const tx = {
       ledgerEntry: {
-        groupBy: jest.fn().mockResolvedValue([
-          { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(100000) } },
-        ]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([
+            { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(100000) } },
+          ]),
         create: jest.fn().mockResolvedValue({ id: 'le-002' }),
       },
       udharEntry: {
@@ -336,13 +345,12 @@ describe('AdvanceService.transferAdvance', () => {
 
     const tx = {
       ledgerEntry: {
-        groupBy: jest.fn().mockResolvedValue([
-          { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(60000) } },
-        ]),
-        create: jest
+        groupBy: jest
           .fn()
-          .mockResolvedValueOnce(outEntry)
-          .mockResolvedValueOnce(inEntry),
+          .mockResolvedValue([
+            { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(60000) } },
+          ]),
+        create: jest.fn().mockResolvedValueOnce(outEntry).mockResolvedValueOnce(inEntry),
         update: jest.fn().mockResolvedValue(outEntry),
       },
     };
@@ -400,9 +408,11 @@ describe('AdvanceService.transferAdvance', () => {
   it('throws when source customer has insufficient balance', async () => {
     const tx = {
       ledgerEntry: {
-        groupBy: jest.fn().mockResolvedValue([
-          { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(10000) } },
-        ]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([
+            { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(10000) } },
+          ]),
       },
     };
 
@@ -433,10 +443,7 @@ describe('AdvanceService.transferAdvance', () => {
   it('throws when destination customer does not exist', async () => {
     const prisma = {
       customer: {
-        findFirst: jest
-          .fn()
-          .mockResolvedValueOnce({ id: ARYAN })
-          .mockResolvedValueOnce(null),
+        findFirst: jest.fn().mockResolvedValueOnce({ id: ARYAN }).mockResolvedValueOnce(null),
       },
     } as any;
 
@@ -462,9 +469,11 @@ describe('AdvanceService.refundAdvance', () => {
 
     const tx = {
       ledgerEntry: {
-        groupBy: jest.fn().mockResolvedValue([
-          { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(35000) } },
-        ]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([
+            { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(35000) } },
+          ]),
         create: jest.fn().mockResolvedValue(refundEntry),
       },
     };
@@ -492,9 +501,11 @@ describe('AdvanceService.refundAdvance', () => {
   it('throws when refund exceeds available balance', async () => {
     const tx = {
       ledgerEntry: {
-        groupBy: jest.fn().mockResolvedValue([
-          { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(5000) } },
-        ]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([
+            { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(5000) } },
+          ]),
       },
     };
 
@@ -550,9 +561,11 @@ describe('Aryan scenario — advance balance formula', () => {
     // ── Mrs Aryan balance ─────────────────────────────────────────────────
     const mrsAryanPrisma = {
       ledgerEntry: {
-        groupBy: jest.fn().mockResolvedValue([
-          { type: LedgerType.ADVANCE_TRANSFER_IN, _sum: { amount: makeDecimal(25000) } },
-        ]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([
+            { type: LedgerType.ADVANCE_TRANSFER_IN, _sum: { amount: makeDecimal(25000) } },
+          ]),
       },
     } as any;
 
@@ -640,19 +653,19 @@ describe('Customer statement with advance entries', () => {
 
     const rows: LedgerRow[] = [
       { type: 'ADVANCE_RECEIVED', amount: makeDecimal(100000) }, // balance: -100000
-      { type: 'UDHAR', amount: makeDecimal(80000) },              // balance:  -20000
-      { type: 'ADVANCE_APPLIED', amount: makeDecimal(40000) },    // balance:   20000
-      { type: 'ADVANCE_TRANSFER_OUT', amount: makeDecimal(25000) },// balance:  45000
-      { type: 'ADVANCE_REFUND', amount: makeDecimal(10000) },     // balance:   55000
+      { type: 'UDHAR', amount: makeDecimal(80000) }, // balance:  -20000
+      { type: 'ADVANCE_APPLIED', amount: makeDecimal(40000) }, // balance:   20000
+      { type: 'ADVANCE_TRANSFER_OUT', amount: makeDecimal(25000) }, // balance:  45000
+      { type: 'ADVANCE_REFUND', amount: makeDecimal(10000) }, // balance:   55000
     ];
 
     const statement = simulateStatement(rows);
 
     expect(statement[0].balance.toNumber()).toBe(-100000); // credit on account
-    expect(statement[1].balance.toNumber()).toBe(-20000);  // udhar partially offsets
-    expect(statement[2].balance.toNumber()).toBe(20000);   // advance applied, udhar outstanding
-    expect(statement[3].balance.toNumber()).toBe(45000);   // transfer out
-    expect(statement[4].balance.toNumber()).toBe(55000);   // refund
+    expect(statement[1].balance.toNumber()).toBe(-20000); // udhar partially offsets
+    expect(statement[2].balance.toNumber()).toBe(20000); // advance applied, udhar outstanding
+    expect(statement[3].balance.toNumber()).toBe(45000); // transfer out
+    expect(statement[4].balance.toNumber()).toBe(55000); // refund
 
     // Final: Aryan owes ₹55,000 net (the UDHAR not yet fully covered)
     // This is correct: ₹80,000 udhar - ₹40,000 advance applied - ₹100,000 received + ₹25,000 out + ₹10,000 refunded
