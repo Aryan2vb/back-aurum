@@ -57,6 +57,10 @@ export class UpdateInvoiceDto {
 
   @IsString()
   @IsOptional()
+  buyerName?: string;
+
+  @IsString()
+  @IsOptional()
   buyerAddress?: string;
 
   @IsString()

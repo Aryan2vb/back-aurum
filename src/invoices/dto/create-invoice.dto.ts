@@ -181,7 +181,11 @@ export class CreateInvoiceDto {
   @IsOptional()
   invoiceDate?: string;
 
-  // Buyer address override (if different from customer's stored address)
+  // Buyer details override
+  @IsString()
+  @IsOptional()
+  buyerName?: string;
+
   @IsString()
   @IsOptional()
   buyerAddress?: string;
