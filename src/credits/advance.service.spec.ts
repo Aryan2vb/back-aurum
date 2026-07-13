@@ -201,6 +201,7 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
           ]),
         create: jest.fn().mockResolvedValue({ id: 'le-002' }),
       },
+      invoicePayment: { create: jest.fn().mockResolvedValue({ id: 'ip-001' }) },
       udharEntry: { findFirst: jest.fn().mockResolvedValue(null) },
       invoice: {
         update: jest.fn().mockResolvedValue({ ...invoice, paidAmount: makeDecimal(40000) }),
@@ -232,6 +233,7 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
           ]),
         create: jest.fn().mockResolvedValue({ id: 'le-002' }),
       },
+      invoicePayment: { create: jest.fn().mockResolvedValue({ id: 'ip-001' }) },
       udharEntry: { findFirst: jest.fn().mockResolvedValue(null) },
       invoice: {
         update: jest.fn().mockResolvedValue({ ...invoice }),
@@ -306,6 +308,7 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
           ]),
         create: jest.fn().mockResolvedValue({ id: 'le-002' }),
       },
+      invoicePayment: { create: jest.fn().mockResolvedValue({ id: 'ip-001' }) },
       udharEntry: {
         findFirst: jest.fn().mockResolvedValue(udhar),
         update: jest.fn().mockResolvedValue(udhar),
