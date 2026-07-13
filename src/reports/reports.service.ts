@@ -363,10 +363,14 @@ export class ReportsService {
         }
         acc[mt].purities[purity].count += 1;
         if (item.grossWeight) {
-          acc[mt].purities[purity].grossWeight = acc[mt].purities[purity].grossWeight.plus(item.grossWeight);
+          acc[mt].purities[purity].grossWeight = acc[mt].purities[purity].grossWeight.plus(
+            item.grossWeight,
+          );
         }
         if (item.netWeight) {
-          acc[mt].purities[purity].netWeight = acc[mt].purities[purity].netWeight.plus(item.netWeight);
+          acc[mt].purities[purity].netWeight = acc[mt].purities[purity].netWeight.plus(
+            item.netWeight,
+          );
         }
 
         return acc;
