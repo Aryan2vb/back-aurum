@@ -118,6 +118,10 @@ export class CreateInvoicePaymentDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   @IsOptional()
   paidAt?: string;
+
+  @IsString()
+  @IsOptional()
+  accountId?: string;
 }
 
 export class CreateInvoiceDto {

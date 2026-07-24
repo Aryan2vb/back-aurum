@@ -1,7 +1,29 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
-import { StockTransactionType, MetalType, TaxType } from '@prisma/client';
+import { UploadService } from '../uploads/upload.service';
+import {
+  MetalType,
+  PaymentMethod,
+  PurchaseStatus,
+  TaxType,
+  FinancialTransactionType,
+} from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
+import { FinanceService } from '../finance/finance.service';
+import { CreatePurchaseBillBookDto } from './dto/create-purchase-bill-book.dto';
+import {
+  buildPurchaseBillBookHtml,
+  getPurchaseBillBookTitle,
+  PurchaseBillBookPage,
+} from './utils/purchase-bill-book-html';
+
+const BILL_BOOK_QUERY_BATCH_SIZE = 100;
 
 type PurchaseItemInput = {
   itemName?: string;
@@ -12,69 +34,75 @@ type PurchaseItemInput = {
   rate?: number;
 };
 
+type PurchasePaymentInput = {
+  mode: PaymentMethod;
+  amount: number;
+  paidAt?: string;
+  reference?: string;
+  notes?: string;
+  accountId?: string;
+};
+
+type PurchaseBillInput = {
+  organizationId: string;
+  vendorId?: string;
+  vendorName?: string;
+  invoiceNumber?: string;
+  billSeries?: string;
+  purchaseDate?: string;
+  dueDate?: string;
+  metalType?: MetalType;
+  purity?: string;
+  totalWeight?: number;
+  rate?: number;
+  totalAmount?: number;
+  addGst?: boolean;
+  gstInclusive?: boolean;
+  taxType?: TaxType;
+  cgstRate?: number;
+  sgstRate?: number;
+  igstRate?: number;
+  notes?: string;
+  attachmentUrl?: string | null;
+  attachmentKey?: string | null;
+  attachmentName?: string | null;
+  attachmentMime?: string | null;
+  items?: PurchaseItemInput[];
+  payments?: PurchasePaymentInput[];
+};
+
 @Injectable()
 export class PurchasesService {
+  private readonly logger = new Logger(PurchasesService.name);
+
   constructor(
     private prisma: PrismaService,
     private stockService: StockService,
+    private uploadService: UploadService,
+    private financeService: FinanceService = new FinanceService(prisma),
   ) {}
 
-  async createPurchase(data: {
-    organizationId: string;
-    vendorId?: string;
-    vendorName?: string;
-    invoiceNumber?: string;
-    billSeries?: string;
-    purchaseDate?: string;
-    dueDate?: string;
-    metalType: MetalType;
-    purity: string;
-    totalWeight: number;
-    rate?: number;
-    totalAmount?: number;
-    addGst?: boolean;
-    gstInclusive?: boolean;
-    taxType?: TaxType;
-    cgstRate?: number;
-    sgstRate?: number;
-    igstRate?: number;
-    notes?: string;
-    items?: PurchaseItemInput[];
-  }) {
+  async createPurchase(data: PurchaseBillInput) {
     return this.prisma.$transaction(async (tx) => {
-      let finalVendorId = data.vendorId;
       const purchaseDate = data.purchaseDate ? new Date(data.purchaseDate) : new Date();
       const itemInputs = this.normalizeItems(data);
       const computed = this.computeTotals(itemInputs, data);
-
-      let vendorData = null;
-      if (!finalVendorId && data.vendorName) {
-        // Find or create vendor by name
-        let vendor = await tx.vendor.findFirst({
-          where: {
-            organizationId: data.organizationId,
-            name: {
-              equals: data.vendorName.trim(),
-              mode: 'insensitive',
-            },
-          },
-        });
-
-        if (!vendor) {
-          vendor = await tx.vendor.create({
-            data: {
-              organizationId: data.organizationId,
-              name: data.vendorName.trim(),
-            },
-          });
-        }
-        finalVendorId = vendor.id;
-        vendorData = vendor;
-      } else if (finalVendorId) {
-        vendorData = await tx.vendor.findUnique({ where: { id: finalVendorId } });
+      const { finalVendorId, vendorData } = await this.resolveVendor(tx, data);
+      const payments = this.normalizePayments(data.payments, purchaseDate);
+      for (const payment of payments) {
+        const account = await this.financeService.resolvePaymentAccount(
+          tx,
+          data.organizationId,
+          payment.mode,
+          payment.accountId,
+        );
+        payment.accountId = account?.id ?? undefined;
       }
+      await this.assertSufficientTreasuryFunds(tx, data.organizationId, payments);
+      const paidAmount = this.sumPayments(payments);
+      this.assertPaidNotOver(paidAmount, computed.grandTotal);
+      const status = this.deriveStatus(paidAmount, computed.grandTotal);
 
-      // 1. Create Purchase Invoice
       const purchase = await tx.purchaseInvoice.create({
         data: {
           organizationId: data.organizationId,
@@ -101,12 +129,18 @@ export class PurchasesService {
           sgstAmount: computed.sgstAmount,
           igstAmount: computed.igstAmount,
           grandTotal: computed.grandTotal,
+          paidAmount,
+          status,
           addGst: !!data.addGst,
           gstInclusive: !!data.gstInclusive,
           totalGoldWeight: computed.totalGoldWeight,
           totalSilverWeight: computed.totalSilverWeight,
           totalMetalAmount: computed.totalMetalAmount,
           notes: data.notes,
+          attachmentUrl: data.attachmentUrl ?? undefined,
+          attachmentKey: data.attachmentKey ?? undefined,
+          attachmentName: data.attachmentName ?? undefined,
+          attachmentMime: data.attachmentMime ?? undefined,
           items: {
             create: computed.items.map((item, index) => ({
               organizationId: data.organizationId,
@@ -120,50 +154,698 @@ export class PurchasesService {
               totalAmount: item.totalAmount,
             })),
           },
+          payments: payments.length
+            ? {
+                create: payments.map((p) => ({
+                  organizationId: data.organizationId,
+                  mode: p.mode,
+                  amount: p.amount,
+                  reference: p.reference,
+                  notes: p.notes,
+                  paidAt: p.paidAt,
+                  accountId: p.accountId,
+                })),
+              }
+            : undefined,
         },
-        include: { items: true, vendor: true },
+        include: { items: true, vendor: true, payments: true },
       });
 
-      // 2. Add each item to Stock Ledger and Update Balance
-      for (const item of computed.items) {
-        await this.stockService.recordStockTransaction({
-          organizationId: data.organizationId,
-          metalType: item.metalType,
-          purity: item.purity,
-          transactionType: StockTransactionType.PURCHASE,
-          quantityIn: item.netWeight,
-          rate: item.rate,
-          date: purchaseDate,
-          referenceId: purchase.id,
-          notes: `Purchase ${item.itemName || item.purity} from Bill: ${purchase.invoiceNumber || purchase.id}`,
-          prismaTx: tx as any, // pass the transaction client
-        });
+      await this.stockService.syncPurchaseStockForInvoice({
+        organizationId: data.organizationId,
+        purchaseId: purchase.id,
+        invoiceNumber: purchase.invoiceNumber,
+        purchaseDate,
+        items: computed.items,
+        prismaTx: tx as any,
+      });
+      await this.syncPurchaseTreasury(tx, purchase.id, data.organizationId);
+
+      return purchase;
+    });
+  }
+
+  async updateAttachment(
+    id: string,
+    organizationId: string,
+    data: {
+      attachmentUrl?: string | null;
+      attachmentKey?: string | null;
+      attachmentName?: string | null;
+      attachmentMime?: string | null;
+    },
+  ) {
+    return this.updateAttachmentOnly(id, { ...data, organizationId });
+  }
+
+  async updatePurchase(id: string, data: PurchaseBillInput) {
+    const hasMeaningfulItems = Array.isArray(data.items) && data.items.length > 0;
+    const hasHeaderBill =
+      data.metalType != null || data.purity != null || data.totalWeight != null;
+    const isFullBillUpdate = hasMeaningfulItems || hasHeaderBill;
+    const hasAttachmentPatch =
+      data.attachmentUrl !== undefined ||
+      data.attachmentKey !== undefined ||
+      data.attachmentName !== undefined ||
+      data.attachmentMime !== undefined;
+
+    // Attachment-only payloads must never fall through into item validation
+    if (hasAttachmentPatch && !isFullBillUpdate) {
+      return this.updateAttachmentOnly(id, data);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.purchaseInvoice.findFirst({
+        where: { id, organizationId: data.organizationId },
+        include: { payments: true },
+      });
+      if (!existing) throw new NotFoundException('Purchase not found');
+      if (existing.status === PurchaseStatus.CANCELLED) {
+        throw new BadRequestException('Cannot edit a cancelled purchase');
+      }
+
+      const purchaseDate = data.purchaseDate ? new Date(data.purchaseDate) : existing.purchaseDate;
+      const itemInputs = this.normalizeItems(data as {
+        metalType: MetalType;
+        purity: string;
+        totalWeight: number;
+        rate?: number;
+        items?: PurchaseItemInput[];
+      });
+      const computed = this.computeTotals(itemInputs, data);
+      const { finalVendorId, vendorData } = await this.resolveVendor(tx, data);
+
+      const replacePayments = Array.isArray(data.payments);
+      const payments = replacePayments
+        ? this.normalizePayments(data.payments, purchaseDate)
+        : existing.payments.map((p) => ({
+            mode: p.mode,
+            amount: Number(p.amount),
+            paidAt: p.paidAt,
+            reference: p.reference || undefined,
+            notes: p.notes || undefined,
+            accountId: p.accountId || undefined,
+          }));
+      const paidAmount = this.sumPayments(payments);
+      this.assertPaidNotOver(paidAmount, computed.grandTotal);
+      const status = this.deriveStatus(paidAmount, computed.grandTotal);
+      if (replacePayments) {
+        for (const payment of payments) {
+          const account = await this.financeService.resolvePaymentAccount(
+            tx,
+            data.organizationId,
+            payment.mode,
+            payment.accountId,
+          );
+          payment.accountId = account?.id ?? undefined;
+        }
+      }
+
+      if (replacePayments) {
+        await tx.purchasePayment.deleteMany({ where: { purchaseInvoiceId: id } });
+      }
+
+      await tx.purchaseInvoiceItem.deleteMany({ where: { purchaseInvoiceId: id } });
+
+      const attachmentData = hasAttachmentPatch
+        ? this.buildAttachmentUpdate(data)
+        : {};
+
+      const purchase = await tx.purchaseInvoice.update({
+        where: { id },
+        data: {
+          vendorId: finalVendorId,
+          vendorName: vendorData?.name,
+          vendorGstin: vendorData?.gstin,
+          vendorStateCode: vendorData?.stateCode,
+          vendorStateName: vendorData?.stateName,
+          invoiceNumber: data.invoiceNumber,
+          billSeries: data.billSeries,
+          purchaseDate,
+          dueDate: data.dueDate ? new Date(data.dueDate) : existing.dueDate,
+          metalType: computed.primaryMetalType,
+          purity: computed.primaryPurity,
+          totalWeight: computed.totalWeight,
+          rate: computed.primaryRate,
+          totalAmount: computed.grandTotal,
+          taxableAmount: computed.taxableAmount,
+          taxType: data.taxType || existing.taxType,
+          cgstRate: computed.cgstRate,
+          sgstRate: computed.sgstRate,
+          igstRate: computed.igstRate,
+          cgstAmount: computed.cgstAmount,
+          sgstAmount: computed.sgstAmount,
+          igstAmount: computed.igstAmount,
+          grandTotal: computed.grandTotal,
+          paidAmount,
+          status,
+          addGst: !!data.addGst,
+          gstInclusive: !!data.gstInclusive,
+          totalGoldWeight: computed.totalGoldWeight,
+          totalSilverWeight: computed.totalSilverWeight,
+          totalMetalAmount: computed.totalMetalAmount,
+          notes: data.notes,
+          ...attachmentData,
+          items: {
+            create: computed.items.map((item, index) => ({
+              organizationId: data.organizationId,
+              slNo: index + 1,
+              itemName: item.itemName,
+              metalType: item.metalType,
+              purity: item.purity,
+              grossWeight: item.grossWeight,
+              netWeight: item.netWeight,
+              rate: item.rate,
+              totalAmount: item.totalAmount,
+            })),
+          },
+          ...(replacePayments && payments.length
+            ? {
+                payments: {
+                  create: payments.map((p) => ({
+                    organizationId: data.organizationId,
+                    mode: p.mode,
+                    amount: p.amount,
+                    reference: p.reference,
+                    notes: p.notes,
+                    paidAt: p.paidAt,
+                    accountId: p.accountId,
+                  })),
+                },
+              }
+            : {}),
+        },
+        include: { items: true, vendor: true, payments: { orderBy: { paidAt: 'desc' } } },
+      });
+
+      await this.stockService.syncPurchaseStockForInvoice({
+        organizationId: data.organizationId,
+        purchaseId: purchase.id,
+        invoiceNumber: purchase.invoiceNumber,
+        purchaseDate,
+        items: computed.items,
+        prismaTx: tx as any,
+      });
+      await this.syncPurchaseTreasury(
+        tx,
+        purchase.id,
+        data.organizationId,
+        !replacePayments,
+      );
+
+      if (hasAttachmentPatch) {
+        await this.maybeDeleteOldAttachment(existing.attachmentKey, purchase.attachmentKey);
       }
 
       return purchase;
     });
   }
 
+  private async updateAttachmentOnly(id: string, data: PurchaseBillInput) {
+    const existing = await this.prisma.purchaseInvoice.findFirst({
+      where: { id, organizationId: data.organizationId },
+    });
+    if (!existing) throw new NotFoundException('Purchase not found');
+    if (existing.status === PurchaseStatus.CANCELLED) {
+      throw new BadRequestException('Cannot edit a cancelled purchase');
+    }
+
+    const purchase = await this.prisma.purchaseInvoice.update({
+      where: { id },
+      data: this.buildAttachmentUpdate(data),
+      include: {
+        items: true,
+        vendor: true,
+        payments: { orderBy: { paidAt: 'desc' } },
+      },
+    });
+
+    await this.maybeDeleteOldAttachment(existing.attachmentKey, purchase.attachmentKey);
+    return purchase;
+  }
+
+  private buildAttachmentUpdate(data: PurchaseBillInput) {
+    const clearing =
+      data.attachmentUrl === null ||
+      data.attachmentKey === null ||
+      (data.attachmentUrl === '' && data.attachmentKey === '');
+
+    if (clearing) {
+      return {
+        attachmentUrl: null,
+        attachmentKey: null,
+        attachmentName: null,
+        attachmentMime: null,
+      };
+    }
+
+    return {
+      ...(data.attachmentUrl !== undefined ? { attachmentUrl: data.attachmentUrl } : {}),
+      ...(data.attachmentKey !== undefined ? { attachmentKey: data.attachmentKey } : {}),
+      ...(data.attachmentName !== undefined ? { attachmentName: data.attachmentName } : {}),
+      ...(data.attachmentMime !== undefined ? { attachmentMime: data.attachmentMime } : {}),
+    };
+  }
+
+  private async maybeDeleteOldAttachment(
+    oldKey: string | null | undefined,
+    newKey: string | null | undefined,
+  ) {
+    if (!oldKey || oldKey === newKey) return;
+    try {
+      await this.uploadService.deleteObject(oldKey);
+    } catch (err) {
+      this.logger.warn(`Failed to delete old purchase attachment key=${oldKey}: ${err}`);
+    }
+  }
+
   async getPurchases(organizationId: string) {
     return this.prisma.purchaseInvoice.findMany({
       where: { organizationId },
-      include: { vendor: true, items: true },
+      include: {
+        vendor: true,
+        items: true,
+        payments: { orderBy: { paidAt: 'desc' } },
+      },
       orderBy: { purchaseDate: 'desc' },
     });
   }
 
+  async generatePurchaseBillBook(
+    dto: CreatePurchaseBillBookDto,
+    organizationId: string,
+  ): Promise<string> {
+    const startedAt = Date.now();
+    const selectedIds = Array.from(new Set(dto.purchaseIds || []));
+    const purchases: Array<{
+      id: string;
+      invoiceNumber: string | null;
+      purchaseDate: Date;
+      vendorName: string | null;
+      attachmentUrl: string | null;
+      attachmentMime: string | null;
+      attachmentName: string | null;
+      vendor: { name: string } | null;
+    }> = [];
+
+    if (selectedIds.length > 0) {
+      for (let offset = 0; offset < selectedIds.length; offset += BILL_BOOK_QUERY_BATCH_SIZE) {
+        purchases.push(
+          ...(await this.prisma.purchaseInvoice.findMany({
+            where: {
+              id: { in: selectedIds.slice(offset, offset + BILL_BOOK_QUERY_BATCH_SIZE) },
+              organizationId,
+              status: { not: PurchaseStatus.CANCELLED },
+            },
+            select: {
+              id: true,
+              invoiceNumber: true,
+              purchaseDate: true,
+              vendorName: true,
+              attachmentUrl: true,
+              attachmentMime: true,
+              attachmentName: true,
+              vendor: { select: { name: true } },
+            },
+          })),
+        );
+      }
+      purchases.sort(
+        (a, b) =>
+          a.purchaseDate.getTime() - b.purchaseDate.getTime() ||
+          String(a.invoiceNumber || '').localeCompare(String(b.invoiceNumber || '')),
+      );
+    } else {
+      const where: {
+        organizationId: string;
+        status: { not: PurchaseStatus };
+        OR?: Array<Record<string, unknown>>;
+      } = {
+        organizationId,
+        status: { not: PurchaseStatus.CANCELLED },
+      };
+
+      if (dto.search?.trim()) {
+        const q = dto.search.trim();
+        where.OR = [
+          { invoiceNumber: { contains: q, mode: 'insensitive' } },
+          { vendorName: { contains: q, mode: 'insensitive' } },
+          { vendorGstin: { contains: q, mode: 'insensitive' } },
+          { vendor: { name: { contains: q, mode: 'insensitive' } } },
+        ];
+      }
+
+      for (let offset = 0; ; offset += BILL_BOOK_QUERY_BATCH_SIZE) {
+        const batch = await this.prisma.purchaseInvoice.findMany({
+          where,
+          select: {
+            id: true,
+            invoiceNumber: true,
+            purchaseDate: true,
+            vendorName: true,
+            attachmentUrl: true,
+            attachmentMime: true,
+            attachmentName: true,
+            vendor: { select: { name: true } },
+          },
+          orderBy: [{ purchaseDate: 'asc' }, { invoiceNumber: 'asc' }],
+          skip: offset,
+          take: BILL_BOOK_QUERY_BATCH_SIZE,
+        });
+        purchases.push(...batch);
+        if (batch.length < BILL_BOOK_QUERY_BATCH_SIZE) break;
+      }
+    }
+
+    if (purchases.length === 0) {
+      throw new BadRequestException('No purchase bills match the Bill Book selection');
+    }
+
+    const pages: PurchaseBillBookPage[] = purchases.map((purchase) => ({
+      billNo: purchase.invoiceNumber || purchase.id.slice(0, 8),
+      vendorName: purchase.vendor?.name || purchase.vendorName || '—',
+      purchaseDate: purchase.purchaseDate.toISOString(),
+      attachmentUrl: purchase.attachmentUrl,
+      attachmentMime: purchase.attachmentMime,
+      attachmentName: purchase.attachmentName,
+    }));
+
+    const html = buildPurchaseBillBookHtml({
+      title: getPurchaseBillBookTitle({
+        selectedCount: selectedIds.length > 0 ? purchases.length : undefined,
+        search: dto.search,
+      }),
+      pages,
+    });
+
+    this.logger.log(
+      `Generated Purchase Bill Book with ${purchases.length} bills in ${Date.now() - startedAt}ms`,
+    );
+    return html;
+  }
+
+  async getPurchase(id: string, organizationId: string) {
+    const purchase = await this.prisma.purchaseInvoice.findFirst({
+      where: { id, organizationId },
+      include: {
+        vendor: true,
+        items: { orderBy: { slNo: 'asc' } },
+        payments: { orderBy: { paidAt: 'desc' } },
+      },
+    });
+    if (!purchase) throw new NotFoundException('Purchase not found');
+
+    const grandTotal = new Decimal(purchase.grandTotal ?? purchase.totalAmount ?? 0);
+    const paidAmount = new Decimal(purchase.paidAmount ?? 0);
+    return {
+      ...purchase,
+      remainingBalance: grandTotal.minus(paidAmount).toDecimalPlaces(2).toNumber(),
+    };
+  }
+
+  /** Hard delete — purge stock ledger for this bill, wipe bill (+ cascade), best-effort R2 clear */
+  async deletePurchase(id: string, organizationId: string) {
+    const existing = await this.prisma.purchaseInvoice.findFirst({
+      where: { id, organizationId },
+      select: { id: true, attachmentKey: true },
+    });
+    if (!existing) throw new NotFoundException('Purchase not found');
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.stockService.purgeTransactionsByReference(
+        organizationId,
+        id,
+        tx,
+      );
+      await this.financeService.reverseMissingSources(
+        tx,
+        organizationId,
+        'PURCHASE',
+        id,
+        [],
+      );
+      await tx.purchaseInvoice.delete({ where: { id } });
+    });
+
+    if (existing.attachmentKey) {
+      try {
+        await this.uploadService.deleteObject(existing.attachmentKey);
+      } catch (err) {
+        this.logger.warn(
+          `Failed to delete purchase attachment key=${existing.attachmentKey}: ${err}`,
+        );
+      }
+    }
+
+    return { deleted: true, id };
+  }
+
+  async recordPayment(
+    id: string,
+    organizationId: string,
+    dto: {
+      amount: number;
+      paymentMethod?: PaymentMethod;
+      paidAt?: string;
+      reference?: string;
+      notes?: string;
+      accountId?: string;
+    },
+  ) {
+    const purchase = await this.prisma.purchaseInvoice.findFirst({
+      where: { id, organizationId },
+    });
+    if (!purchase) throw new NotFoundException('Purchase not found');
+    if (purchase.status === PurchaseStatus.CANCELLED) {
+      throw new BadRequestException('Cannot record payment on a cancelled purchase');
+    }
+    if (purchase.status === PurchaseStatus.PAID) {
+      throw new BadRequestException('Purchase is already fully paid');
+    }
+
+    const paymentAmount = new Decimal(dto.amount);
+    if (paymentAmount.lte(0)) {
+      throw new BadRequestException('Payment amount must be greater than 0');
+    }
+
+    const grandTotal = new Decimal(purchase.grandTotal ?? purchase.totalAmount ?? 0);
+    const newPaidAmount = new Decimal(purchase.paidAmount).add(paymentAmount);
+    if (newPaidAmount.greaterThan(grandTotal)) {
+      throw new BadRequestException(
+        `Payment of ${dto.amount} would exceed remaining balance of ${grandTotal.minus(purchase.paidAmount).toNumber()}`,
+      );
+    }
+
+    const status = this.deriveStatus(newPaidAmount.toNumber(), grandTotal.toNumber());
+    const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      const method = dto.paymentMethod ?? PaymentMethod.CASH;
+      const account = await this.financeService.resolvePaymentAccount(
+        tx,
+        organizationId,
+        method,
+        dto.accountId,
+      );
+      await this.assertSufficientTreasuryFunds(tx, organizationId, [
+        { amount: paymentAmount.toNumber(), accountId: account?.id },
+      ]);
+      await tx.purchasePayment.create({
+        data: {
+          purchaseInvoiceId: id,
+          organizationId,
+          mode: method,
+          accountId: account?.id,
+          amount: paymentAmount,
+          reference: dto.reference,
+          notes: dto.notes,
+          paidAt,
+        },
+      });
+      await this.syncPurchaseTreasury(tx, id, organizationId);
+
+      return tx.purchaseInvoice.update({
+        where: { id },
+        data: { paidAmount: newPaidAmount, status },
+        include: {
+          vendor: true,
+          items: true,
+          payments: { orderBy: { paidAt: 'desc' } },
+        },
+      });
+    });
+  }
+
+  private async resolveVendor(tx: any, data: PurchaseBillInput) {
+    let finalVendorId = data.vendorId;
+    let vendorData = null as any;
+
+    if (!finalVendorId && data.vendorName) {
+      let vendor = await tx.vendor.findFirst({
+        where: {
+          organizationId: data.organizationId,
+          name: { equals: data.vendorName.trim(), mode: 'insensitive' },
+        },
+      });
+      if (!vendor) {
+        vendor = await tx.vendor.create({
+          data: {
+            organizationId: data.organizationId,
+            name: data.vendorName.trim(),
+          },
+        });
+      }
+      finalVendorId = vendor.id;
+      vendorData = vendor;
+    } else if (finalVendorId) {
+      vendorData = await tx.vendor.findFirst({
+        where: { id: finalVendorId, organizationId: data.organizationId },
+      });
+      if (!vendorData) {
+        throw new BadRequestException('Vendor not found');
+      }
+    }
+
+    return { finalVendorId, vendorData };
+  }
+
+  private normalizePayments(
+    payments: PurchasePaymentInput[] | undefined,
+    fallbackDate: Date,
+  ) {
+    if (!payments?.length) return [] as Array<{
+      mode: PaymentMethod;
+      amount: number;
+      paidAt: Date;
+      reference?: string;
+      notes?: string;
+      accountId?: string;
+    }>;
+
+    return payments
+      .map((p) => {
+        const amount = Math.round((Number(p.amount) + Number.EPSILON) * 100) / 100;
+        if (!Number.isFinite(amount) || amount <= 0) return null;
+        if (!p.mode) {
+          throw new BadRequestException('Payment mode is required');
+        }
+        return {
+          mode: p.mode,
+          amount,
+          paidAt: p.paidAt ? new Date(p.paidAt) : fallbackDate,
+          reference: p.reference,
+          notes: p.notes,
+          accountId: p.accountId,
+        };
+      })
+      .filter(Boolean) as Array<{
+      mode: PaymentMethod;
+      amount: number;
+      paidAt: Date;
+      reference?: string;
+      notes?: string;
+      accountId?: string;
+    }>;
+  }
+
+  private sumPayments(payments: Array<{ amount: number }>) {
+    return Math.round(
+      (payments.reduce((sum, p) => sum + Number(p.amount || 0), 0) + Number.EPSILON) * 100,
+    ) / 100;
+  }
+
+  private async assertSufficientTreasuryFunds(
+    tx: any,
+    organizationId: string,
+    payments: Array<{ amount: number; accountId?: string }>,
+  ) {
+    if (!tx.financialMovement) return;
+    const requiredByAccount = new Map<string, Decimal>();
+    for (const payment of payments) {
+      if (!payment.accountId) continue;
+      requiredByAccount.set(
+        payment.accountId,
+        (requiredByAccount.get(payment.accountId) ?? new Decimal(0)).add(payment.amount),
+      );
+    }
+
+    for (const [accountId, required] of requiredByAccount) {
+      const balance = await tx.financialMovement.aggregate({
+        where: { organizationId, accountId },
+        _sum: { amount: true },
+      });
+      const available = new Decimal(balance._sum.amount ?? 0);
+      if (required.greaterThan(available)) {
+        throw new BadRequestException(
+          `Insufficient account funds: available ₹${available.toDecimalPlaces(2)}, required ₹${required.toDecimalPlaces(2)}`,
+        );
+      }
+    }
+  }
+
+  private assertPaidNotOver(paidAmount: number, grandTotal: number) {
+    if (paidAmount > grandTotal + 0.01) {
+      throw new BadRequestException(
+        `Paid amount ${paidAmount} cannot exceed bill total ${grandTotal}`,
+      );
+    }
+  }
+
+  private deriveStatus(paidAmount: number, grandTotal: number): PurchaseStatus {
+    if (paidAmount <= 0) return PurchaseStatus.UNPAID;
+    if (paidAmount + 0.01 >= grandTotal) return PurchaseStatus.PAID;
+    return PurchaseStatus.PARTIAL;
+  }
+
+  private async syncPurchaseTreasury(
+    tx: any,
+    purchaseId: string,
+    organizationId: string,
+    allowUnassignedNonCash = false,
+  ) {
+    const payments = await tx.purchasePayment.findMany({
+      where: { purchaseInvoiceId: purchaseId, organizationId },
+    });
+    for (const payment of payments) {
+      await this.financeService.syncAutomaticPayment(
+        tx,
+        {
+          organizationId,
+          sourceType: 'PURCHASE_PAYMENT',
+          sourceId: payment.id,
+          sourceParentType: 'PURCHASE',
+          sourceParentId: purchaseId,
+          transactionType: FinancialTransactionType.PURCHASE_PAYMENT,
+          paymentMethod: payment.mode,
+          accountId: payment.accountId,
+          amount: payment.amount,
+          occurredAt: payment.paidAt,
+          description: payment.notes ?? 'Purchase payment',
+        },
+        allowUnassignedNonCash,
+      );
+    }
+    await this.financeService.reverseMissingSources(
+      tx,
+      organizationId,
+      'PURCHASE',
+      purchaseId,
+      payments.map((payment: { id: string }) => payment.id),
+    );
+  }
+
   private normalizeItems(data: {
-    metalType: MetalType;
-    purity: string;
-    totalWeight: number;
+    metalType?: MetalType;
+    purity?: string;
+    totalWeight?: number;
     rate?: number;
     items?: PurchaseItemInput[];
   }): PurchaseItemInput[] {
     const sourceItems = data.items?.length
       ? data.items
       : [{
-          metalType: data.metalType,
-          purity: data.purity,
+          metalType: data.metalType as MetalType,
+          purity: data.purity as string,
           grossWeight: data.totalWeight,
           netWeight: data.totalWeight,
           rate: data.rate,
@@ -235,17 +917,17 @@ export class PurchasesService {
     const cgstRate = taxType === 'CGST_SGST' ? round2(toNumber(data.cgstRate, 1.5)) : 0;
     const sgstRate = taxType === 'CGST_SGST' ? round2(toNumber(data.sgstRate, 1.5)) : 0;
     const igstRate = taxType === 'IGST' ? round2(toNumber(data.igstRate, 3.0)) : 0;
-    
+
     const totalTaxRate = data.addGst ? (taxType === 'CGST_SGST' ? cgstRate + sgstRate : igstRate) : 0;
-    
+
     const taxableAmount = data.addGst && data.gstInclusive
       ? round2(subtotal / (1 + totalTaxRate / 100))
       : subtotal;
-      
+
     const cgstAmount = data.addGst && taxType === 'CGST_SGST' ? round2(taxableAmount * cgstRate / 100) : 0;
     const sgstAmount = data.addGst && taxType === 'CGST_SGST' ? round2(taxableAmount * sgstRate / 100) : 0;
     const igstAmount = data.addGst && taxType === 'IGST' ? round2(taxableAmount * igstRate / 100) : 0;
-    
+
     const grandTotal = data.addGst && !data.gstInclusive
       ? round2(subtotal + cgstAmount + sgstAmount + igstAmount)
       : subtotal;

@@ -19,4 +19,8 @@ export class RefundAdvanceDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  accountId?: string;
 }

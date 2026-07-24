@@ -14,6 +14,8 @@ import { AppController } from './app.controller';
 import { StockModule } from './stock/stock.module';
 import { VendorsModule } from './vendors/vendors.module';
 import { PurchasesModule } from './purchases/purchases.module';
+import { FinanceModule } from './finance/finance.module';
+import { BankStatementModule } from './bank-statement/bank-statement.module';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { PurchasesModule } from './purchases/purchases.module';
     StockModule,
     VendorsModule,
     PurchasesModule,
+    FinanceModule,
+    BankStatementModule,
   ],
   controllers: [AppController],
   providers: [

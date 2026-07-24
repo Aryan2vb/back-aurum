@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUserData } from '../auth/current-user.decorator';
-import { CreditStatus, LedgerType, Prisma } from '@prisma/client';
+import { CreditStatus, FinancialTransactionType, LedgerType, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { ReceiveAdvanceDto } from './dto/receive-advance.dto';
 import { RefundAdvanceDto } from './dto/refund-advance.dto';
 import { TransferAdvanceDto } from './dto/transfer-advance.dto';
+import { FinanceService } from '../finance/finance.service';
 
 /** Ledger types that INCREASE the customer's advance credit balance. */
 const ADVANCE_CREDIT_TYPES = [LedgerType.ADVANCE_RECEIVED, LedgerType.ADVANCE_TRANSFER_IN] as const;
@@ -23,7 +24,10 @@ export const ALL_ADVANCE_TYPES = [...ADVANCE_CREDIT_TYPES, ...ADVANCE_DEBIT_TYPE
 export class AdvanceService {
   private readonly logger = new Logger(AdvanceService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly financeService: FinanceService = new FinanceService(prisma),
+  ) {}
 
   // ─────────────────────────────────────────────────────────────────────────
   // Balance query
@@ -137,6 +141,12 @@ export class AdvanceService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const account = await this.financeService.resolvePaymentAccount(
+        tx,
+        organizationId,
+        dto.paymentMethod,
+        dto.accountId,
+      );
       const ledger = await tx.ledgerEntry.create({
         data: {
           organizationId,
@@ -150,7 +160,22 @@ export class AdvanceService {
           invoiceId: null,
           createdById: userId,
           createdAt: entryDate,
+          accountId: account?.id,
         },
+      });
+      await this.financeService.syncAutomaticPayment(tx, {
+        organizationId,
+        sourceType: 'ADVANCE_LEDGER',
+        sourceId: ledger.id,
+        sourceParentType: 'ADVANCE',
+        sourceParentId: ledger.id,
+        transactionType: FinancialTransactionType.ADVANCE_RECEIPT,
+        paymentMethod: dto.paymentMethod,
+        accountId: ledger.accountId,
+        amount: ledger.amount,
+        occurredAt: ledger.createdAt,
+        description: ledger.description,
+        createdById: userId,
       });
 
       this.logger.log(
@@ -385,6 +410,12 @@ export class AdvanceService {
 
     return this.prisma.$transaction(async (tx) => {
       await this._assertSufficientBalance(tx, customerId, organizationId, refundAmount);
+      const account = await this.financeService.resolvePaymentAccount(
+        tx,
+        organizationId,
+        dto.paymentMethod,
+        dto.accountId,
+      );
 
       const ledger = await tx.ledgerEntry.create({
         data: {
@@ -395,7 +426,22 @@ export class AdvanceService {
           description: dto.notes ?? `Advance refunded via ${dto.paymentMethod}`,
           paymentMethod: dto.paymentMethod,
           createdById: userId,
+          accountId: account?.id,
         },
+      });
+      await this.financeService.syncAutomaticPayment(tx, {
+        organizationId,
+        sourceType: 'ADVANCE_LEDGER',
+        sourceId: ledger.id,
+        sourceParentType: 'ADVANCE',
+        sourceParentId: ledger.id,
+        transactionType: FinancialTransactionType.ADVANCE_REFUND,
+        paymentMethod: dto.paymentMethod,
+        accountId: ledger.accountId,
+        amount: ledger.amount,
+        occurredAt: ledger.createdAt,
+        description: ledger.description,
+        createdById: userId,
       });
 
       this.logger.log(
@@ -487,9 +533,17 @@ export class AdvanceService {
       `Advance entry deleted: id=${ledgerEntryId} customer=${customerId} amount=${entry.amount} by=${user.userId}`,
     );
 
-    await this.prisma.ledgerEntry.update({
-      where: { id: ledgerEntryId, organizationId },
-      data: { deletedAt: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.ledgerEntry.update({
+        where: { id: ledgerEntryId, organizationId },
+        data: { deletedAt: new Date() },
+      });
+      await this.financeService.reverseSource(
+        tx,
+        organizationId,
+        'ADVANCE_LEDGER',
+        ledgerEntryId,
+      );
     });
 
     return {

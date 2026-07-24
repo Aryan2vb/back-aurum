@@ -124,7 +124,7 @@ export class StockService {
     date?: string | Date,
   ) {
     const normalizedPurity = this.normalizePurity(purity, metalType);
-    
+
     // Check if an opening balance already exists
     const existingOB = await this.prisma.stockLedger.findFirst({
       where: {
@@ -136,13 +136,10 @@ export class StockService {
     });
 
     if (existingOB) {
-      const oldQty = Number(existingOB.quantityIn);
-      const deltaQty = quantity - oldQty;
       const totalValue = rate ? rate * quantity : null;
       const parsedDate = date ? new Date(date) : existingOB.date;
 
       return this.prisma.$transaction(async (tx) => {
-        // 1. Update the opening balance record
         const updatedOB = await tx.stockLedger.update({
           where: { id: existingOB.id },
           data: {
@@ -153,70 +150,37 @@ export class StockService {
           },
         });
 
-        // 2. Recalculate running balances for all entries chronologically
-        const ledgerEntries = await tx.stockLedger.findMany({
-          where: {
-            organizationId,
-            metalType,
-            purity: normalizedPurity,
-          },
-          orderBy: { date: 'asc' },
-        });
-
-        let currentRunning = 0;
-        for (const entry of ledgerEntries) {
-          const qtyIn = Number(entry.quantityIn);
-          const qtyOut = Number(entry.quantityOut);
-          
-          if (entry.transactionType === StockTransactionType.OPENING_BALANCE) {
-            currentRunning = qtyIn; // use the updated opening balance quantity
-          } else {
-            currentRunning = currentRunning + qtyIn - qtyOut;
-          }
-
-          await tx.stockLedger.update({
-            where: { id: entry.id },
-            data: { runningBalance: currentRunning },
-          });
-        }
-
-        // 3. Update the StockBalance
-        const balance = await tx.stockBalance.findUnique({
-          where: {
-            organizationId_metalType_purity: {
-              organizationId,
-              metalType,
-              purity: normalizedPurity,
-            },
-          },
-        });
-
-        if (balance) {
-          await tx.stockBalance.update({
-            where: { id: balance.id },
-            data: { quantity: Number(balance.quantity) + deltaQty },
-          });
-        }
+        await this.recalcRunningBalances(
+          organizationId,
+          metalType,
+          normalizedPurity,
+          tx,
+        );
 
         return updatedOB;
       });
-    } else {
-      return this.recordStockTransaction({
-        organizationId,
-        metalType,
-        purity: normalizedPurity,
-        transactionType: StockTransactionType.OPENING_BALANCE,
-        quantityIn: quantity,
-        rate,
-        date: date ? new Date(date) : undefined,
-        notes: 'Initial Opening Balance',
-      });
     }
+
+    return this.recordStockTransaction({
+      organizationId,
+      metalType,
+      purity: normalizedPurity,
+      transactionType: StockTransactionType.OPENING_BALANCE,
+      quantityIn: quantity,
+      rate,
+      date: date ? new Date(date) : undefined,
+      notes: 'Initial Opening Balance',
+    });
   }
 
   async getGroupSummary(organizationId: string, startDateStr?: string, endDateStr?: string) {
+    // Match reports.service: date-only strings are inclusive calendar days (UTC).
     const startDate = startDateStr ? new Date(startDateStr) : null;
-    const endDate = endDateStr ? new Date(endDateStr) : null;
+    let endDate: Date | null = null;
+    if (endDateStr) {
+      endDate = new Date(endDateStr);
+      endDate.setUTCHours(23, 59, 59, 999);
+    }
 
     // Fetch all stock ledger records for GOLD and SILVER for the organization
     const ledger = await this.prisma.stockLedger.findMany({
@@ -278,13 +242,20 @@ export class StockService {
 
       const isBeforePeriod = startDate ? entryDate.getTime() < startDate.getTime() : false;
 
-      if (entry.transactionType === StockTransactionType.OPENING_BALANCE || entry.transactionType === StockTransactionType.PURCHASE) {
+      // Keep moving average state for ADJUSTMENT rows too (sale/purchase reversals).
+      if (entry.transactionType === StockTransactionType.OPENING_BALANCE) {
         const newQty = state.qty + qtyIn;
-        const newCostVal = state.val + (qtyIn * transactionRate);
+        const newCostVal = state.val + qtyIn * transactionRate;
         state.qty = newQty;
         state.val = newCostVal;
         state.avgRate = newQty > 0 ? newCostVal / newQty : 0;
-      } else if (entry.transactionType === StockTransactionType.SALE) {
+      } else if (qtyIn > 0) {
+        const newQty = state.qty + qtyIn;
+        const newCostVal = state.val + qtyIn * transactionRate;
+        state.qty = newQty;
+        state.val = newCostVal;
+        state.avgRate = newQty > 0 ? newCostVal / newQty : 0;
+      } else if (qtyOut > 0) {
         const newQty = state.qty - qtyOut;
         state.qty = newQty;
         state.val = newQty * state.avgRate;
@@ -304,14 +275,14 @@ export class StockService {
         const pRecord = getPeriodRecord(key, entry.metalType, entry.purity);
         if (entry.transactionType === StockTransactionType.OPENING_BALANCE) {
           pRecord.opQty += qtyIn;
-          pRecord.opVal += (qtyIn * transactionRate);
-        } else if (entry.transactionType === StockTransactionType.PURCHASE) {
+          pRecord.opVal += qtyIn * transactionRate;
+        } else if (qtyIn > 0) {
           pRecord.inQty += qtyIn;
-          pRecord.inVal += (qtyIn * transactionRate);
-        } else if (entry.transactionType === StockTransactionType.SALE) {
+          pRecord.inVal += qtyIn * transactionRate;
+        } else if (qtyOut > 0) {
           pRecord.outQty += qtyOut;
-          pRecord.outSaleVal += (qtyOut * transactionRate);
-          pRecord.outVal += (qtyOut * state.avgRate);
+          pRecord.outSaleVal += qtyOut * transactionRate;
+          pRecord.outVal += qtyOut * state.avgRate;
         }
       }
     }
@@ -322,7 +293,7 @@ export class StockService {
     for (const key of allKeys) {
       const parts = key.split('_');
       const metalType = parts[0] as MetalType;
-      const purity = parts[1];
+      const purity = parts.slice(1).join('_'); // purity can contain underscores in theory
 
       const pRecord = periodMap.get(key) || {
         metalType,
@@ -376,50 +347,222 @@ export class StockService {
   }
 
   /**
-   * Reverse SALE rows posted for a reference (invoice id). Idempotent: skips if a
-   * Reversal: ledger row already exists for the same referenceId.
+   * Zero out all stock movements for a reference (invoice id) by posting
+   * ADJUSTMENT rows for the remaining net out/(in). Safe to call repeatedly.
    */
   async reverseTransactionsByReference(
+    organizationId: string,
+    referenceId: string,
+    prismaTx?: Prisma.TransactionClient,
+    notesPrefix = 'Reversal:',
+  ) {
+    const db = prismaTx || this.prisma;
+
+    const entries = await db.stockLedger.findMany({
+      where: { organizationId, referenceId },
+    });
+
+    const nets = new Map<
+      string,
+      { metalType: MetalType; purity: string; netOut: number; rate?: number }
+    >();
+
+    for (const entry of entries) {
+      const key = `${entry.metalType}|${entry.purity}`;
+      const cur = nets.get(key) || {
+        metalType: entry.metalType,
+        purity: entry.purity,
+        netOut: 0,
+        rate: undefined as number | undefined,
+      };
+      cur.netOut += Number(entry.quantityOut || 0) - Number(entry.quantityIn || 0);
+      if (entry.rate != null) cur.rate = Number(entry.rate);
+      nets.set(key, cur);
+    }
+
+    for (const row of nets.values()) {
+      if (Math.abs(row.netOut) < 1e-9) continue;
+
+      if (row.netOut > 0) {
+        await this.recordStockTransaction({
+          organizationId,
+          metalType: row.metalType,
+          purity: row.purity,
+          transactionType: StockTransactionType.ADJUSTMENT,
+          quantityIn: row.netOut,
+          rate: row.rate,
+          referenceId,
+          notes: `${notesPrefix} ${referenceId}`,
+          prismaTx,
+        });
+      } else {
+        await this.recordStockTransaction({
+          organizationId,
+          metalType: row.metalType,
+          purity: row.purity,
+          transactionType: StockTransactionType.ADJUSTMENT,
+          quantityOut: -row.netOut,
+          rate: row.rate,
+          referenceId,
+          notes: `${notesPrefix} ${referenceId}`,
+          prismaTx,
+        });
+      }
+    }
+  }
+
+  /**
+   * Replace SALE stock for an invoice: clear any prior net for this invoice, then
+   * post SALE rows from the current line items. Use on finalize and on edit.
+   */
+  async syncSaleStockForInvoice(params: {
+    organizationId: string;
+    invoiceId: string;
+    invoiceNumber: string;
+    items: any[];
+    prismaTx?: Prisma.TransactionClient;
+  }) {
+    const { organizationId, invoiceId, invoiceNumber, items, prismaTx } = params;
+
+    await this.reverseTransactionsByReference(
+      organizationId,
+      invoiceId,
+      prismaTx,
+      'Reversal:',
+    );
+
+    for (const item of items || []) {
+      const purity = item.purityLabel || item.purityValue || item.purity;
+      const netWeight = Number(item.netWeight || 0);
+      if (!item.metalType || !purity || netWeight <= 0) continue;
+
+      await this.recordStockTransaction({
+        organizationId,
+        metalType: item.metalType as MetalType,
+        purity: String(purity),
+        transactionType: StockTransactionType.SALE,
+        quantityOut: netWeight,
+        rate: Number(item.effectiveRate || item.unitPrice || item.metalRate || 0),
+        referenceId: invoiceId,
+        notes: `Sale from Invoice: ${invoiceNumber}`,
+        prismaTx,
+      });
+    }
+  }
+
+  /**
+   * Replace PURCHASE stock for a purchase bill: clear prior net, then post PURCHASE IN rows.
+   */
+  async syncPurchaseStockForInvoice(params: {
+    organizationId: string;
+    purchaseId: string;
+    invoiceNumber?: string | null;
+    purchaseDate?: Date;
+    items: Array<{
+      metalType: MetalType | string;
+      purity: string;
+      netWeight: number;
+      rate?: number;
+      itemName?: string | null;
+    }>;
+    prismaTx?: Prisma.TransactionClient;
+  }) {
+    const { organizationId, purchaseId, invoiceNumber, purchaseDate, items, prismaTx } = params;
+
+    await this.reverseTransactionsByReference(
+      organizationId,
+      purchaseId,
+      prismaTx,
+      'Reversal:',
+    );
+
+    for (const item of items || []) {
+      const purity = item.purity;
+      const netWeight = Number(item.netWeight || 0);
+      if (!item.metalType || !purity || netWeight <= 0) continue;
+
+      await this.recordStockTransaction({
+        organizationId,
+        metalType: item.metalType as MetalType,
+        purity: String(purity),
+        transactionType: StockTransactionType.PURCHASE,
+        quantityIn: netWeight,
+        rate: item.rate != null ? Number(item.rate) : undefined,
+        date: purchaseDate,
+        referenceId: purchaseId,
+        notes: `Purchase ${item.itemName || item.purity} from Bill: ${invoiceNumber || purchaseId}`,
+        prismaTx,
+      });
+    }
+  }
+
+  /**
+   * Hard-remove all ledger rows for a reference (e.g. deleted purchase).
+   * Rebuilds running balances + StockBalance — no Adjustment ghost rows.
+   */
+  async purgeTransactionsByReference(
     organizationId: string,
     referenceId: string,
     prismaTx?: Prisma.TransactionClient,
   ) {
     const db = prismaTx || this.prisma;
 
-    const alreadyReversed = await db.stockLedger.findFirst({
-      where: {
-        organizationId,
-        referenceId,
-        transactionType: StockTransactionType.ADJUSTMENT,
-        notes: { startsWith: 'Reversal:' },
-      },
+    const entries = await db.stockLedger.findMany({
+      where: { organizationId, referenceId },
+      select: { metalType: true, purity: true },
     });
-    if (alreadyReversed) return;
+    if (!entries.length) return;
 
-    const sales = await db.stockLedger.findMany({
-      where: {
-        organizationId,
-        referenceId,
-        transactionType: StockTransactionType.SALE,
-      },
-    });
-
-    for (const sale of sales) {
-      const qtyOut = Number(sale.quantityOut || 0);
-      if (qtyOut <= 0) continue;
-
-      await this.recordStockTransaction({
-        organizationId,
-        metalType: sale.metalType,
-        purity: sale.purity,
-        transactionType: StockTransactionType.ADJUSTMENT,
-        quantityIn: qtyOut,
-        rate: sale.rate != null ? Number(sale.rate) : undefined,
-        referenceId,
-        notes: `Reversal: ${sale.notes || referenceId}`,
-        prismaTx,
+    const buckets = new Map<string, { metalType: MetalType; purity: string }>();
+    for (const e of entries) {
+      buckets.set(`${e.metalType}|${e.purity}`, {
+        metalType: e.metalType,
+        purity: e.purity,
       });
     }
+
+    await db.stockLedger.deleteMany({ where: { organizationId, referenceId } });
+
+    for (const { metalType, purity } of buckets.values()) {
+      await this.recalcRunningBalances(organizationId, metalType, purity, db);
+    }
+  }
+
+  private async recalcRunningBalances(
+    organizationId: string,
+    metalType: MetalType,
+    purity: string,
+    db: Prisma.TransactionClient | PrismaService,
+  ) {
+    const ledgerEntries = await db.stockLedger.findMany({
+      where: { organizationId, metalType, purity },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    let currentRunning = 0;
+    for (const entry of ledgerEntries) {
+      const qtyIn = Number(entry.quantityIn);
+      const qtyOut = Number(entry.quantityOut);
+
+      if (entry.transactionType === StockTransactionType.OPENING_BALANCE) {
+        currentRunning = qtyIn;
+      } else {
+        currentRunning = currentRunning + qtyIn - qtyOut;
+      }
+
+      await db.stockLedger.update({
+        where: { id: entry.id },
+        data: { runningBalance: currentRunning },
+      });
+    }
+
+    await db.stockBalance.upsert({
+      where: {
+        organizationId_metalType_purity: { organizationId, metalType, purity },
+      },
+      create: { organizationId, metalType, purity, quantity: currentRunning },
+      update: { quantity: currentRunning },
+    });
   }
 
   normalizePurity(purity: string, metalType: string): string {

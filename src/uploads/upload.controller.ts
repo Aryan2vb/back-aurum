@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Logger,
   BadRequestException,
+  ForbiddenException,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -16,7 +17,7 @@ import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { UploadService } from './upload.service';
 import { PresignUploadDto, DeleteUploadDto } from './dto/presign-upload.dto';
-import { ASSET_CONFIG } from './asset-type.enum';
+import { AssetType, ASSET_CONFIG } from './asset-type.enum';
 
 @Controller('uploads')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -34,15 +35,17 @@ export class UploadController {
    * After a successful upload, the frontend should save the returned `publicUrl`
    * via the relevant PATCH endpoint (e.g. PATCH /invoices/settings for logos).
    *
-   * Roles: OWNER | ADMIN
+   * Roles: OWNER | ADMIN for all asset types; STAFF only for PURCHASE_DOC.
    */
   @Post('presign')
   @HttpCode(HttpStatus.OK)
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   async presign(@Body() dto: PresignUploadDto, @CurrentUser() user: CurrentUserData) {
     this.logger.log(
       `POST /uploads/presign — assetType: ${dto.assetType}, org: ${user.organizationId}`,
     );
+
+    this.assertUploadRole(user.role, dto.assetType);
 
     const config = ASSET_CONFIG[dto.assetType];
 
@@ -81,11 +84,11 @@ export class UploadController {
    * Deletes a specific R2 object by key.
    * Use this when the user removes an image (e.g. clears their logo).
    *
-   * Roles: OWNER | ADMIN
+   * Roles: OWNER | ADMIN for all keys; STAFF only for purchase doc keys.
    */
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   async deleteObject(@Body() dto: DeleteUploadDto, @CurrentUser() user: CurrentUserData) {
     this.logger.log(`DELETE /uploads — key: ${dto.key}, org: ${user.organizationId}`);
 
@@ -95,6 +98,21 @@ export class UploadController {
       throw new BadRequestException('You do not have permission to delete this file');
     }
 
+    this.assertDeleteRole(user.role, dto.key, user.organizationId);
+
     await this.uploadService.deleteObject(dto.key);
+  }
+
+  private assertUploadRole(role: OrganizationRole, assetType: AssetType) {
+    if (role === OrganizationRole.OWNER || role === OrganizationRole.ADMIN) return;
+    if (role === OrganizationRole.STAFF && assetType === AssetType.PURCHASE_DOC) return;
+    throw new ForbiddenException('Insufficient role for this upload type');
+  }
+
+  private assertDeleteRole(role: OrganizationRole, key: string, orgId: string) {
+    if (role === OrganizationRole.OWNER || role === OrganizationRole.ADMIN) return;
+    const purchasePrefix = `org/${orgId}/purchases/`;
+    if (role === OrganizationRole.STAFF && key.startsWith(purchasePrefix)) return;
+    throw new ForbiddenException('Insufficient role to delete this file');
   }
 }
