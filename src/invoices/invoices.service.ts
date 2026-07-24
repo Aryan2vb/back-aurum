@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditsService } from '../credits/credits.service';
+import { StockService } from '../stock/stock.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { CreateOrgInvoiceSettingsDto } from './dto/create-org-invoice-settings.dto';
 import { QueryInvoicesDto } from './dto/query-invoices.dto';
@@ -17,6 +18,8 @@ import {
   TaxType,
   MakingChargesType,
   PaymentMethod,
+  StockTransactionType,
+  MetalType,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { getFinancialYear } from './utils/invoice-calculations';
@@ -39,6 +42,7 @@ export class InvoicesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly creditsService: CreditsService,
+    private readonly stockService: StockService,
     private readonly pdfService: PdfService,
     private readonly calcService: InvoiceCalculationService,
   ) {}
@@ -576,6 +580,14 @@ export class InvoicesService {
         });
       }
 
+      // 3. Automated Stock Deduction
+      await this._deductStockForInvoice(tx, {
+        organizationId,
+        invoiceId: updatedInvoice.id,
+        invoiceNumber: updatedInvoice.invoiceNumber!,
+        items: draft.items,
+      });
+
       return updatedInvoice;
     });
   }
@@ -729,6 +741,16 @@ export class InvoicesService {
           items: lineItems as any,
           userId,
           notes: financials.notes,
+        });
+      }
+
+      // 3. Automated Stock Deduction
+      if (!isDraft) {
+        await this._deductStockForInvoice(tx, {
+          organizationId,
+          invoiceId: invoice.id,
+          invoiceNumber: invoiceNumber || invoice.id,
+          items: lineItems,
         });
       }
 
@@ -1404,6 +1426,8 @@ export class InvoicesService {
         data: { status: InvoiceStatus.CANCELLED, updatedAt: new Date() },
       });
 
+      await this.stockService.reverseTransactionsByReference(organizationId, id, tx as any);
+
       const udhar = await tx.udharEntry.findFirst({
         where: { invoiceId: id, organizationId, deletedAt: null },
       });
@@ -1666,8 +1690,60 @@ export class InvoicesService {
         });
       }
 
+      // Draft → finalize via update (FE primary path) must post SALE stock
+      if (isFinalizing) {
+        await this._deductStockForInvoice(tx, {
+          organizationId,
+          invoiceId: id,
+          invoiceNumber: invoiceNumber || id,
+          items: updated.items?.length ? updated.items : financials.lineItems,
+        });
+      }
+
       return updated;
     });
+  }
+
+  private async _deductStockForInvoice(
+    tx: Prisma.TransactionClient,
+    params: {
+      organizationId: string;
+      invoiceId: string;
+      invoiceNumber: string;
+      items: any[];
+    },
+  ) {
+    const { organizationId, invoiceId, invoiceNumber, items } = params;
+
+    // Idempotent: skip if SALE rows already posted for this invoice
+    const stockLedger = (tx as any).stockLedger ?? this.prisma.stockLedger;
+    if (stockLedger?.findFirst) {
+      const existingSale = await stockLedger.findFirst({
+        where: {
+          organizationId,
+          referenceId: invoiceId,
+          transactionType: StockTransactionType.SALE,
+        },
+      });
+      if (existingSale) return;
+    }
+
+    for (const item of items || []) {
+      const purity = item.purityLabel || item.purityValue || item.purity;
+      if (!item.metalType || !purity || !item.netWeight) continue;
+
+      await this.stockService.recordStockTransaction({
+        organizationId,
+        metalType: item.metalType as MetalType,
+        purity: String(purity),
+        transactionType: StockTransactionType.SALE,
+        quantityOut: Number(item.netWeight),
+        rate: Number(item.effectiveRate || item.unitPrice || item.metalRate || 0),
+        referenceId: invoiceId,
+        notes: `Sale from Invoice: ${invoiceNumber}`,
+        prismaTx: tx as any,
+      });
+    }
   }
 
   private _mapFinancialItemToDb(item: any, invoiceId: string, organizationId: string) {
