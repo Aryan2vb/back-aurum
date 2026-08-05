@@ -53,3 +53,40 @@ describe('BankStatementService reconcile cleanup', () => {
     expect(prisma.bankStatementLine.delete).toHaveBeenCalledWith({ where: { id: 'line-1' } });
   });
 });
+
+describe('BankStatementService.confirmMatch', () => {
+  it('rejects linking a payment booked to a different bank account', async () => {
+    const prisma = {
+      bankStatementLine: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'line-1',
+            organizationId: 'org-1',
+            accountId: 'bank-a',
+            status: BankStatementLineStatus.UNMATCHED,
+            credit: 100,
+          })
+          .mockResolvedValueOnce(null),
+      },
+      invoicePayment: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'pay-1',
+          organizationId: 'org-1',
+          invoiceId: 'inv-1',
+          accountId: 'bank-b',
+          mode: 'UPI',
+          amount: 100,
+          paidAt: new Date(),
+          invoice: { invoiceNumber: 'INV-1' },
+        }),
+      },
+      $transaction: jest.fn(),
+    };
+    const service = new BankStatementService(prisma as any);
+    await expect(
+      service.confirmMatch('line-1', 'pay-1', { organizationId: 'org-1', userId: 'u1' } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});

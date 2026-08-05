@@ -263,6 +263,7 @@ export class PurchasesService {
           );
           payment.accountId = account?.id ?? undefined;
         }
+        await this.assertSufficientTreasuryFunds(tx, data.organizationId, payments);
       }
 
       if (replacePayments) {

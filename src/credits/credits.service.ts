@@ -6,7 +6,13 @@ import { CreateCreditTransactionDto } from './dto/create-credit-transaction.dto'
 import { UpdateCreditTransactionDto } from './dto/update-credit-transaction.dto';
 import { QueryCreditsDto } from './dto/query-credits.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
-import { CreditStatus, FinancialTransactionType, LedgerType, PaymentMethod } from '@prisma/client';
+import {
+  CreditStatus,
+  FinancialTransactionType,
+  LedgerType,
+  PaymentMethod,
+  BankStatementLineStatus,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { FinanceService } from '../finance/finance.service';
 
@@ -511,6 +517,18 @@ export class CreditsService {
               'INVOICE_PAYMENT',
               invoicePayment.id,
             );
+            await tx.bankStatementLine.updateMany({
+              where: {
+                organizationId: user.organizationId,
+                invoicePaymentId: invoicePayment.id,
+                status: BankStatementLineStatus.MATCHED,
+              },
+              data: {
+                status: BankStatementLineStatus.UNMATCHED,
+                invoicePaymentId: null,
+                matchedInvoiceId: null,
+              },
+            });
             await tx.invoicePayment.delete({ where: { id: invoicePayment.id } });
           }
         }

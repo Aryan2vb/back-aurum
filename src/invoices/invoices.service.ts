@@ -1498,6 +1498,16 @@ export class InvoicesService {
       await this.stockService.purgeTransactionsByReference(organizationId, id, tx);
       await this.financeService.reverseMissingSources(tx, organizationId, 'INVOICE', id, []);
 
+      const payments = await tx.invoicePayment.findMany({
+        where: { invoiceId: id, organizationId },
+        select: { id: true },
+      });
+      await this.unmatchBankLinesForPayments(
+        tx,
+        organizationId,
+        payments.map((p) => p.id),
+      );
+
       return updated;
     });
   }
@@ -1508,9 +1518,23 @@ export class InvoicesService {
     });
     if (!inv) throw new NotFoundException('Invoice not found');
 
-    return this.prisma.invoice.update({
-      where: { id, organizationId },
-      data: { deletedAt: new Date() },
+    return this.prisma.$transaction(async (tx) => {
+      const payments = await tx.invoicePayment.findMany({
+        where: { invoiceId: id, organizationId },
+        select: { id: true },
+      });
+      await this.unmatchBankLinesForPayments(
+        tx,
+        organizationId,
+        payments.map((p) => p.id),
+      );
+      await this.stockService.purgeTransactionsByReference(organizationId, id, tx);
+      await this.financeService.reverseMissingSources(tx, organizationId, 'INVOICE', id, []);
+
+      return tx.invoice.update({
+        where: { id, organizationId },
+        data: { deletedAt: new Date() },
+      });
     });
   }
 
@@ -1625,8 +1649,13 @@ export class InvoicesService {
       if (dto.payments !== undefined) {
         const existingPaymentsToPreserve = [...existing.payments];
 
-        // Delete all existing payments
+        // Delete all existing payments — clear bank matches first (loose string FK)
         if (existing.payments.length > 0) {
+          await this.unmatchBankLinesForPayments(
+            tx,
+            organizationId,
+            existing.payments.map((p) => p.id),
+          );
           await tx.invoicePayment.deleteMany({
             where: {
               invoiceId: id,
@@ -2327,6 +2356,26 @@ export class InvoicesService {
       invoiceId,
       payments.map((payment) => payment.id),
     );
+  }
+
+  private async unmatchBankLinesForPayments(
+    tx: Prisma.TransactionClient,
+    organizationId: string,
+    paymentIds: string[],
+  ) {
+    if (!paymentIds.length || !(tx as any).bankStatementLine?.updateMany) return;
+    await tx.bankStatementLine.updateMany({
+      where: {
+        organizationId,
+        invoicePaymentId: { in: paymentIds },
+        status: BankStatementLineStatus.MATCHED,
+      },
+      data: {
+        status: BankStatementLineStatus.UNMATCHED,
+        invoicePaymentId: null,
+        matchedInvoiceId: null,
+      },
+    });
   }
 
   private async _syncInvoiceFinancialsWithLedger(

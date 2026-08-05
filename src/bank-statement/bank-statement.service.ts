@@ -1,7 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { BankStatementLineStatus, FinancialAccountType, PaymentMethod } from '@prisma/client';
+import {
+  BankStatementLineStatus,
+  FinancialAccountType,
+  FinancialTransactionType,
+  PaymentMethod,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { CurrentUserData } from '../auth/current-user.decorator';
+import { FinanceService } from '../finance/finance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseHdfcDelimited } from './hdfc-statement.parser';
 import {
@@ -12,7 +18,10 @@ import {
 
 @Injectable()
 export class BankStatementService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly financeService: FinanceService = new FinanceService(prisma),
+  ) {}
 
   async upload(accountId: string, text: string, filename: string, user: CurrentUserData) {
     const account = await this.prisma.financialAccount.findFirst({
@@ -283,6 +292,12 @@ export class BankStatementService {
       throw new BadRequestException('This payment is already linked to another statement line');
     }
 
+    if (payment.accountId && payment.accountId !== line.accountId) {
+      throw new BadRequestException(
+        'Payment is booked to a different bank account than this statement',
+      );
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const lineRow = await tx.bankStatementLine.update({
         where: { id: line.id },
@@ -293,12 +308,27 @@ export class BankStatementService {
         },
       });
       // Fill account on the payment if staff never picked one at booking time.
+      const accountId = payment.accountId || line.accountId;
       if (!payment.accountId) {
         await tx.invoicePayment.update({
           where: { id: payment.id },
-          data: { accountId: line.accountId },
+          data: { accountId },
         });
       }
+      await this.financeService.syncAutomaticPayment(tx, {
+        organizationId: user.organizationId,
+        sourceType: 'INVOICE_PAYMENT',
+        sourceId: payment.id,
+        sourceParentType: 'INVOICE',
+        sourceParentId: payment.invoiceId,
+        transactionType: FinancialTransactionType.SALE_RECEIPT,
+        paymentMethod: payment.mode,
+        accountId,
+        amount: payment.amount,
+        occurredAt: payment.paidAt,
+        description: payment.notes ?? 'Invoice payment',
+        createdById: user.userId,
+      });
       return lineRow;
     });
 
