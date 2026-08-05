@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Logger, Param, Patch, Post, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Logger,
+  Param,
+  Patch,
+  Post,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { Response } from 'express';
 import { PurchasesService } from './purchases.service';
 import { MetalType, OrganizationRole, PaymentMethod, TaxType } from '@prisma/client';
@@ -61,10 +72,7 @@ export class PurchasesController {
 
   @Post()
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
-  async createPurchase(
-    @CurrentUser() user: CurrentUserData,
-    @Body() data: PurchaseBody,
-  ) {
+  async createPurchase(@CurrentUser() user: CurrentUserData, @Body() data: PurchaseBody) {
     return this.purchasesService.createPurchase({
       ...data,
       organizationId: user.organizationId,
@@ -155,19 +163,13 @@ export class PurchasesController {
     OrganizationRole.STAFF,
     OrganizationRole.VIEWER,
   )
-  async getPurchase(
-    @CurrentUser() user: CurrentUserData,
-    @Param('id') id: string,
-  ) {
+  async getPurchase(@CurrentUser() user: CurrentUserData, @Param('id') id: string) {
     return this.purchasesService.getPurchase(id, user.organizationId);
   }
 
   @Delete(':id')
   @Roles(OrganizationRole.OWNER)
-  async deletePurchase(
-    @CurrentUser() user: CurrentUserData,
-    @Param('id') id: string,
-  ) {
+  async deletePurchase(@CurrentUser() user: CurrentUserData, @Param('id') id: string) {
     return this.purchasesService.deletePurchase(id, user.organizationId);
   }
 }

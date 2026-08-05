@@ -34,7 +34,10 @@ const formatDate = (date?: string | Date): string => {
     : iso;
 };
 
-export function getPurchaseBillBookTitle({ selectedCount, search }: PurchaseBillBookTitleInput): string {
+export function getPurchaseBillBookTitle({
+  selectedCount,
+  search,
+}: PurchaseBillBookTitleInput): string {
   if (selectedCount !== undefined) return `Purchase Bill Book - ${selectedCount} Bills`;
   if (search?.trim()) return `Purchase Bill Book - "${search.trim()}"`;
   return 'Purchase Bill Book - All Purchases';

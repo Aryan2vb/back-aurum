@@ -70,7 +70,9 @@ export class StockService {
     const newQuantity = Number(currentBalance.quantity) + quantityIn - quantityOut;
 
     if (newQuantity < 0) {
-      console.warn(`[StockService] Negative stock warning for ${purity} ${metalType}. New balance: ${newQuantity}`);
+      console.warn(
+        `[StockService] Negative stock warning for ${purity} ${metalType}. New balance: ${newQuantity}`,
+      );
     }
 
     // Update Balance
@@ -155,12 +157,7 @@ export class StockService {
           },
         });
 
-        await this.recalcRunningBalances(
-          organizationId,
-          metalType,
-          normalizedPurity,
-          tx,
-        );
+        await this.recalcRunningBalances(organizationId, metalType, normalizedPurity, tx);
 
         return updatedOB;
       });
@@ -200,17 +197,20 @@ export class StockService {
     const stateMap = new Map<string, { qty: number; avgRate: number; val: number }>();
 
     // Map to accumulate period data for the query interval
-    const periodMap = new Map<string, {
-      metalType: MetalType;
-      purity: string;
-      opQty: number;
-      opVal: number;
-      inQty: number;
-      inVal: number;
-      outQty: number;
-      outVal: number;
-      outSaleVal: number;
-    }>();
+    const periodMap = new Map<
+      string,
+      {
+        metalType: MetalType;
+        purity: string;
+        opQty: number;
+        opVal: number;
+        inQty: number;
+        inVal: number;
+        outQty: number;
+        outVal: number;
+        outSaleVal: number;
+      }
+    >();
 
     const getState = (key: string) => {
       if (!stateMap.has(key)) {
@@ -319,7 +319,12 @@ export class StockService {
 
       const closingQty = pRecord.opQty + pRecord.inQty - pRecord.outQty;
       const denominator = pRecord.opQty + pRecord.inQty;
-      const closingRate = denominator > 0 ? (pRecord.opVal + pRecord.inVal) / denominator : (pRecord.opQty > 0 ? pRecord.opVal / pRecord.opQty : 0);
+      const closingRate =
+        denominator > 0
+          ? (pRecord.opVal + pRecord.inVal) / denominator
+          : pRecord.opQty > 0
+            ? pRecord.opVal / pRecord.opQty
+            : 0;
       const closingVal = closingQty * closingRate;
 
       results.push({
@@ -603,7 +608,9 @@ export class StockService {
   }
 
   normalizePurity(purity: string, metalType: string): string {
-    const raw = String(purity || '').toUpperCase().trim();
+    const raw = String(purity || '')
+      .toUpperCase()
+      .trim();
     // "22.00" / "22.0" → "22"; keep labels like "22K"
     const p = raw.replace(/(\d+)\.0+$/, '$1');
 
@@ -618,11 +625,32 @@ export class StockService {
         /^24(\.0+)?$/.test(raw)
       )
         return '24K';
-      if (p === '22' || p === '22K' || p === '916' || p.includes('916') || p.includes('22K') || /^22(\.0+)?$/.test(raw))
+      if (
+        p === '22' ||
+        p === '22K' ||
+        p === '916' ||
+        p.includes('916') ||
+        p.includes('22K') ||
+        /^22(\.0+)?$/.test(raw)
+      )
         return '22K';
-      if (p === '20' || p === '20K' || p === '833' || p.includes('833') || p.includes('20K') || /^20(\.0+)?$/.test(raw))
+      if (
+        p === '20' ||
+        p === '20K' ||
+        p === '833' ||
+        p.includes('833') ||
+        p.includes('20K') ||
+        /^20(\.0+)?$/.test(raw)
+      )
         return '20K';
-      if (p === '18' || p === '18K' || p === '750' || p.includes('750') || p.includes('18K') || /^18(\.0+)?$/.test(raw))
+      if (
+        p === '18' ||
+        p === '18K' ||
+        p === '750' ||
+        p.includes('750') ||
+        p.includes('18K') ||
+        /^18(\.0+)?$/.test(raw)
+      )
         return '18K';
     } else if (metalType === 'SILVER') {
       if (p === 'FINE' || p === 'F' || p === '999' || p === '99' || p.includes('FINE')) return 'F';

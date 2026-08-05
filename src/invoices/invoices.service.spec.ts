@@ -21,7 +21,14 @@ const financeServiceMock = () =>
 
 describe('InvoicesService payment dates', () => {
   const buildService = () =>
-    new InvoicesService({} as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    new InvoicesService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
 
   it('normalizes a selected payment date to the start of that UTC day', () => {
     const service = buildService();
@@ -108,7 +115,14 @@ describe('InvoicesService invoice sequence allocation', () => {
   };
 
   const buildService = () =>
-    new InvoicesService({} as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    new InvoicesService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
 
   const buildTx = ({
     existingInvoice = null,
@@ -271,7 +285,14 @@ describe('InvoicesService invoice sequence allocation', () => {
         findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'invoice-1' }),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
 
     await expect(
       service.getSequenceAvailability(organizationId, 112, '2025-04-01'),
@@ -300,7 +321,14 @@ describe('InvoicesService invoice sequence allocation', () => {
         findFirst: jest.fn().mockResolvedValue(null),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
 
     await service.getSequenceAvailability(organizationId, 115, '2025-04-01', 'draft-invoice');
 
@@ -343,7 +371,14 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
     service._createInvoiceBalanceRecord = jest.fn();
 
     await service.finalize(
@@ -382,7 +417,14 @@ describe('InvoicesService invoice sequence allocation', () => {
         ]),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock());
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    );
 
     await expect(service.getMissingSequences(organizationId, '2025-04-01')).resolves.toEqual({
       prefix: 'BILL',
@@ -434,7 +476,14 @@ describe('InvoicesService invoice sequence allocation', () => {
         findMany: jest.fn(),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock());
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    );
 
     await expect(service.getMissingSequences(organizationId, '2025-04-01')).resolves.toEqual({
       prefix: 'INV',
@@ -504,7 +553,14 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
     service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
       taxType: 'CGST_SGST',
       placeOfSupply: '07',
@@ -597,7 +653,14 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
     service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
       taxType: 'CGST_SGST',
       placeOfSupply: '07',
@@ -686,7 +749,14 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
     service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
       status: 'PAID',
       taxType: 'CGST_SGST',
@@ -757,7 +827,14 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
     service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
       status: 'DRAFT',
       taxType: 'CGST_SGST',
@@ -839,7 +916,14 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
     service._createInvoiceBalanceRecord = jest.fn();
 
     await service.finalize(
@@ -872,7 +956,14 @@ describe('InvoicesService bill book', () => {
         ]),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
     service._renderInvoiceHtml = jest.fn((invoice: any) => `<html>${invoice.id}</html>`);
 
     const html = await service.generateBillBook(
@@ -910,7 +1001,14 @@ describe('InvoicesService bill book', () => {
           .mockResolvedValueOnce([{ id: 'invoice-100', invoiceDate: new Date('2026-04-02') }]),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    ) as any;
     service._renderInvoiceHtml = jest.fn((invoice: any) => `<html>${invoice.id}</html>`);
 
     await service.generateBillBook(
@@ -945,14 +1043,28 @@ describe('InvoicesService bill book', () => {
 
   it('rejects a bill book with no eligible invoices', async () => {
     const prisma = { invoice: { findMany: jest.fn().mockResolvedValue([]) } };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock());
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    );
 
     await expect(service.generateBillBook({}, organizationId)).rejects.toThrow(BadRequestException);
   });
 
   it('does not export other statuses when filters request drafts', async () => {
     const prisma = { invoice: { findMany: jest.fn() } };
-    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock());
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      financeServiceMock(),
+    );
 
     await expect(
       service.generateBillBook({ status: 'DRAFT' as any }, organizationId),

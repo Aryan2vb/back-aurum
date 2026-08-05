@@ -15,7 +15,9 @@ const AMOUNT_RE = /^-?\d+(?:\.\d+)?$/;
 
 /** Parse DD/MM/YY or DD/MM/YYYY as UTC midnight. */
 export function parseHdfcDate(raw: string): Date | null {
-  const m = String(raw || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  const m = String(raw || '')
+    .trim()
+    .match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
   if (!m) return null;
   const day = Number(m[1]);
   const month = Number(m[2]);
@@ -26,7 +28,9 @@ export function parseHdfcDate(raw: string): Date | null {
 }
 
 export function parseHdfcAmount(raw: string): number {
-  const cleaned = String(raw || '').replace(/,/g, '').trim();
+  const cleaned = String(raw || '')
+    .replace(/,/g, '')
+    .trim();
   if (!cleaned || !AMOUNT_RE.test(cleaned)) return 0;
   return Math.round(Number(cleaned) * 100) / 100;
 }
@@ -56,7 +60,9 @@ export function fingerprintHdfcRow(row: {
   return createHash('sha256').update(payload).digest('hex');
 }
 
-export function inferPaymentMethodFromNarration(narration: string): 'UPI' | 'NEFT' | 'RTGS' | 'IMPS' | 'BANK_TRANSFER' {
+export function inferPaymentMethodFromNarration(
+  narration: string,
+): 'UPI' | 'NEFT' | 'RTGS' | 'IMPS' | 'BANK_TRANSFER' {
   const n = (narration || '').toUpperCase();
   if (n.includes('UPI')) return 'UPI';
   if (n.includes('NEFT')) return 'NEFT';
@@ -79,7 +85,9 @@ export function parseHdfcDelimited(text: string): HdfcStatementRow[] {
 
   if (!lines.length) return [];
 
-  const headerIdx = lines.findIndex((line) => /debit\s*amount/i.test(line) && /credit\s*amount/i.test(line));
+  const headerIdx = lines.findIndex(
+    (line) => /debit\s*amount/i.test(line) && /credit\s*amount/i.test(line),
+  );
   const dataLines = headerIdx >= 0 ? lines.slice(headerIdx + 1) : lines;
 
   const rows: HdfcStatementRow[] = [];

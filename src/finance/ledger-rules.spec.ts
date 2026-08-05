@@ -72,9 +72,13 @@ describe('finance ledger rules', () => {
 
   it('rejects legacy manual types that are no longer supported', () => {
     expect(() =>
-      buildManualMovements(FinancialTransactionType.OPENING_BALANCE as FinancialTransactionType, 10, {
-        account: account('cash', FinancialAccountType.CASH),
-      }),
+      buildManualMovements(
+        FinancialTransactionType.OPENING_BALANCE as FinancialTransactionType,
+        10,
+        {
+          account: account('cash', FinancialAccountType.CASH),
+        },
+      ),
     ).toThrow(BadRequestException);
   });
 });

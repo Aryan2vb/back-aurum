@@ -993,7 +993,7 @@ export class InvoicesService {
         },
       });
 
-      const payment = await tx.invoicePayment.create({
+      await tx.invoicePayment.create({
         data: {
           invoiceId: id,
           organizationId: user.organizationId,

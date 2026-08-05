@@ -464,9 +464,7 @@ export class FinanceService {
   }
 
   async createManualTransaction(dto: CreateManualTransactionDto, user: CurrentUserData) {
-    const ids = [
-      ...new Set([dto.fromAccountId, dto.toAccountId, dto.accountId].filter(Boolean)),
-    ];
+    const ids = [...new Set([dto.fromAccountId, dto.toAccountId, dto.accountId].filter(Boolean))];
     const accounts = await this.prisma.financialAccount.findMany({
       where: {
         id: { in: ids as string[] },

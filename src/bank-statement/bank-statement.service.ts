@@ -1,13 +1,5 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import {
-  BankStatementLineStatus,
-  FinancialAccountType,
-  PaymentMethod,
-} from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BankStatementLineStatus, FinancialAccountType, PaymentMethod } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { CurrentUserData } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
@@ -22,12 +14,7 @@ import {
 export class BankStatementService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async upload(
-    accountId: string,
-    text: string,
-    filename: string,
-    user: CurrentUserData,
-  ) {
+  async upload(accountId: string, text: string, filename: string, user: CurrentUserData) {
     const account = await this.prisma.financialAccount.findFirst({
       where: {
         id: accountId,
@@ -40,7 +27,9 @@ export class BankStatementService {
 
     const parsed = parseHdfcDelimited(text);
     if (!parsed.length) {
-      throw new BadRequestException('No statement rows found. Export HDFC Delimited (.txt) and try again.');
+      throw new BadRequestException(
+        'No statement rows found. Export HDFC Delimited (.txt) and try again.',
+      );
     }
 
     const fingerprints = parsed.map((row) => row.fingerprint);
@@ -199,9 +188,7 @@ export class BankStatementService {
     const paymentById = new Map(payments.map((payment) => [payment.id, payment]));
 
     return lines.map((line) => {
-      const payment = line.invoicePaymentId
-        ? paymentById.get(line.invoicePaymentId)
-        : undefined;
+      const payment = line.invoicePaymentId ? paymentById.get(line.invoicePaymentId) : undefined;
       return {
         id: line.id,
         accountId: line.accountId,
@@ -274,7 +261,9 @@ export class BankStatementService {
     if (!payment) throw new NotFoundException('Payment not found');
 
     if (!BANKISH_PAYMENT_MODES.includes(payment.mode as (typeof BANKISH_PAYMENT_MODES)[number])) {
-      throw new BadRequestException('Cash / credit / old-gold payments are not bank-reconciled here');
+      throw new BadRequestException(
+        'Cash / credit / old-gold payments are not bank-reconciled here',
+      );
     }
 
     const amountDiff = Math.abs(Number(payment.amount) - Number(line.credit));
@@ -358,9 +347,7 @@ export class BankStatementService {
         mode: { in: [...BANKISH_PAYMENT_MODES] as PaymentMethod[] },
         paidAt: { gte: since },
         ...(linkedIds.length ? { id: { notIn: linkedIds } } : {}),
-        ...(accountId
-          ? { OR: [{ accountId }, { accountId: null }] }
-          : {}),
+        ...(accountId ? { OR: [{ accountId }, { accountId: null }] } : {}),
       },
       select: {
         id: true,

@@ -24,7 +24,16 @@ describe('suggestPaymentsForCredit', () => {
 
   it('ranks an exact paid invoice payment first', () => {
     const suggestions = suggestPaymentsForCredit(line, [
-      { ...base, id: 'pay-weak', amount: 10000, reference: null, customerName: 'Other', invoiceNumber: 'ZZ-9', accountId: null, paidAt: '2026-07-25' },
+      {
+        ...base,
+        id: 'pay-weak',
+        amount: 10000,
+        reference: null,
+        customerName: 'Other',
+        invoiceNumber: 'ZZ-9',
+        accountId: null,
+        paidAt: '2026-07-25',
+      },
       base,
     ]);
     expect(suggestions[0]?.paymentId).toBe('pay-1');
@@ -32,9 +41,7 @@ describe('suggestPaymentsForCredit', () => {
   });
 
   it('rejects amount mismatches beyond ₹1', () => {
-    const suggestions = suggestPaymentsForCredit(line, [
-      { ...base, id: 'pay-off', amount: 9500 },
-    ]);
+    const suggestions = suggestPaymentsForCredit(line, [{ ...base, id: 'pay-off', amount: 9500 }]);
     expect(suggestions).toHaveLength(0);
   });
 });

@@ -10,10 +10,7 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
-import {
-  FinancialAccountStatus,
-  FinancialTransactionType,
-} from '@prisma/client';
+import { FinancialAccountStatus, FinancialTransactionType } from '@prisma/client';
 
 export class CreateFinancialAccountDto {
   @IsString()

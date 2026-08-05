@@ -6,12 +6,7 @@ import { CreateCreditTransactionDto } from './dto/create-credit-transaction.dto'
 import { UpdateCreditTransactionDto } from './dto/update-credit-transaction.dto';
 import { QueryCreditsDto } from './dto/query-credits.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
-import {
-  CreditStatus,
-  FinancialTransactionType,
-  LedgerType,
-  PaymentMethod,
-} from '@prisma/client';
+import { CreditStatus, FinancialTransactionType, LedgerType, PaymentMethod } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { FinanceService } from '../finance/finance.service';
 
@@ -303,9 +298,7 @@ export class CreditsService {
       const preserveHistoricalAssignment =
         dto.paymentMethod === undefined && dto.accountId === undefined;
       const method =
-        (dto.paymentMethod as PaymentMethod) ??
-        payment.paymentMethod ??
-        PaymentMethod.OTHER;
+        (dto.paymentMethod as PaymentMethod) ?? payment.paymentMethod ?? PaymentMethod.OTHER;
       const account = await this.financeService.resolvePaymentAccount(
         tx,
         user.organizationId,
@@ -415,13 +408,7 @@ export class CreditsService {
           }
         }
       } else {
-        await this.syncUdharPayment(
-          tx,
-          updated,
-          udharId,
-          user,
-          preserveHistoricalAssignment,
-        );
+        await this.syncUdharPayment(tx, updated, udharId, user, preserveHistoricalAssignment);
       }
 
       return updated;

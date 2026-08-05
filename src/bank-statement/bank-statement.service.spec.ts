@@ -38,9 +38,9 @@ describe('BankStatementService reconcile cleanup', () => {
 
   it('rejects deleting matched lines without unlinking first', async () => {
     const { service } = makeService();
-    await expect(service.deleteLine('line-1', { organizationId: 'org-1' } as any)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.deleteLine('line-1', { organizationId: 'org-1' } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('deletes unmatched statement lines', async () => {

@@ -538,12 +538,7 @@ export class AdvanceService {
         where: { id: ledgerEntryId, organizationId },
         data: { deletedAt: new Date() },
       });
-      await this.financeService.reverseSource(
-        tx,
-        organizationId,
-        'ADVANCE_LEDGER',
-        ledgerEntryId,
-      );
+      await this.financeService.reverseSource(tx, organizationId, 'ADVANCE_LEDGER', ledgerEntryId);
     });
 
     return {

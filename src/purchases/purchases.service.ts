@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { UploadService } from '../uploads/upload.service';
@@ -208,8 +203,7 @@ export class PurchasesService {
 
   async updatePurchase(id: string, data: PurchaseBillInput) {
     const hasMeaningfulItems = Array.isArray(data.items) && data.items.length > 0;
-    const hasHeaderBill =
-      data.metalType != null || data.purity != null || data.totalWeight != null;
+    const hasHeaderBill = data.metalType != null || data.purity != null || data.totalWeight != null;
     const isFullBillUpdate = hasMeaningfulItems || hasHeaderBill;
     const hasAttachmentPatch =
       data.attachmentUrl !== undefined ||
@@ -233,13 +227,15 @@ export class PurchasesService {
       }
 
       const purchaseDate = data.purchaseDate ? new Date(data.purchaseDate) : existing.purchaseDate;
-      const itemInputs = this.normalizeItems(data as {
-        metalType: MetalType;
-        purity: string;
-        totalWeight: number;
-        rate?: number;
-        items?: PurchaseItemInput[];
-      });
+      const itemInputs = this.normalizeItems(
+        data as {
+          metalType: MetalType;
+          purity: string;
+          totalWeight: number;
+          rate?: number;
+          items?: PurchaseItemInput[];
+        },
+      );
       const computed = this.computeTotals(itemInputs, data);
       const { finalVendorId, vendorData } = await this.resolveVendor(tx, data);
 
@@ -275,9 +271,7 @@ export class PurchasesService {
 
       await tx.purchaseInvoiceItem.deleteMany({ where: { purchaseInvoiceId: id } });
 
-      const attachmentData = hasAttachmentPatch
-        ? this.buildAttachmentUpdate(data)
-        : {};
+      const attachmentData = hasAttachmentPatch ? this.buildAttachmentUpdate(data) : {};
 
       const purchase = await tx.purchaseInvoice.update({
         where: { id },
@@ -359,12 +353,7 @@ export class PurchasesService {
         items: computed.items,
         prismaTx: tx as any,
       });
-      await this.syncPurchaseTreasury(
-        tx,
-        purchase.id,
-        data.organizationId,
-        !replacePayments,
-      );
+      await this.syncPurchaseTreasury(tx, purchase.id, data.organizationId, !replacePayments);
 
       if (hasAttachmentPatch) {
         await this.maybeDeleteOldAttachment(existing.attachmentKey, purchase.attachmentKey);
@@ -585,18 +574,8 @@ export class PurchasesService {
     if (!existing) throw new NotFoundException('Purchase not found');
 
     await this.prisma.$transaction(async (tx) => {
-      await this.stockService.purgeTransactionsByReference(
-        organizationId,
-        id,
-        tx,
-      );
-      await this.financeService.reverseMissingSources(
-        tx,
-        organizationId,
-        'PURCHASE',
-        id,
-        [],
-      );
+      await this.stockService.purgeTransactionsByReference(organizationId, id, tx);
+      await this.financeService.reverseMissingSources(tx, organizationId, 'PURCHASE', id, []);
       await tx.purchaseInvoice.delete({ where: { id } });
     });
 
@@ -722,18 +701,16 @@ export class PurchasesService {
     return { finalVendorId, vendorData };
   }
 
-  private normalizePayments(
-    payments: PurchasePaymentInput[] | undefined,
-    fallbackDate: Date,
-  ) {
-    if (!payments?.length) return [] as Array<{
-      mode: PaymentMethod;
-      amount: number;
-      paidAt: Date;
-      reference?: string;
-      notes?: string;
-      accountId?: string;
-    }>;
+  private normalizePayments(payments: PurchasePaymentInput[] | undefined, fallbackDate: Date) {
+    if (!payments?.length)
+      return [] as Array<{
+        mode: PaymentMethod;
+        amount: number;
+        paidAt: Date;
+        reference?: string;
+        notes?: string;
+        accountId?: string;
+      }>;
 
     return payments
       .map((p) => {
@@ -762,9 +739,11 @@ export class PurchasesService {
   }
 
   private sumPayments(payments: Array<{ amount: number }>) {
-    return Math.round(
-      (payments.reduce((sum, p) => sum + Number(p.amount || 0), 0) + Number.EPSILON) * 100,
-    ) / 100;
+    return (
+      Math.round(
+        (payments.reduce((sum, p) => sum + Number(p.amount || 0), 0) + Number.EPSILON) * 100,
+      ) / 100
+    );
   }
 
   private async assertSufficientTreasuryFunds(
@@ -856,13 +835,15 @@ export class PurchasesService {
   }): PurchaseItemInput[] {
     const sourceItems = data.items?.length
       ? data.items
-      : [{
-          metalType: data.metalType as MetalType,
-          purity: data.purity as string,
-          grossWeight: data.totalWeight,
-          netWeight: data.totalWeight,
-          rate: data.rate,
-        }];
+      : [
+          {
+            metalType: data.metalType as MetalType,
+            purity: data.purity as string,
+            grossWeight: data.totalWeight,
+            netWeight: data.totalWeight,
+            rate: data.rate,
+          },
+        ];
 
     if (!sourceItems.length) {
       throw new BadRequestException('At least one purchase item is required');
@@ -871,15 +852,18 @@ export class PurchasesService {
     return sourceItems;
   }
 
-  private computeTotals(items: PurchaseItemInput[], data: {
-    addGst?: boolean;
-    gstInclusive?: boolean;
-    taxType?: TaxType;
-    cgstRate?: number;
-    sgstRate?: number;
-    igstRate?: number;
-    adjustment?: number;
-  }) {
+  private computeTotals(
+    items: PurchaseItemInput[],
+    data: {
+      addGst?: boolean;
+      gstInclusive?: boolean;
+      taxType?: TaxType;
+      cgstRate?: number;
+      sgstRate?: number;
+      igstRate?: number;
+      adjustment?: number;
+    },
+  ) {
     const toNumber = (value: unknown, fallback = 0) => {
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : fallback;
@@ -924,38 +908,51 @@ export class PurchasesService {
     });
 
     const subtotal = round2(normalizedItems.reduce((sum, item) => sum + item.totalAmount, 0));
-    const totalMetalAmount = round2(normalizedItems.reduce((sum, item) => sum + item.metalAmount, 0));
+    const totalMetalAmount = round2(
+      normalizedItems.reduce((sum, item) => sum + item.metalAmount, 0),
+    );
     const totalHallmarkingCharges = round2(
       normalizedItems.reduce((sum, item) => sum + item.hallmarkingCharge, 0),
     );
     const totalOtherCharges = round2(
       normalizedItems.reduce((sum, item) => sum + item.otherCharges, 0),
     );
-    const totalGoldWeight = round3(normalizedItems
-      .filter((item) => item.metalType === MetalType.GOLD)
-      .reduce((sum, item) => sum + item.netWeight, 0));
-    const totalSilverWeight = round3(normalizedItems
-      .filter((item) => item.metalType === MetalType.SILVER)
-      .reduce((sum, item) => sum + item.netWeight, 0));
+    const totalGoldWeight = round3(
+      normalizedItems
+        .filter((item) => item.metalType === MetalType.GOLD)
+        .reduce((sum, item) => sum + item.netWeight, 0),
+    );
+    const totalSilverWeight = round3(
+      normalizedItems
+        .filter((item) => item.metalType === MetalType.SILVER)
+        .reduce((sum, item) => sum + item.netWeight, 0),
+    );
     const taxType = data.taxType || 'CGST_SGST';
     const cgstRate = taxType === 'CGST_SGST' ? round2(toNumber(data.cgstRate, 1.5)) : 0;
     const sgstRate = taxType === 'CGST_SGST' ? round2(toNumber(data.sgstRate, 1.5)) : 0;
     const igstRate = taxType === 'IGST' ? round2(toNumber(data.igstRate, 3.0)) : 0;
 
-    const totalTaxRate = data.addGst ? (taxType === 'CGST_SGST' ? cgstRate + sgstRate : igstRate) : 0;
+    const totalTaxRate = data.addGst
+      ? taxType === 'CGST_SGST'
+        ? cgstRate + sgstRate
+        : igstRate
+      : 0;
 
-    const taxableAmount = data.addGst && data.gstInclusive
-      ? round2(subtotal / (1 + totalTaxRate / 100))
-      : subtotal;
+    const taxableAmount =
+      data.addGst && data.gstInclusive ? round2(subtotal / (1 + totalTaxRate / 100)) : subtotal;
 
-    const cgstAmount = data.addGst && taxType === 'CGST_SGST' ? round2(taxableAmount * cgstRate / 100) : 0;
-    const sgstAmount = data.addGst && taxType === 'CGST_SGST' ? round2(taxableAmount * sgstRate / 100) : 0;
-    const igstAmount = data.addGst && taxType === 'IGST' ? round2(taxableAmount * igstRate / 100) : 0;
+    const cgstAmount =
+      data.addGst && taxType === 'CGST_SGST' ? round2((taxableAmount * cgstRate) / 100) : 0;
+    const sgstAmount =
+      data.addGst && taxType === 'CGST_SGST' ? round2((taxableAmount * sgstRate) / 100) : 0;
+    const igstAmount =
+      data.addGst && taxType === 'IGST' ? round2((taxableAmount * igstRate) / 100) : 0;
 
     const adjustment = round2(toNumber(data.adjustment));
-    const baseTotal = data.addGst && !data.gstInclusive
-      ? round2(subtotal + cgstAmount + sgstAmount + igstAmount)
-      : subtotal;
+    const baseTotal =
+      data.addGst && !data.gstInclusive
+        ? round2(subtotal + cgstAmount + sgstAmount + igstAmount)
+        : subtotal;
     const grandTotal = round2(baseTotal + adjustment);
     const firstItem = normalizedItems[0];
 

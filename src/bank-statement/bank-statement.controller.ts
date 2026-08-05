@@ -20,11 +20,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { BankStatementService } from './bank-statement.service';
 import { ConfirmBankStatementMatchDto } from './dto/bank-statement.dto';
 
-const WRITE_ROLES = [
-  OrganizationRole.OWNER,
-  OrganizationRole.ADMIN,
-  OrganizationRole.STAFF,
-];
+const WRITE_ROLES = [OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF];
 
 const READ_ROLES = [
   OrganizationRole.OWNER,
@@ -50,20 +46,12 @@ export class BankStatementController {
       throw new BadRequestException('Upload an HDFC delimited .txt statement file');
     }
     const text = file.buffer.toString('utf8');
-    return this.bankStatements.upload(
-      accountId,
-      text,
-      file.originalname || 'statement.txt',
-      user,
-    );
+    return this.bankStatements.upload(accountId, text, file.originalname || 'statement.txt', user);
   }
 
   @Get('unmatched')
   @Roles(...READ_ROLES)
-  listUnmatched(
-    @CurrentUser() user: CurrentUserData,
-    @Query('accountId') accountId?: string,
-  ) {
+  listUnmatched(@CurrentUser() user: CurrentUserData, @Query('accountId') accountId?: string) {
     return this.bankStatements.listUnmatched(user.organizationId, accountId);
   }
 
@@ -78,10 +66,7 @@ export class BankStatementController {
 
   @Get('matched')
   @Roles(...READ_ROLES)
-  listMatched(
-    @CurrentUser() user: CurrentUserData,
-    @Query('accountId') accountId?: string,
-  ) {
+  listMatched(@CurrentUser() user: CurrentUserData, @Query('accountId') accountId?: string) {
     return this.bankStatements.listMatched(user.organizationId, accountId);
   }
 

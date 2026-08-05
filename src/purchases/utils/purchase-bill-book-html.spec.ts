@@ -4,12 +4,14 @@ describe('buildPurchaseBillBookHtml', () => {
   it('renders a placeholder page when attachment is missing', () => {
     const html = buildPurchaseBillBookHtml({
       title: 'Purchase Bill Book - 1 Bills',
-      pages: [{
-        billNo: 'P-100',
-        vendorName: 'Gold Supplier',
-        purchaseDate: '2026-04-01T00:00:00.000Z',
-        attachmentUrl: null,
-      }],
+      pages: [
+        {
+          billNo: 'P-100',
+          vendorName: 'Gold Supplier',
+          purchaseDate: '2026-04-01T00:00:00.000Z',
+          attachmentUrl: null,
+        },
+      ],
     });
 
     expect(html).toContain('<title>Purchase Bill Book - 1 Bills</title>');

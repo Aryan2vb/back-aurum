@@ -14,7 +14,10 @@ type AccountRef = { id: string; type: FinancialAccountType };
 export type MovementDraft = { accountId: string; amount: number };
 
 const isCashOrBank = (account: AccountRef | undefined): account is AccountRef =>
-  Boolean(account && (account.type === FinancialAccountType.CASH || account.type === FinancialAccountType.BANK));
+  Boolean(
+    account &&
+    (account.type === FinancialAccountType.CASH || account.type === FinancialAccountType.BANK),
+  );
 
 function buildPairedTransfer(from?: AccountRef, to?: AccountRef, amount = 0): MovementDraft[] {
   if (!isCashOrBank(from) || !isCashOrBank(to)) {

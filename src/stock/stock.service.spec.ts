@@ -32,11 +32,7 @@ describe('StockService.syncSaleStockForInvoice', () => {
       ],
     });
 
-    expect(service.purgeTransactionsByReference).toHaveBeenCalledWith(
-      'org-1',
-      'inv-1',
-      undefined,
-    );
+    expect(service.purgeTransactionsByReference).toHaveBeenCalledWith('org-1', 'inv-1', undefined);
     expect(service.recordStockTransaction).toHaveBeenCalledTimes(1);
     expect(service.recordStockTransaction).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -71,11 +67,7 @@ describe('StockService.syncPurchaseStockForInvoice', () => {
       ],
     });
 
-    expect(service.purgeTransactionsByReference).toHaveBeenCalledWith(
-      'org-1',
-      'pur-1',
-      undefined,
-    );
+    expect(service.purgeTransactionsByReference).toHaveBeenCalledWith('org-1', 'pur-1', undefined);
     expect(service.recordStockTransaction).toHaveBeenCalledTimes(1);
     expect(service.recordStockTransaction).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -116,7 +108,9 @@ describe('StockService.initializeOpeningBalance', () => {
       $transaction: jest.fn((fn) => fn(tx)),
     } as any;
     const service = new StockService(prisma);
-    const recalcSpy = jest.spyOn(service as any, 'recalcRunningBalances').mockResolvedValue(undefined);
+    const recalcSpy = jest
+      .spyOn(service as any, 'recalcRunningBalances')
+      .mockResolvedValue(undefined);
 
     await service.initializeOpeningBalance('org-1', 'GOLD', '22K', 120, 5100, '2026-04-01');
 
@@ -140,9 +134,7 @@ describe('StockService.purgeTransactionsByReference', () => {
     const stockLedger = {
       findMany: jest
         .fn()
-        .mockResolvedValueOnce([
-          { metalType: 'GOLD', purity: '22K' },
-        ])
+        .mockResolvedValueOnce([{ metalType: 'GOLD', purity: '22K' }])
         .mockResolvedValueOnce([
           {
             id: 'ob-1',
@@ -239,13 +231,15 @@ describe('StockService metal purities', () => {
           created.push(...data);
           return Promise.resolve({ count: data.length });
         }),
-        findMany: jest.fn().mockImplementation(() => Promise.resolve(created.filter((r) => r.isActive !== false))),
+        findMany: jest
+          .fn()
+          .mockImplementation(() => Promise.resolve(created.filter((r) => r.isActive !== false))),
       },
     };
     // After seed, listPurities calls ensure then findMany — mock findMany to return seeded shape
-    prisma.orgMetalPurity.findMany = jest.fn().mockResolvedValue(
-      seedRows.map((r) => ({ ...r, id: r.label, isActive: true })),
-    );
+    prisma.orgMetalPurity.findMany = jest
+      .fn()
+      .mockResolvedValue(seedRows.map((r) => ({ ...r, id: r.label, isActive: true })));
     const service = new StockService(prisma as any);
 
     const rows = await service.listPurities('org-1');
@@ -267,20 +261,38 @@ describe('StockService metal purities', () => {
       },
     };
     const service = new StockService(prisma as any);
-    await expect(service.createPurity('org-1', 'GOLD' as any, '22k')).rejects.toThrow(/already exists/i);
+    await expect(service.createPurity('org-1', 'GOLD' as any, '22k')).rejects.toThrow(
+      /already exists/i,
+    );
   });
 
   it('soft-hides purity and excludes it from active list', async () => {
     const rows = [
-      { id: 'p1', organizationId: 'org-1', metalType: 'GOLD', label: '22K', sortOrder: 0, isActive: true },
-      { id: 'p2', organizationId: 'org-1', metalType: 'GOLD', label: '20K', sortOrder: 1, isActive: true },
+      {
+        id: 'p1',
+        organizationId: 'org-1',
+        metalType: 'GOLD',
+        label: '22K',
+        sortOrder: 0,
+        isActive: true,
+      },
+      {
+        id: 'p2',
+        organizationId: 'org-1',
+        metalType: 'GOLD',
+        label: '20K',
+        sortOrder: 1,
+        isActive: true,
+      },
     ];
     const prisma = {
       orgMetalPurity: {
         count: jest.fn().mockResolvedValue(2),
-        findFirst: jest.fn().mockImplementation(({ where }) =>
-          Promise.resolve(rows.find((r) => r.id === where.id) || null),
-        ),
+        findFirst: jest
+          .fn()
+          .mockImplementation(({ where }) =>
+            Promise.resolve(rows.find((r) => r.id === where.id) || null),
+          ),
         update: jest.fn().mockImplementation(({ where, data }) => {
           const row = rows.find((r) => r.id === where.id)!;
           Object.assign(row, data);
