@@ -2,7 +2,7 @@ import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class ConfirmBankStatementMatchDto {
   @IsUUID()
-  invoiceId: string;
+  paymentId: string;
 }
 
 export class ListBankStatementLinesDto {

@@ -58,6 +58,7 @@ model Organization {
   vendors            Vendor[]
   stockBalances      StockBalance[]
   stockLedgers       StockLedger[]
+  metalPurities      OrgMetalPurity[]
   purchaseInvoices   PurchaseInvoice[]
   purchaseInvoiceItems PurchaseInvoiceItem[]
   purchasePayments   PurchasePayment[]
@@ -740,6 +741,22 @@ model Vendor {
   @@index([organizationId])
 }
 
+model OrgMetalPurity {
+  id             String    @id @default(uuid())
+  organizationId String
+  metalType      MetalType
+  label          String
+  sortOrder      Int       @default(0)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, metalType, label])
+  @@index([organizationId, metalType, isActive])
+}
+
 model StockBalance {
   id             String    @id @default(uuid())
   organizationId String
@@ -809,6 +826,9 @@ model PurchaseInvoice {
   totalGoldWeight Decimal  @default(0) @db.Decimal(10, 3)
   totalSilverWeight Decimal @default(0) @db.Decimal(10, 3)
   totalMetalAmount Decimal  @default(0) @db.Decimal(14, 2)
+  totalHallmarkingCharges Decimal @default(0) @db.Decimal(12, 2)
+  totalOtherCharges Decimal @default(0) @db.Decimal(12, 2)
+  adjustment     Decimal   @default(0) @db.Decimal(12, 2)
   notes          String?
   /// Optional scrap bill / supplier invoice (PDF or photo) stored in R2
   attachmentUrl  String?
@@ -838,6 +858,8 @@ model PurchaseInvoiceItem {
   grossWeight       Decimal   @db.Decimal(10, 3)
   netWeight         Decimal   @db.Decimal(10, 3)
   rate              Decimal?  @db.Decimal(12, 4)
+  hallmarkingCharge Decimal   @default(0) @db.Decimal(8, 2)
+  otherCharges      Decimal   @default(0) @db.Decimal(12, 2)
   totalAmount       Decimal   @db.Decimal(14, 2)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt

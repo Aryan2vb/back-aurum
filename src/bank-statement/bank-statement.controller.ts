@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -8,7 +10,6 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { OrganizationRole } from '@prisma/client';
@@ -23,6 +24,13 @@ const WRITE_ROLES = [
   OrganizationRole.OWNER,
   OrganizationRole.ADMIN,
   OrganizationRole.STAFF,
+];
+
+const READ_ROLES = [
+  OrganizationRole.OWNER,
+  OrganizationRole.ADMIN,
+  OrganizationRole.STAFF,
+  OrganizationRole.VIEWER,
 ];
 
 @Controller('finance/bank-statements')
@@ -42,16 +50,16 @@ export class BankStatementController {
       throw new BadRequestException('Upload an HDFC delimited .txt statement file');
     }
     const text = file.buffer.toString('utf8');
-    return this.bankStatements.upload(accountId, text, file.originalname || 'statement.txt', user);
+    return this.bankStatements.upload(
+      accountId,
+      text,
+      file.originalname || 'statement.txt',
+      user,
+    );
   }
 
   @Get('unmatched')
-  @Roles(
-    OrganizationRole.OWNER,
-    OrganizationRole.ADMIN,
-    OrganizationRole.STAFF,
-    OrganizationRole.VIEWER,
-  )
+  @Roles(...READ_ROLES)
   listUnmatched(
     @CurrentUser() user: CurrentUserData,
     @Query('accountId') accountId?: string,
@@ -59,10 +67,40 @@ export class BankStatementController {
     return this.bankStatements.listUnmatched(user.organizationId, accountId);
   }
 
+  @Get('unmatched-payments')
+  @Roles(...READ_ROLES)
+  listUnmatchedPayments(
+    @CurrentUser() user: CurrentUserData,
+    @Query('accountId') accountId?: string,
+  ) {
+    return this.bankStatements.listUnmatchedPayments(user.organizationId, accountId);
+  }
+
+  @Get('matched')
+  @Roles(...READ_ROLES)
+  listMatched(
+    @CurrentUser() user: CurrentUserData,
+    @Query('accountId') accountId?: string,
+  ) {
+    return this.bankStatements.listMatched(user.organizationId, accountId);
+  }
+
   @Post('lines/:id/ignore')
   @Roles(...WRITE_ROLES)
   ignore(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.bankStatements.ignore(id, user);
+  }
+
+  @Post('lines/:id/unmatch')
+  @Roles(...WRITE_ROLES)
+  unmatch(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+    return this.bankStatements.unmatch(id, user);
+  }
+
+  @Delete('lines/:id')
+  @Roles(...WRITE_ROLES)
+  deleteLine(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+    return this.bankStatements.deleteLine(id, user);
   }
 
   @Post('lines/:id/match')
@@ -72,6 +110,6 @@ export class BankStatementController {
     @Body() dto: ConfirmBankStatementMatchDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.bankStatements.confirmMatch(id, dto.invoiceId, user);
+    return this.bankStatements.confirmMatch(id, dto.paymentId, user);
   }
 }

@@ -1,6 +1,11 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockTransactionType, MetalType, Prisma } from '@prisma/client';
+
+const DEFAULT_PURITIES: Record<'GOLD' | 'SILVER', string[]> = {
+  GOLD: ['24K', '22K', '20K', '18K'],
+  SILVER: ['F', '925'],
+};
 
 @Injectable()
 export class StockService {
@@ -111,7 +116,7 @@ export class StockService {
         ...(metalType && { metalType }),
         ...(purity && { purity }),
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
@@ -347,71 +352,6 @@ export class StockService {
   }
 
   /**
-   * Zero out all stock movements for a reference (invoice id) by posting
-   * ADJUSTMENT rows for the remaining net out/(in). Safe to call repeatedly.
-   */
-  async reverseTransactionsByReference(
-    organizationId: string,
-    referenceId: string,
-    prismaTx?: Prisma.TransactionClient,
-    notesPrefix = 'Reversal:',
-  ) {
-    const db = prismaTx || this.prisma;
-
-    const entries = await db.stockLedger.findMany({
-      where: { organizationId, referenceId },
-    });
-
-    const nets = new Map<
-      string,
-      { metalType: MetalType; purity: string; netOut: number; rate?: number }
-    >();
-
-    for (const entry of entries) {
-      const key = `${entry.metalType}|${entry.purity}`;
-      const cur = nets.get(key) || {
-        metalType: entry.metalType,
-        purity: entry.purity,
-        netOut: 0,
-        rate: undefined as number | undefined,
-      };
-      cur.netOut += Number(entry.quantityOut || 0) - Number(entry.quantityIn || 0);
-      if (entry.rate != null) cur.rate = Number(entry.rate);
-      nets.set(key, cur);
-    }
-
-    for (const row of nets.values()) {
-      if (Math.abs(row.netOut) < 1e-9) continue;
-
-      if (row.netOut > 0) {
-        await this.recordStockTransaction({
-          organizationId,
-          metalType: row.metalType,
-          purity: row.purity,
-          transactionType: StockTransactionType.ADJUSTMENT,
-          quantityIn: row.netOut,
-          rate: row.rate,
-          referenceId,
-          notes: `${notesPrefix} ${referenceId}`,
-          prismaTx,
-        });
-      } else {
-        await this.recordStockTransaction({
-          organizationId,
-          metalType: row.metalType,
-          purity: row.purity,
-          transactionType: StockTransactionType.ADJUSTMENT,
-          quantityOut: -row.netOut,
-          rate: row.rate,
-          referenceId,
-          notes: `${notesPrefix} ${referenceId}`,
-          prismaTx,
-        });
-      }
-    }
-  }
-
-  /**
    * Replace SALE stock for an invoice: clear any prior net for this invoice, then
    * post SALE rows from the current line items. Use on finalize and on edit.
    */
@@ -419,17 +359,13 @@ export class StockService {
     organizationId: string;
     invoiceId: string;
     invoiceNumber: string;
+    saleDate?: Date;
     items: any[];
     prismaTx?: Prisma.TransactionClient;
   }) {
-    const { organizationId, invoiceId, invoiceNumber, items, prismaTx } = params;
+    const { organizationId, invoiceId, invoiceNumber, saleDate, items, prismaTx } = params;
 
-    await this.reverseTransactionsByReference(
-      organizationId,
-      invoiceId,
-      prismaTx,
-      'Reversal:',
-    );
+    await this.purgeTransactionsByReference(organizationId, invoiceId, prismaTx);
 
     for (const item of items || []) {
       const purity = item.purityLabel || item.purityValue || item.purity;
@@ -443,6 +379,7 @@ export class StockService {
         transactionType: StockTransactionType.SALE,
         quantityOut: netWeight,
         rate: Number(item.effectiveRate || item.unitPrice || item.metalRate || 0),
+        date: saleDate,
         referenceId: invoiceId,
         notes: `Sale from Invoice: ${invoiceNumber}`,
         prismaTx,
@@ -469,12 +406,7 @@ export class StockService {
   }) {
     const { organizationId, purchaseId, invoiceNumber, purchaseDate, items, prismaTx } = params;
 
-    await this.reverseTransactionsByReference(
-      organizationId,
-      purchaseId,
-      prismaTx,
-      'Reversal:',
-    );
+    await this.purgeTransactionsByReference(organizationId, purchaseId, prismaTx);
 
     for (const item of items || []) {
       const purity = item.purity;
@@ -563,6 +495,111 @@ export class StockService {
       create: { organizationId, metalType, purity, quantity: currentRunning },
       update: { quantity: currentRunning },
     });
+  }
+
+  async listPurities(organizationId: string, includeInactive = false) {
+    await this.ensureDefaultPurities(organizationId);
+    return this.prisma.orgMetalPurity.findMany({
+      where: {
+        organizationId,
+        ...(includeInactive ? {} : { isActive: true }),
+      },
+      orderBy: [{ metalType: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }],
+    });
+  }
+
+  async createPurity(organizationId: string, metalType: MetalType, rawLabel: string) {
+    if (metalType !== MetalType.GOLD && metalType !== MetalType.SILVER) {
+      throw new BadRequestException('metalType must be GOLD or SILVER');
+    }
+    const label = String(rawLabel || '').trim();
+    if (!label) throw new BadRequestException('label is required');
+
+    await this.ensureDefaultPurities(organizationId);
+
+    const existing = await this.prisma.orgMetalPurity.findFirst({
+      where: {
+        organizationId,
+        metalType,
+        label: { equals: label, mode: 'insensitive' },
+      },
+    });
+    if (existing) {
+      if (existing.isActive) {
+        throw new BadRequestException(`Purity "${existing.label}" already exists for ${metalType}`);
+      }
+      return this.prisma.orgMetalPurity.update({
+        where: { id: existing.id },
+        data: { isActive: true, label },
+      });
+    }
+
+    const maxSort = await this.prisma.orgMetalPurity.aggregate({
+      where: { organizationId, metalType },
+      _max: { sortOrder: true },
+    });
+
+    return this.prisma.orgMetalPurity.create({
+      data: {
+        organizationId,
+        metalType,
+        label,
+        sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
+      },
+    });
+  }
+
+  async updatePurity(
+    organizationId: string,
+    id: string,
+    data: { isActive?: boolean; sortOrder?: number },
+  ) {
+    const row = await this.prisma.orgMetalPurity.findFirst({
+      where: { id, organizationId },
+    });
+    if (!row) throw new NotFoundException('Purity not found');
+
+    const patch: Prisma.OrgMetalPurityUpdateInput = {};
+    if (data.isActive !== undefined) patch.isActive = data.isActive;
+    if (data.sortOrder !== undefined) {
+      if (!Number.isFinite(data.sortOrder)) {
+        throw new BadRequestException('sortOrder must be a number');
+      }
+      patch.sortOrder = Math.trunc(data.sortOrder);
+    }
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException('Nothing to update');
+    }
+
+    return this.prisma.orgMetalPurity.update({
+      where: { id },
+      data: patch,
+    });
+  }
+
+  async hidePurity(organizationId: string, id: string) {
+    return this.updatePurity(organizationId, id, { isActive: false });
+  }
+
+  private async ensureDefaultPurities(organizationId: string) {
+    const count = await this.prisma.orgMetalPurity.count({ where: { organizationId } });
+    if (count > 0) return;
+
+    const rows = [
+      ...DEFAULT_PURITIES.GOLD.map((label, sortOrder) => ({
+        organizationId,
+        metalType: MetalType.GOLD,
+        label,
+        sortOrder,
+      })),
+      ...DEFAULT_PURITIES.SILVER.map((label, sortOrder) => ({
+        organizationId,
+        metalType: MetalType.SILVER,
+        label,
+        sortOrder,
+      })),
+    ];
+    await this.prisma.orgMetalPurity.createMany({ data: rows });
   }
 
   normalizePurity(purity: string, metalType: string): string {

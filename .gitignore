@@ -40,8 +40,7 @@ lerna-debug.log*
 .env.*.local
 
 # Prisma
-# Keep migrations in git so CI/CD `prisma migrate deploy` works.
-# /prisma/migrations
+/prisma/migrations
 
 .vercel
 .env*.local

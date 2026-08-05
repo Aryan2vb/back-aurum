@@ -82,6 +82,15 @@ export class UpdateFinancialAccountDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Type(() => Number)
+  openingBalance?: number;
+
+  @IsOptional()
+  @IsDateString()
+  openingDate?: string;
 }
 
 const MANUAL_TRANSACTION_TYPES = [

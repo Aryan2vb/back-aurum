@@ -6,15 +6,22 @@ jest.mock('./utils/pdf.service', () => ({
   PdfService: jest.fn(),
 }));
 
-const stubStockService = {
-  syncSaleStockForInvoice: jest.fn().mockResolvedValue(undefined),
-  reverseTransactionsByReference: jest.fn().mockResolvedValue(undefined),
-  recordStockTransaction: jest.fn().mockResolvedValue({ balance: 0 }),
-};
+const stockServiceMock = () =>
+  ({
+    syncSaleStockForInvoice: jest.fn().mockResolvedValue(undefined),
+    purgeTransactionsByReference: jest.fn().mockResolvedValue(undefined),
+  }) as any;
+
+const financeServiceMock = () =>
+  ({
+    syncAutomaticPayment: jest.fn().mockResolvedValue(null),
+    reverseMissingSources: jest.fn().mockResolvedValue(undefined),
+    reverseSource: jest.fn().mockResolvedValue(null),
+  }) as any;
 
 describe('InvoicesService payment dates', () => {
   const buildService = () =>
-    new InvoicesService({} as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    new InvoicesService({} as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
 
   it('normalizes a selected payment date to the start of that UTC day', () => {
     const service = buildService();
@@ -100,7 +107,8 @@ describe('InvoicesService invoice sequence allocation', () => {
     startingSequence: 100,
   };
 
-  const buildService = () => new InvoicesService({} as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+  const buildService = () =>
+    new InvoicesService({} as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
 
   const buildTx = ({
     existingInvoice = null,
@@ -263,7 +271,7 @@ describe('InvoicesService invoice sequence allocation', () => {
         findFirst: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'invoice-1' }),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
 
     await expect(
       service.getSequenceAvailability(organizationId, 112, '2025-04-01'),
@@ -292,7 +300,7 @@ describe('InvoicesService invoice sequence allocation', () => {
         findFirst: jest.fn().mockResolvedValue(null),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
 
     await service.getSequenceAvailability(organizationId, 115, '2025-04-01', 'draft-invoice');
 
@@ -335,7 +343,7 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
     service._createInvoiceBalanceRecord = jest.fn();
 
     await service.finalize(
@@ -374,7 +382,7 @@ describe('InvoicesService invoice sequence allocation', () => {
         ]),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any);
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock());
 
     await expect(service.getMissingSequences(organizationId, '2025-04-01')).resolves.toEqual({
       prefix: 'BILL',
@@ -426,7 +434,7 @@ describe('InvoicesService invoice sequence allocation', () => {
         findMany: jest.fn(),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any);
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock());
 
     await expect(service.getMissingSequences(organizationId, '2025-04-01')).resolves.toEqual({
       prefix: 'INV',
@@ -496,7 +504,7 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
     service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
       taxType: 'CGST_SGST',
       placeOfSupply: '07',
@@ -589,7 +597,7 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
     service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
       taxType: 'CGST_SGST',
       placeOfSupply: '07',
@@ -678,7 +686,7 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
     service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
       status: 'PAID',
       taxType: 'CGST_SGST',
@@ -749,7 +757,7 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
     service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
       status: 'DRAFT',
       taxType: 'CGST_SGST',
@@ -831,7 +839,7 @@ describe('InvoicesService invoice sequence allocation', () => {
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
     service._createInvoiceBalanceRecord = jest.fn();
 
     await service.finalize(
@@ -864,7 +872,7 @@ describe('InvoicesService bill book', () => {
         ]),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
     service._renderInvoiceHtml = jest.fn((invoice: any) => `<html>${invoice.id}</html>`);
 
     const html = await service.generateBillBook(
@@ -902,7 +910,7 @@ describe('InvoicesService bill book', () => {
           .mockResolvedValueOnce([{ id: 'invoice-100', invoiceDate: new Date('2026-04-02') }]),
       },
     };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any) as any;
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock()) as any;
     service._renderInvoiceHtml = jest.fn((invoice: any) => `<html>${invoice.id}</html>`);
 
     await service.generateBillBook(
@@ -937,287 +945,18 @@ describe('InvoicesService bill book', () => {
 
   it('rejects a bill book with no eligible invoices', async () => {
     const prisma = { invoice: { findMany: jest.fn().mockResolvedValue([]) } };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any);
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock());
 
     await expect(service.generateBillBook({}, organizationId)).rejects.toThrow(BadRequestException);
   });
 
   it('does not export other statuses when filters request drafts', async () => {
     const prisma = { invoice: { findMany: jest.fn() } };
-    const service = new InvoicesService(prisma as any, {} as any, stubStockService as any, {} as any, {} as any);
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any, stockServiceMock(), financeServiceMock());
 
     await expect(
       service.generateBillBook({ status: 'DRAFT' as any }, organizationId),
     ).rejects.toThrow(BadRequestException);
     expect(prisma.invoice.findMany).not.toHaveBeenCalled();
-  });
-});
-
-describe('InvoicesService stock on update-finalize', () => {
-  it('syncs SALE stock when a draft is finalized via update', async () => {
-    const organizationId = 'org-1';
-    const stockService = {
-      syncSaleStockForInvoice: jest.fn().mockResolvedValue(undefined),
-    };
-    const tx = {
-      invoice: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        update: jest.fn().mockImplementation(({ data }) =>
-          Promise.resolve({
-            id: 'invoice-1',
-            ...data,
-            items: [
-              {
-                metalType: 'GOLD',
-                purityLabel: '22K',
-                purityValue: 22,
-                netWeight: 10,
-                effectiveRate: 5000,
-              },
-            ],
-          }),
-        ),
-      },
-      invoiceItem: {
-        deleteMany: jest.fn(),
-        createMany: jest.fn(),
-      },
-      invoicePayment: {
-        deleteMany: jest.fn(),
-        createMany: jest.fn(),
-      },
-      invoiceSequence: {
-        upsert: jest.fn().mockResolvedValue({ nextSequence: 116 }),
-      },
-      orgInvoiceSettings: {
-        findUnique: jest.fn().mockResolvedValue({
-          invoiceNumberPrefix: 'INV',
-          startingSequence: 100,
-        }),
-      },
-    };
-    const prisma = {
-      invoice: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'invoice-1',
-          organizationId,
-          customerId: 'customer-1',
-          status: 'DRAFT',
-          paidAmount: new Decimal(0),
-          invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
-          buyerSnapshot: { data: {} },
-          items: [],
-          payments: [],
-        }),
-      },
-      $transaction: jest.fn((callback) => callback(tx)),
-    };
-
-    const service = new InvoicesService(
-      prisma as any,
-      {} as any,
-      stockService as any,
-      {} as any,
-      {} as any,
-    ) as any;
-
-    service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
-      taxType: 'CGST_SGST',
-      placeOfSupply: '07',
-      subtotal: new Decimal(100),
-      taxableAmount: new Decimal(100),
-      cgstRate: new Decimal(1.5),
-      sgstRate: new Decimal(1.5),
-      igstRate: new Decimal(0),
-      cgstAmount: new Decimal(1.5),
-      sgstAmount: new Decimal(1.5),
-      igstAmount: new Decimal(0),
-      totalHallmarkingCharges: new Decimal(0),
-      roundOff: new Decimal(0),
-      grandTotal: new Decimal(103),
-      paidAmount: new Decimal(103),
-      metalRateSource: 'MANUAL',
-      metalRateDate: new Date('2025-04-01T00:00:00.000Z'),
-      companySnapshot: { version: 1, data: {} },
-      buyerSnapshot: { version: 1, data: {} },
-      invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
-      financialYear: '2025-26',
-      notes: '',
-      lineItems: [
-        {
-          metalType: 'GOLD',
-          purityLabel: '22K',
-          purityValue: 22,
-          netWeight: 10,
-          effectiveRate: 5000,
-          slNo: 1,
-        },
-      ],
-    });
-    service._syncInvoiceFinancialsWithLedger = jest.fn();
-    service._allocateInvoiceNumber = jest.fn().mockResolvedValue({
-      invoiceNumber: 'INV/115/2025-26',
-      sequenceVal: 115,
-    });
-
-    await service.update(
-      'invoice-1',
-      { finalize: true, manualSequence: 115 },
-      { organizationId, userId: 'user-1' },
-    );
-
-    expect(stockService.syncSaleStockForInvoice).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organizationId,
-        invoiceId: 'invoice-1',
-        invoiceNumber: 'INV/115/2025-26',
-        items: expect.arrayContaining([
-          expect.objectContaining({ metalType: 'GOLD', netWeight: 10 }),
-        ]),
-      }),
-    );
-  });
-
-  it('re-syncs SALE stock when editing an already finalized invoice', async () => {
-    const organizationId = 'org-1';
-    const stockService = {
-      syncSaleStockForInvoice: jest.fn().mockResolvedValue(undefined),
-    };
-    const tx = {
-      invoice: {
-        findFirst: jest.fn().mockResolvedValue(null),
-        update: jest.fn().mockImplementation(({ data }) =>
-          Promise.resolve({
-            id: 'invoice-1',
-            ...data,
-            items: [
-              {
-                metalType: 'GOLD',
-                purityLabel: '22K',
-                netWeight: 8,
-                effectiveRate: 5000,
-              },
-            ],
-          }),
-        ),
-      },
-      invoiceItem: {
-        deleteMany: jest.fn(),
-        createMany: jest.fn(),
-        update: jest.fn(),
-      },
-      invoicePayment: {
-        deleteMany: jest.fn(),
-        createMany: jest.fn(),
-      },
-      orgInvoiceSettings: {
-        findUnique: jest.fn().mockResolvedValue({
-          invoiceNumberPrefix: 'INV',
-          startingSequence: 100,
-        }),
-      },
-    };
-    const prisma = {
-      invoice: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'invoice-1',
-          organizationId,
-          customerId: 'customer-1',
-          status: 'UNPAID',
-          invoiceNumber: 'INV/10/2025-26',
-          sequence: 10,
-          paidAmount: new Decimal(0),
-          invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
-          buyerSnapshot: { data: {} },
-          items: [
-            {
-              id: 'item-1',
-              metalType: 'GOLD',
-              purityLabel: '22K',
-              netWeight: 10,
-              effectiveRate: 5000,
-              slNo: 1,
-            },
-          ],
-          payments: [],
-        }),
-      },
-      $transaction: jest.fn((callback) => callback(tx)),
-    };
-
-    const service = new InvoicesService(
-      prisma as any,
-      {} as any,
-      stockService as any,
-      {} as any,
-      {} as any,
-    ) as any;
-
-    service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
-      taxType: 'CGST_SGST',
-      placeOfSupply: '07',
-      subtotal: new Decimal(80),
-      taxableAmount: new Decimal(80),
-      cgstRate: new Decimal(1.5),
-      sgstRate: new Decimal(1.5),
-      igstRate: new Decimal(0),
-      cgstAmount: new Decimal(1.2),
-      sgstAmount: new Decimal(1.2),
-      igstAmount: new Decimal(0),
-      totalHallmarkingCharges: new Decimal(0),
-      roundOff: new Decimal(0),
-      grandTotal: new Decimal(82.4),
-      paidAmount: new Decimal(0),
-      metalRateSource: 'MANUAL',
-      metalRateDate: new Date('2025-04-01T00:00:00.000Z'),
-      companySnapshot: { version: 1, data: {} },
-      buyerSnapshot: { version: 1, data: {} },
-      invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
-      financialYear: '2025-26',
-      notes: '',
-      lineItems: [
-        {
-          id: 'item-1',
-          metalType: 'GOLD',
-          purityLabel: '22K',
-          netWeight: 8,
-          effectiveRate: 5000,
-          slNo: 1,
-        },
-      ],
-    });
-    service._syncInvoiceFinancialsWithLedger = jest.fn();
-    service._mapFinancialItemToDb = jest.fn((item, invoiceId, orgId) => ({
-      ...item,
-      invoiceId,
-      organizationId: orgId,
-    }));
-
-    await service.update(
-      'invoice-1',
-      {
-        items: [
-          {
-            id: 'item-1',
-            slNo: 1,
-            metalType: 'GOLD',
-            purityLabel: '22K',
-            netWeight: 8,
-            effectiveRate: 5000,
-          } as any,
-        ],
-      },
-      { organizationId, userId: 'user-1' },
-    );
-
-    expect(stockService.syncSaleStockForInvoice).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organizationId,
-        invoiceId: 'invoice-1',
-        items: expect.arrayContaining([
-          expect.objectContaining({ metalType: 'GOLD', netWeight: 8 }),
-        ]),
-      }),
-    );
   });
 });

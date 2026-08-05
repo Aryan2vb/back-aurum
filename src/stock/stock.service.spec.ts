@@ -13,20 +13,9 @@ describe('StockService.normalizePurity', () => {
 });
 
 describe('StockService.syncSaleStockForInvoice', () => {
-  it('reverses prior net then posts the new SALE weight', async () => {
-    const stockLedger = {
-      findMany: jest.fn().mockResolvedValue([
-        {
-          metalType: 'GOLD',
-          purity: '22K',
-          quantityIn: 0,
-          quantityOut: 10,
-          rate: 5000,
-        },
-      ]),
-    };
-    const prisma = { stockLedger } as any;
-    const service = new StockService(prisma);
+  it('purges prior rows then posts the new SALE weight', async () => {
+    const service = new StockService({} as any);
+    service.purgeTransactionsByReference = jest.fn().mockResolvedValue(undefined);
     service.recordStockTransaction = jest.fn().mockResolvedValue({ balance: 0 });
 
     await service.syncSaleStockForInvoice({
@@ -43,18 +32,13 @@ describe('StockService.syncSaleStockForInvoice', () => {
       ],
     });
 
-    expect(service.recordStockTransaction).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        transactionType: StockTransactionType.ADJUSTMENT,
-        quantityIn: 10,
-        metalType: 'GOLD',
-        purity: '22K',
-        referenceId: 'inv-1',
-      }),
+    expect(service.purgeTransactionsByReference).toHaveBeenCalledWith(
+      'org-1',
+      'inv-1',
+      undefined,
     );
-    expect(service.recordStockTransaction).toHaveBeenNthCalledWith(
-      2,
+    expect(service.recordStockTransaction).toHaveBeenCalledTimes(1);
+    expect(service.recordStockTransaction).toHaveBeenCalledWith(
       expect.objectContaining({
         transactionType: StockTransactionType.SALE,
         quantityOut: 8,
@@ -67,20 +51,9 @@ describe('StockService.syncSaleStockForInvoice', () => {
 });
 
 describe('StockService.syncPurchaseStockForInvoice', () => {
-  it('reverses prior net then posts the new PURCHASE weight', async () => {
-    const stockLedger = {
-      findMany: jest.fn().mockResolvedValue([
-        {
-          metalType: 'GOLD',
-          purity: '22K',
-          quantityIn: 10,
-          quantityOut: 0,
-          rate: 5000,
-        },
-      ]),
-    };
-    const prisma = { stockLedger } as any;
-    const service = new StockService(prisma);
+  it('purges prior rows then posts the new PURCHASE weight', async () => {
+    const service = new StockService({} as any);
+    service.purgeTransactionsByReference = jest.fn().mockResolvedValue(undefined);
     service.recordStockTransaction = jest.fn().mockResolvedValue({ balance: 0 });
 
     await service.syncPurchaseStockForInvoice({
@@ -98,18 +71,13 @@ describe('StockService.syncPurchaseStockForInvoice', () => {
       ],
     });
 
-    expect(service.recordStockTransaction).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        transactionType: StockTransactionType.ADJUSTMENT,
-        quantityOut: 10,
-        metalType: 'GOLD',
-        purity: '22K',
-        referenceId: 'pur-1',
-      }),
+    expect(service.purgeTransactionsByReference).toHaveBeenCalledWith(
+      'org-1',
+      'pur-1',
+      undefined,
     );
-    expect(service.recordStockTransaction).toHaveBeenNthCalledWith(
-      2,
+    expect(service.recordStockTransaction).toHaveBeenCalledTimes(1);
+    expect(service.recordStockTransaction).toHaveBeenCalledWith(
       expect.objectContaining({
         transactionType: StockTransactionType.PURCHASE,
         quantityIn: 8,
@@ -118,6 +86,52 @@ describe('StockService.syncPurchaseStockForInvoice', () => {
         referenceId: 'pur-1',
       }),
     );
+  });
+});
+
+describe('StockService.initializeOpeningBalance', () => {
+  it('updates an existing opening balance and recalculates running balances', async () => {
+    const existingOB = {
+      id: 'ob-1',
+      date: new Date('2026-04-01T00:00:00.000Z'),
+    };
+    const stockLedger = {
+      findFirst: jest.fn().mockResolvedValue(existingOB),
+      update: jest.fn().mockResolvedValue({ id: 'ob-1' }),
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'ob-1',
+          transactionType: StockTransactionType.OPENING_BALANCE,
+          quantityIn: 120,
+          quantityOut: 0,
+        },
+      ]),
+    };
+    const stockBalance = {
+      upsert: jest.fn().mockResolvedValue({}),
+    };
+    const tx = { stockLedger, stockBalance };
+    const prisma = {
+      stockLedger,
+      $transaction: jest.fn((fn) => fn(tx)),
+    } as any;
+    const service = new StockService(prisma);
+    const recalcSpy = jest.spyOn(service as any, 'recalcRunningBalances').mockResolvedValue(undefined);
+
+    await service.initializeOpeningBalance('org-1', 'GOLD', '22K', 120, 5100, '2026-04-01');
+
+    expect(stockLedger.update).toHaveBeenCalledWith({
+      where: { id: 'ob-1' },
+      data: {
+        quantityIn: 120,
+        rate: 5100,
+        totalValue: 612000,
+        date: new Date('2026-04-01'),
+      },
+    });
+    expect(recalcSpy).toHaveBeenCalledWith('org-1', 'GOLD', '22K', tx);
+    expect(prisma.$transaction).toHaveBeenCalled();
+    recalcSpy.mockRestore();
   });
 });
 
@@ -203,5 +217,119 @@ describe('StockService.getGroupSummary', () => {
     expect(gold!.inwards.quantity).toBe(4);
     expect(gold!.outwards.quantity).toBe(10);
     expect(gold!.closing.quantity).toBe(94);
+  });
+});
+
+describe('StockService metal purities', () => {
+  const seedRows = [
+    { organizationId: 'org-1', metalType: 'GOLD', label: '24K', sortOrder: 0 },
+    { organizationId: 'org-1', metalType: 'GOLD', label: '22K', sortOrder: 1 },
+    { organizationId: 'org-1', metalType: 'GOLD', label: '20K', sortOrder: 2 },
+    { organizationId: 'org-1', metalType: 'GOLD', label: '18K', sortOrder: 3 },
+    { organizationId: 'org-1', metalType: 'SILVER', label: 'F', sortOrder: 0 },
+    { organizationId: 'org-1', metalType: 'SILVER', label: '925', sortOrder: 1 },
+  ];
+
+  it('seeds defaults when org has no purity rows', async () => {
+    const created: any[] = [];
+    const prisma = {
+      orgMetalPurity: {
+        count: jest.fn().mockResolvedValue(0),
+        createMany: jest.fn().mockImplementation(({ data }) => {
+          created.push(...data);
+          return Promise.resolve({ count: data.length });
+        }),
+        findMany: jest.fn().mockImplementation(() => Promise.resolve(created.filter((r) => r.isActive !== false))),
+      },
+    };
+    // After seed, listPurities calls ensure then findMany — mock findMany to return seeded shape
+    prisma.orgMetalPurity.findMany = jest.fn().mockResolvedValue(
+      seedRows.map((r) => ({ ...r, id: r.label, isActive: true })),
+    );
+    const service = new StockService(prisma as any);
+
+    const rows = await service.listPurities('org-1');
+    expect(prisma.orgMetalPurity.createMany).toHaveBeenCalled();
+    expect(prisma.orgMetalPurity.createMany.mock.calls[0][0].data).toHaveLength(6);
+    expect(rows).toHaveLength(6);
+  });
+
+  it('rejects duplicate active labels case-insensitively', async () => {
+    const prisma = {
+      orgMetalPurity: {
+        count: jest.fn().mockResolvedValue(1),
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'p1',
+          label: '22K',
+          isActive: true,
+          metalType: 'GOLD',
+        }),
+      },
+    };
+    const service = new StockService(prisma as any);
+    await expect(service.createPurity('org-1', 'GOLD' as any, '22k')).rejects.toThrow(/already exists/i);
+  });
+
+  it('soft-hides purity and excludes it from active list', async () => {
+    const rows = [
+      { id: 'p1', organizationId: 'org-1', metalType: 'GOLD', label: '22K', sortOrder: 0, isActive: true },
+      { id: 'p2', organizationId: 'org-1', metalType: 'GOLD', label: '20K', sortOrder: 1, isActive: true },
+    ];
+    const prisma = {
+      orgMetalPurity: {
+        count: jest.fn().mockResolvedValue(2),
+        findFirst: jest.fn().mockImplementation(({ where }) =>
+          Promise.resolve(rows.find((r) => r.id === where.id) || null),
+        ),
+        update: jest.fn().mockImplementation(({ where, data }) => {
+          const row = rows.find((r) => r.id === where.id)!;
+          Object.assign(row, data);
+          return Promise.resolve(row);
+        }),
+        findMany: jest.fn().mockImplementation(({ where }) => {
+          const list = where.isActive === true ? rows.filter((r) => r.isActive) : rows;
+          return Promise.resolve(list);
+        }),
+      },
+    };
+    const service = new StockService(prisma as any);
+
+    await service.hidePurity('org-1', 'p1');
+    expect(prisma.orgMetalPurity.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'p1' },
+        data: expect.objectContaining({ isActive: false }),
+      }),
+    );
+
+    const active = await service.listPurities('org-1', false);
+    expect(active.map((r) => r.label)).toEqual(['20K']);
+
+    const all = await service.listPurities('org-1', true);
+    expect(all.map((r) => r.label).sort()).toEqual(['20K', '22K']);
+  });
+
+  it('restores a previously hidden purity instead of creating a duplicate', async () => {
+    const prisma = {
+      orgMetalPurity: {
+        count: jest.fn().mockResolvedValue(1),
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'p1',
+          label: 'fancy',
+          isActive: false,
+          metalType: 'SILVER',
+        }),
+        update: jest.fn().mockResolvedValue({
+          id: 'p1',
+          label: 'fancy',
+          isActive: true,
+          metalType: 'SILVER',
+        }),
+      },
+    };
+    const service = new StockService(prisma as any);
+    const restored = await service.createPurity('org-1', 'SILVER' as any, 'fancy');
+    expect(prisma.orgMetalPurity.update).toHaveBeenCalled();
+    expect(restored.isActive).toBe(true);
   });
 });

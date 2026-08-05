@@ -296,7 +296,8 @@ export class FinanceService {
     if (dto.isDefault && account.type !== FinancialAccountType.CASH) {
       throw new BadRequestException('Only a CASH account can be the organization default');
     }
-    return this.prisma.$transaction(async (tx) => {
+    const { openingBalance, openingDate, ...accountFields } = dto;
+    await this.prisma.$transaction(async (tx) => {
       if (dto.isDefault) {
         await tx.financialAccount.updateMany({
           where: {
@@ -307,43 +308,61 @@ export class FinanceService {
           data: { isDefault: false },
         });
       }
-      return tx.financialAccount.update({
+      const updated = await tx.financialAccount.update({
         where: { id },
-        data: { ...dto, name: dto.name?.trim() },
+        data: { ...accountFields, name: accountFields.name?.trim() },
       });
+      if (openingBalance !== undefined || openingDate !== undefined) {
+        await this.upsertAccountOpeningBalance(tx, {
+          organizationId: user.organizationId,
+          accountId: id,
+          accountName: updated.name,
+          openingBalance,
+          openingDate,
+          createdById: user.userId,
+        });
+      }
     });
+    return this.getAccount(id, user.organizationId);
   }
 
   async listAccounts(organizationId: string) {
-    const [accounts, balances] = await Promise.all([
-      this.prisma.financialAccount.findMany({
-        where: { organizationId },
-        orderBy: [{ type: 'asc' }, { name: 'asc' }],
-      }),
+    const accounts = await this.prisma.financialAccount.findMany({
+      where: { organizationId },
+      orderBy: [{ type: 'asc' }, { name: 'asc' }],
+    });
+    const accountIds = accounts.map((account) => account.id);
+    const [balances, openingById] = await Promise.all([
       this.prisma.financialMovement.groupBy({
         by: ['accountId'],
         where: { organizationId, accountId: { not: null } },
         _sum: { amount: true },
       }),
+      this.loadOpeningBalances(organizationId, accountIds),
     ]);
     const balanceById = new Map(balances.map((row) => [row.accountId, row._sum.amount ?? 0]));
     return accounts.map((account) => ({
       ...account,
       isActive: account.status === FinancialAccountStatus.ACTIVE,
       balance: balanceById.get(account.id) ?? 0,
+      ...openingById.get(account.id),
     }));
   }
 
   async getAccount(id: string, organizationId: string) {
     const account = await this.getAccountRecord(id, organizationId);
-    const aggregate = await this.prisma.financialMovement.aggregate({
-      where: { organizationId, accountId: id },
-      _sum: { amount: true },
-    });
+    const [aggregate, openingById] = await Promise.all([
+      this.prisma.financialMovement.aggregate({
+        where: { organizationId, accountId: id },
+        _sum: { amount: true },
+      }),
+      this.loadOpeningBalances(organizationId, [id]),
+    ]);
     return {
       ...account,
       isActive: account.status === FinancialAccountStatus.ACTIVE,
       balance: aggregate._sum.amount ?? 0,
+      ...openingById.get(id),
     };
   }
 
@@ -353,6 +372,95 @@ export class FinanceService {
     });
     if (!account) throw new NotFoundException('Financial account not found');
     return account;
+  }
+
+  private async loadOpeningBalances(organizationId: string, accountIds: string[]) {
+    const openingById = new Map<string, { openingBalance: number; openingDate: string }>();
+    if (!accountIds.length) return openingById;
+
+    const rows = await this.prisma.financialTransaction.findMany({
+      where: {
+        organizationId,
+        sourceType: 'FINANCIAL_ACCOUNT_OPENING',
+        sourceId: { in: accountIds },
+        reversedAt: null,
+      },
+      include: { movements: { where: { accountId: { not: null } } } },
+    });
+    for (const row of rows) {
+      openingById.set(row.sourceId, {
+        openingBalance: Number(row.movements[0]?.amount ?? 0),
+        openingDate: row.occurredAt.toISOString().slice(0, 10),
+      });
+    }
+    return openingById;
+  }
+
+  private async upsertAccountOpeningBalance(
+    tx: Prisma.TransactionClient,
+    input: {
+      organizationId: string;
+      accountId: string;
+      accountName: string;
+      openingBalance?: number;
+      openingDate?: string;
+      createdById: string;
+    },
+  ) {
+    const existing = await tx.financialTransaction.findUnique({
+      where: {
+        organizationId_sourceType_sourceId: {
+          organizationId: input.organizationId,
+          sourceType: 'FINANCIAL_ACCOUNT_OPENING',
+          sourceId: input.accountId,
+        },
+      },
+      include: { movements: true },
+    });
+    if (input.openingBalance === undefined && input.openingDate === undefined) return;
+    if (input.openingBalance === undefined && !existing) return;
+
+    const amount =
+      input.openingBalance ?? Number(existing?.movements.find((m) => m.accountId)?.amount ?? 0);
+    const occurredAt = input.openingDate
+      ? new Date(input.openingDate)
+      : (existing?.occurredAt ?? new Date());
+
+    const transaction = await tx.financialTransaction.upsert({
+      where: {
+        organizationId_sourceType_sourceId: {
+          organizationId: input.organizationId,
+          sourceType: 'FINANCIAL_ACCOUNT_OPENING',
+          sourceId: input.accountId,
+        },
+      },
+      create: {
+        organizationId: input.organizationId,
+        type: FinancialTransactionType.OPENING_BALANCE,
+        sourceType: 'FINANCIAL_ACCOUNT_OPENING',
+        sourceId: input.accountId,
+        sourceParentType: 'FINANCIAL_ACCOUNT',
+        sourceParentId: input.accountId,
+        occurredAt,
+        description: `Opening balance for ${input.accountName}`,
+        createdById: input.createdById,
+      },
+      update: {
+        occurredAt,
+        description: `Opening balance for ${input.accountName}`,
+        reversedAt: null,
+      },
+    });
+
+    await tx.financialMovement.deleteMany({ where: { transactionId: transaction.id } });
+    await tx.financialMovement.create({
+      data: {
+        organizationId: input.organizationId,
+        transactionId: transaction.id,
+        accountId: input.accountId,
+        amount: new Decimal(amount),
+      },
+    });
   }
 
   async createManualTransaction(dto: CreateManualTransactionDto, user: CurrentUserData) {

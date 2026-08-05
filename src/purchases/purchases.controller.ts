@@ -26,6 +26,7 @@ type PurchaseBody = {
   cgstRate?: number;
   sgstRate?: number;
   igstRate?: number;
+  adjustment?: number;
   notes?: string;
   attachmentUrl?: string | null;
   attachmentKey?: string | null;
@@ -38,6 +39,8 @@ type PurchaseBody = {
     grossWeight?: number;
     netWeight?: number;
     rate?: number;
+    hallmarkingCharge?: number;
+    otherCharges?: number;
   }>;
   payments?: Array<{
     mode: PaymentMethod;

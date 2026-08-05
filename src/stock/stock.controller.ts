@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { StockService } from './stock.service';
 import { MetalType, OrganizationRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -50,6 +60,47 @@ export class StockController {
     @Query('endDate') endDate?: string,
   ) {
     return this.stockService.getGroupSummary(user.organizationId, startDate, endDate);
+  }
+
+  @Get('purities')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  async listPurities(
+    @CurrentUser() user: CurrentUserData,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    const include =
+      includeInactive === '1' || includeInactive === 'true' || includeInactive === 'yes';
+    return this.stockService.listPurities(user.organizationId, include);
+  }
+
+  @Post('purities')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  async createPurity(
+    @CurrentUser() user: CurrentUserData,
+    @Body() body: { metalType: MetalType; label: string },
+  ) {
+    return this.stockService.createPurity(user.organizationId, body.metalType, body.label);
+  }
+
+  @Patch('purities/:id')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  async updatePurity(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+    @Body() body: { isActive?: boolean; sortOrder?: number },
+  ) {
+    return this.stockService.updatePurity(user.organizationId, id, body);
+  }
+
+  @Delete('purities/:id')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  async hidePurity(@CurrentUser() user: CurrentUserData, @Param('id') id: string) {
+    return this.stockService.hidePurity(user.organizationId, id);
   }
 
   @Post('opening-balance')

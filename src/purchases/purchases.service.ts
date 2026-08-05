@@ -32,6 +32,8 @@ type PurchaseItemInput = {
   grossWeight?: number;
   netWeight?: number;
   rate?: number;
+  hallmarkingCharge?: number;
+  otherCharges?: number;
 };
 
 type PurchasePaymentInput = {
@@ -62,6 +64,7 @@ type PurchaseBillInput = {
   cgstRate?: number;
   sgstRate?: number;
   igstRate?: number;
+  adjustment?: number;
   notes?: string;
   attachmentUrl?: string | null;
   attachmentKey?: string | null;
@@ -136,6 +139,9 @@ export class PurchasesService {
           totalGoldWeight: computed.totalGoldWeight,
           totalSilverWeight: computed.totalSilverWeight,
           totalMetalAmount: computed.totalMetalAmount,
+          totalHallmarkingCharges: computed.totalHallmarkingCharges,
+          totalOtherCharges: computed.totalOtherCharges,
+          adjustment: computed.adjustment,
           notes: data.notes,
           attachmentUrl: data.attachmentUrl ?? undefined,
           attachmentKey: data.attachmentKey ?? undefined,
@@ -151,6 +157,8 @@ export class PurchasesService {
               grossWeight: item.grossWeight,
               netWeight: item.netWeight,
               rate: item.rate,
+              hallmarkingCharge: item.hallmarkingCharge,
+              otherCharges: item.otherCharges,
               totalAmount: item.totalAmount,
             })),
           },
@@ -304,6 +312,9 @@ export class PurchasesService {
           totalGoldWeight: computed.totalGoldWeight,
           totalSilverWeight: computed.totalSilverWeight,
           totalMetalAmount: computed.totalMetalAmount,
+          totalHallmarkingCharges: computed.totalHallmarkingCharges,
+          totalOtherCharges: computed.totalOtherCharges,
+          adjustment: computed.adjustment,
           notes: data.notes,
           ...attachmentData,
           items: {
@@ -316,6 +327,8 @@ export class PurchasesService {
               grossWeight: item.grossWeight,
               netWeight: item.netWeight,
               rate: item.rate,
+              hallmarkingCharge: item.hallmarkingCharge,
+              otherCharges: item.otherCharges,
               totalAmount: item.totalAmount,
             })),
           },
@@ -865,6 +878,7 @@ export class PurchasesService {
     cgstRate?: number;
     sgstRate?: number;
     igstRate?: number;
+    adjustment?: number;
   }) {
     const toNumber = (value: unknown, fallback = 0) => {
       const parsed = Number(value);
@@ -878,7 +892,9 @@ export class PurchasesService {
       const netWeight = round3(toNumber(item.netWeight, grossWeight));
       const rate = round2(toNumber(item.rate));
       const metalAmount = round2(netWeight * rate);
-      const totalAmount = metalAmount;
+      const hallmarkingCharge = round2(toNumber(item.hallmarkingCharge));
+      const otherCharges = round2(toNumber(item.otherCharges));
+      const totalAmount = round2(metalAmount + hallmarkingCharge + otherCharges);
 
       if (!item.metalType) {
         throw new BadRequestException(`Metal type is required for item ${index + 1}`);
@@ -901,12 +917,20 @@ export class PurchasesService {
         netWeight,
         rate,
         metalAmount,
+        hallmarkingCharge,
+        otherCharges,
         totalAmount,
       };
     });
 
     const subtotal = round2(normalizedItems.reduce((sum, item) => sum + item.totalAmount, 0));
     const totalMetalAmount = round2(normalizedItems.reduce((sum, item) => sum + item.metalAmount, 0));
+    const totalHallmarkingCharges = round2(
+      normalizedItems.reduce((sum, item) => sum + item.hallmarkingCharge, 0),
+    );
+    const totalOtherCharges = round2(
+      normalizedItems.reduce((sum, item) => sum + item.otherCharges, 0),
+    );
     const totalGoldWeight = round3(normalizedItems
       .filter((item) => item.metalType === MetalType.GOLD)
       .reduce((sum, item) => sum + item.netWeight, 0));
@@ -928,15 +952,19 @@ export class PurchasesService {
     const sgstAmount = data.addGst && taxType === 'CGST_SGST' ? round2(taxableAmount * sgstRate / 100) : 0;
     const igstAmount = data.addGst && taxType === 'IGST' ? round2(taxableAmount * igstRate / 100) : 0;
 
-    const grandTotal = data.addGst && !data.gstInclusive
+    const adjustment = round2(toNumber(data.adjustment));
+    const baseTotal = data.addGst && !data.gstInclusive
       ? round2(subtotal + cgstAmount + sgstAmount + igstAmount)
       : subtotal;
+    const grandTotal = round2(baseTotal + adjustment);
     const firstItem = normalizedItems[0];
 
     return {
       items: normalizedItems,
       totalWeight: round3(normalizedItems.reduce((sum, item) => sum + item.netWeight, 0)),
       totalMetalAmount,
+      totalHallmarkingCharges,
+      totalOtherCharges,
       totalGoldWeight,
       totalSilverWeight,
       taxableAmount,
@@ -946,6 +974,7 @@ export class PurchasesService {
       cgstAmount,
       sgstAmount,
       igstAmount,
+      adjustment,
       grandTotal,
       primaryMetalType: firstItem.metalType,
       primaryPurity: firstItem.purity,
