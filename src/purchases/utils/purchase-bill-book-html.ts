@@ -80,7 +80,8 @@ const placeholderBody = (message: string): string => `
 
 const buildPageBody = (page: PurchaseBillBookPage): string => {
   const url = page.attachmentUrl?.trim();
-  if (!url) {
+  // Only embed http(s) — escapeHtml alone does not stop javascript: / data: schemes.
+  if (!url || !/^https?:\/\//i.test(url)) {
     return placeholderBody('Supplier invoice attachment missing');
   }
 

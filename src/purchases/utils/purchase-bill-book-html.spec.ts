@@ -50,6 +50,24 @@ describe('buildPurchaseBillBookHtml', () => {
     expect(html).toContain('type="application/pdf"');
     expect(html.match(/class="print-btn"/g)).toHaveLength(1);
   });
+
+  it('rejects non-http(s) attachment URLs', () => {
+    const html = buildPurchaseBillBookHtml({
+      title: 'Purchase Bill Book - 1 Bills',
+      pages: [
+        {
+          billNo: 'XSS-1',
+          vendorName: 'Bad',
+          purchaseDate: '2026-04-01T00:00:00.000Z',
+          attachmentUrl: 'javascript:alert(1)',
+          attachmentMime: 'image/jpeg',
+        },
+      ],
+    });
+
+    expect(html).toContain('Supplier invoice attachment missing');
+    expect(html).not.toContain('javascript:');
+  });
 });
 
 describe('getPurchaseBillBookTitle', () => {

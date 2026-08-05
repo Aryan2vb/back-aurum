@@ -43,65 +43,58 @@ export class StockService {
 
     const purity = this.normalizePurity(rawPurity, metalType);
 
-    const db = params.prismaTx || this.prisma;
-
-    // We can use a unique constraint upsert to get or create the balance.
-    let currentBalance = await db.stockBalance.findUnique({
-      where: {
-        organizationId_metalType_purity: {
-          organizationId,
-          metalType,
-          purity,
+    const apply = async (db: Prisma.TransactionClient | PrismaService) => {
+      // Upsert on the unique key so concurrent first-inserts don't race.
+      const currentBalance = await db.stockBalance.upsert({
+        where: {
+          organizationId_metalType_purity: { organizationId, metalType, purity },
         },
-      },
-    });
-
-    if (!currentBalance) {
-      currentBalance = await db.stockBalance.create({
-        data: {
+        create: {
           organizationId,
           metalType,
           purity,
           quantity: 0,
         },
+        update: {},
       });
-    }
 
-    const newQuantity = Number(currentBalance.quantity) + quantityIn - quantityOut;
+      const newQuantity = Number(currentBalance.quantity) + quantityIn - quantityOut;
 
-    if (newQuantity < 0) {
-      console.warn(
-        `[StockService] Negative stock warning for ${purity} ${metalType}. New balance: ${newQuantity}`,
-      );
-    }
+      if (newQuantity < 0) {
+        console.warn(
+          `[StockService] Negative stock warning for ${purity} ${metalType}. New balance: ${newQuantity}`,
+        );
+      }
 
-    // Update Balance
-    await db.stockBalance.update({
-      where: { id: currentBalance.id },
-      data: { quantity: newQuantity },
-    });
+      await db.stockBalance.update({
+        where: { id: currentBalance.id },
+        data: { quantity: newQuantity },
+      });
 
-    const totalValue = rate ? rate * (quantityIn || quantityOut) : null;
+      const totalValue = rate ? rate * (quantityIn || quantityOut) : null;
 
-    // Create Ledger Entry
-    const ledgerEntry = await db.stockLedger.create({
-      data: {
-        organizationId,
-        metalType,
-        purity,
-        transactionType,
-        quantityIn,
-        quantityOut,
-        runningBalance: newQuantity,
-        rate,
-        totalValue,
-        referenceId,
-        notes,
-        date: date || new Date(),
-      },
-    });
+      const ledgerEntry = await db.stockLedger.create({
+        data: {
+          organizationId,
+          metalType,
+          purity,
+          transactionType,
+          quantityIn,
+          quantityOut,
+          runningBalance: newQuantity,
+          rate,
+          totalValue,
+          referenceId,
+          notes,
+          date: date || new Date(),
+        },
+      });
 
-    return { balance: newQuantity, ledgerEntry };
+      return { balance: newQuantity, ledgerEntry };
+    };
+
+    if (params.prismaTx) return apply(params.prismaTx);
+    return this.prisma.$transaction((tx) => apply(tx));
   }
 
   async getBalances(organizationId: string) {
