@@ -1,31 +1,35 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Post,
-  Patch,
-  Delete,
-  Param,
-  UseGuards,
-  Logger,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Patch, Delete, Param, Logger } from '@nestjs/common';
 import { OrganizationsService } from './organizations.service';
+import { AccessPolicyService } from './access-policy.service';
 import { AddMemberDto } from './dto/add-member.dto';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
+import { UpdateAccessPolicyDto } from './dto/update-access-policy.dto';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { OrganizationRole } from '@prisma/client';
 
 @Controller('organizations')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class OrganizationsController {
   private readonly logger = new Logger(OrganizationsController.name);
 
-  constructor(private readonly organizationsService: OrganizationsService) {
+  constructor(
+    private readonly organizationsService: OrganizationsService,
+    private readonly accessPolicy: AccessPolicyService,
+  ) {
     this.logger.log('OrganizationsController initialized');
+  }
+
+  // ── Access policy (OWNER) ────────────────────────────────────────────────
+
+  @Get('access-policy')
+  @Roles(OrganizationRole.OWNER)
+  getAccessPolicy(@CurrentUser() user: CurrentUserData) {
+    return this.accessPolicy.getPolicyView(user.organizationId, user.role);
+  }
+
+  @Patch('access-policy')
+  @Roles(OrganizationRole.OWNER)
+  updateAccessPolicy(@Body() dto: UpdateAccessPolicyDto, @CurrentUser() user: CurrentUserData) {
+    return this.accessPolicy.upsert(user.organizationId, dto);
   }
 
   // ── Members ──────────────────────────────────────────────────────────────

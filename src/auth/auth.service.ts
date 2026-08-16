@@ -16,6 +16,8 @@ import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 
 import { CurrentUserData } from './current-user.decorator';
+import { AccessPolicyService } from '../organizations/access-policy.service';
+import { ACCESS_WINDOW_CLOSED } from '../organizations/access-policy.constants';
 
 interface AuthRequestMetadata {
   ipAddress?: string;
@@ -36,6 +38,7 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    private readonly accessPolicy: AccessPolicyService,
   ) {
     this.logger.log('AuthService initialized');
     if (!process.env.JWT_SECRET) {
@@ -172,6 +175,17 @@ export class AuthService {
       throw new ForbiddenException('Organization is not active');
     }
 
+    const windowCheck = await this.accessPolicy.assertWithinAccessWindow(
+      membership.organizationId,
+      membership.role,
+    );
+    if (windowCheck.ok === false) {
+      throw new ForbiddenException({
+        code: ACCESS_WINDOW_CLOSED,
+        message: `Login is only allowed between ${windowCheck.start} and ${windowCheck.end} (${windowCheck.timezone})`,
+      });
+    }
+
     const session = await this.createSession(
       this.prisma,
       user.id,
@@ -235,6 +249,9 @@ export class AuthService {
     }
 
     const membership = dbUser.members[0];
+    const access =
+      membership &&
+      (await this.accessPolicy.getPolicyView(user.organizationId, membership.role));
 
     return {
       userId: dbUser.id,
@@ -247,6 +264,19 @@ export class AuthService {
             name: membership.organization.name,
             status: membership.organization.status,
             role: membership.role,
+          }
+        : null,
+      accessPolicy: access
+        ? {
+            accessWindowEnabled: access.accessWindowEnabled,
+            accessWindowStart: access.accessWindowStart,
+            accessWindowEnd: access.accessWindowEnd,
+            timezone: access.timezone,
+            withinAccessWindow: access.withinAccessWindow,
+            modules: access.modulesForRole,
+            ...(membership.role === OrganizationRole.OWNER
+              ? { moduleAccess: access.moduleAccess }
+              : {}),
           }
         : null,
     };

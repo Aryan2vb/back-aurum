@@ -1,19 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
-  Param,
-  Query,
-  Res,
-  HttpCode,
-  HttpStatus,
-  UseGuards,
-  Logger,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Res, HttpCode, HttpStatus, Logger, ForbiddenException } from '@nestjs/common';
 import { Response } from 'express';
 import { InvoicesService } from './invoices.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
@@ -25,8 +10,6 @@ import { FinalizeInvoiceDto } from './dto/finalize-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { NegotiatePreviewQueryDto, NegotiateCommitDto } from './dto/negotiate-invoice.dto';
 import { ApplyAdvanceDto } from './dto/apply-advance.dto';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { OrganizationRole } from '@prisma/client';
@@ -36,7 +19,6 @@ import { CreateBillBookDto } from './dto/create-bill-book.dto';
 import { AdvanceService } from '../credits/advance.service';
 
 @Controller('invoices')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class InvoicesController {
   private readonly logger = new Logger(InvoicesController.name);
 

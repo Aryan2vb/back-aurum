@@ -1,17 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpCode,
-  HttpStatus,
-  UseGuards,
-  Logger,
-} from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, Logger } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
@@ -31,9 +18,7 @@ import { SearchCustomerDto } from './dto/search-customer.dto';
 import { BulkUpdateStatusDto } from './dto/bulk-update-status.dto';
 import { PaginationQueryDto } from './dto/pagination.dto';
 import { BulkCreateCustomerDto } from './dto/bulk-create-customer.dto';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
-import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { OrganizationRole } from '@prisma/client';
 import { InvoicesService } from '../invoices/invoices.service';
@@ -44,7 +29,6 @@ import { RefundAdvanceDto } from '../credits/dto/refund-advance.dto';
 import { TransferAdvanceDto } from '../credits/dto/transfer-advance.dto';
 
 @Controller('customers')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class CustomersController {
   private readonly logger = new Logger(CustomersController.name);
 

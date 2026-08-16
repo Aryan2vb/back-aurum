@@ -1,31 +1,15 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpCode,
-  HttpStatus,
-  UseGuards,
-  Logger,
-} from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, Logger } from '@nestjs/common';
 import { CreditsService } from './credits.service';
 import { CreateCreditDto } from './dto/create-credit.dto';
 import { UpdateCreditDto } from './dto/update-credit.dto';
 import { CreateCreditTransactionDto } from './dto/create-credit-transaction.dto';
 import { UpdateCreditTransactionDto } from './dto/update-credit-transaction.dto';
 import { QueryCreditsDto } from './dto/query-credits.dto';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
-import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { OrganizationRole } from '@prisma/client';
 
 @Controller('credits')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class CreditsController {
   private readonly logger = new Logger(CreditsController.name);
 

@@ -51,6 +51,7 @@ model Organization {
   locations          Location[]
   metaTrackings      MetaTracking[]
   invoiceSettings    OrgInvoiceSettings?
+  accessPolicy       OrgAccessPolicy?
   invitations        OrganizationInvitation[]
   members            OrganizationMember[]
   sessions           Session[]
@@ -70,6 +71,23 @@ model Organization {
 
   @@index([status])
   @@index([deletedAt])
+}
+
+/// Owner-defined login/API window + which modules ADMIN/STAFF/VIEWER may open.
+/// OWNER is always exempt from the window and always has every module.
+model OrgAccessPolicy {
+  organizationId      String       @id
+  /// When true, non-OWNER members may only login/call APIs between start–end (org timezone).
+  accessWindowEnabled Boolean      @default(false)
+  /// HH:mm in organization.timezone (inclusive start).
+  accessWindowStart   String       @default("09:00")
+  /// HH:mm in organization.timezone (exclusive end). Supports overnight (e.g. 22:00→06:00).
+  accessWindowEnd     String       @default("20:00")
+  /// module -> roles allowed (ADMIN|STAFF|VIEWER). Missing module = all three allowed.
+  moduleAccess        Json         @default("{}")
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model OrganizationMember {

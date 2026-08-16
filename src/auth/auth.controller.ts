@@ -15,6 +15,7 @@ import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser, CurrentUserData } from './current-user.decorator';
+import { Public } from './public.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -24,12 +25,14 @@ export class AuthController {
     this.logger.log('AuthController initialized');
   }
 
+  @Public()
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
   signupFounder(@Body() dto: SignupDto, @Req() req: Request) {
     return this.authService.signupFounder(dto, this.extractRequestMeta(req));
   }
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto, @Req() req: Request) {

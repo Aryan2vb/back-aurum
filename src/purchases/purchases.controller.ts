@@ -1,20 +1,7 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Logger,
-  Param,
-  Patch,
-  Post,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Logger, Param, Patch, Post, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { PurchasesService } from './purchases.service';
 import { MetalType, OrganizationRole, PaymentMethod, TaxType } from '@prisma/client';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { CreatePurchaseBillBookDto } from './dto/create-purchase-bill-book.dto';
@@ -64,7 +51,6 @@ type PurchaseBody = {
 };
 
 @Controller('purchases')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class PurchasesController {
   private readonly logger = new Logger(PurchasesController.name);
 

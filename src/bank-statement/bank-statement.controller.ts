@@ -1,22 +1,8 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Query,
-  UploadedFile,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { OrganizationRole } from '@prisma/client';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
-import { RolesGuard } from '../auth/roles.guard';
 import { BankStatementService } from './bank-statement.service';
 import { ConfirmBankStatementMatchDto } from './dto/bank-statement.dto';
 
@@ -30,7 +16,6 @@ const READ_ROLES = [
 ];
 
 @Controller('finance/bank-statements')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class BankStatementController {
   constructor(private readonly bankStatements: BankStatementService) {}
 

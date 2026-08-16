@@ -1,19 +1,7 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  ParseEnumPipe,
-  Patch,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseEnumPipe, Patch, Post, Query } from '@nestjs/common';
 import { FinancialAccountType, OrganizationRole } from '@prisma/client';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
-import { RolesGuard } from '../auth/roles.guard';
 import {
   AssignMovementDto,
   BulkAssignMovementsDto,
@@ -31,7 +19,6 @@ const ALL_ROLES = [
 ];
 
 @Controller('finance')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class FinanceController {
   constructor(private readonly finance: FinanceService) {}
 
