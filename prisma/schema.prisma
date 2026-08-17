@@ -985,6 +985,8 @@ model BankStatementLine {
   @@unique([organizationId, accountId, fingerprint])
   @@index([organizationId, status])
   @@index([organizationId, accountId, status])
+  @@index([organizationId, invoicePaymentId])
+  @@index([organizationId, status, invoicePaymentId])
   @@index([importId])
 }
 

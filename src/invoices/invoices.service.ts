@@ -911,19 +911,23 @@ export class InvoicesService {
           },
         })
       : [];
-    const matchByPaymentId = new Map(
-      bankMatches
-        .filter((row) => row.invoicePaymentId)
-        .map((row) => [
-          row.invoicePaymentId as string,
-          {
-            txnDate: row.txnDate,
-            refNumber: row.refNumber,
-            narration: row.narration,
-            credit: Number(row.credit),
-          },
-        ]),
-    );
+    const matchByPaymentId = new Map<string, {
+      txnDate: Date;
+      refNumber: string | null;
+      narration: string;
+      credit: number;
+    }[]>();
+    for (const row of bankMatches) {
+      if (!row.invoicePaymentId) continue;
+      const list = matchByPaymentId.get(row.invoicePaymentId) || [];
+      list.push({
+        txnDate: row.txnDate,
+        refNumber: row.refNumber,
+        narration: row.narration,
+        credit: Number(row.credit),
+      });
+      matchByPaymentId.set(row.invoicePaymentId, list);
+    }
 
     // Sum all advance amounts applied directly to this invoice
     const advanceApplications = await this.prisma.ledgerEntry.aggregate({
@@ -943,11 +947,12 @@ export class InvoicesService {
     return {
       ...invoice,
       payments: invoice.payments.map((payment) => {
-        const bankMatch = matchByPaymentId.get(payment.id) || null;
+        const lines = matchByPaymentId.get(payment.id) || [];
         return {
           ...payment,
-          bankMatched: Boolean(bankMatch),
-          bankMatch,
+          bankMatched: lines.length > 0,
+          bankMatches: lines,
+          bankMatch: lines[0] || null,
         };
       }),
       remainingBalance: remainingPayable.toNumber(),

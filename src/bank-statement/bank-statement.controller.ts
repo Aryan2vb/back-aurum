@@ -4,7 +4,11 @@ import { OrganizationRole } from '@prisma/client';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { BankStatementService } from './bank-statement.service';
-import { ConfirmBankStatementMatchDto } from './dto/bank-statement.dto';
+import {
+  ConfirmBankStatementMatchDto,
+  ConfirmBankStatementMatchBulkDto,
+  DeleteBankStatementLinesBulkDto,
+} from './dto/bank-statement.dto';
 
 const WRITE_ROLES = [OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF];
 
@@ -32,6 +36,12 @@ export class BankStatementController {
     }
     const text = file.buffer.toString('utf8');
     return this.bankStatements.upload(accountId, text, file.originalname || 'statement.txt', user);
+  }
+
+  @Get('inbox')
+  @Roles(...READ_ROLES)
+  listInbox(@CurrentUser() user: CurrentUserData, @Query('accountId') accountId?: string) {
+    return this.bankStatements.listInbox(user.organizationId, accountId);
   }
 
   @Get('unmatched')
@@ -73,6 +83,15 @@ export class BankStatementController {
     return this.bankStatements.deleteLine(id, user);
   }
 
+  @Post('delete-bulk')
+  @Roles(...WRITE_ROLES)
+  deleteLinesBulk(
+    @Body() dto: DeleteBankStatementLinesBulkDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.bankStatements.deleteLines(dto.lineIds, user);
+  }
+
   @Post('lines/:id/match')
   @Roles(...WRITE_ROLES)
   confirmMatch(
@@ -81,5 +100,14 @@ export class BankStatementController {
     @CurrentUser() user: CurrentUserData,
   ) {
     return this.bankStatements.confirmMatch(id, dto.paymentId, user);
+  }
+
+  @Post('match-bulk')
+  @Roles(...WRITE_ROLES)
+  confirmMatchBulk(
+    @Body() dto: ConfirmBankStatementMatchBulkDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.bankStatements.confirmMatchMany(dto.lineIds, dto.paymentId, user);
   }
 }

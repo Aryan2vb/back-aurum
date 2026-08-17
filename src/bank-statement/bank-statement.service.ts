@@ -11,8 +11,12 @@ import { FinanceService } from '../finance/finance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { parseHdfcDelimited } from './hdfc-statement.parser';
 import {
+  AMOUNT_TOLERANCE,
   BANKISH_PAYMENT_MODES,
+  calendarDayKey,
+  indexPaymentsByCalendarDay,
   PaymentCandidate,
+  sameCalendarDay,
   suggestPaymentsForCredit,
 } from './suggest-payments';
 
@@ -102,59 +106,32 @@ export class BankStatementService {
     };
   }
 
-  async listUnmatched(organizationId: string, accountId?: string) {
-    const lines = await this.prisma.bankStatementLine.findMany({
-      where: {
-        organizationId,
-        status: BankStatementLineStatus.UNMATCHED,
-        credit: { gt: 0 },
-        ...(accountId ? { accountId } : {}),
-      },
-      orderBy: [{ txnDate: 'desc' }, { createdAt: 'desc' }],
-      take: 200,
-    });
-
-    const payments = await this.loadUnlinkedBankishPayments(organizationId, accountId);
-
-    return lines.map((line) => ({
-      id: line.id,
-      accountId: line.accountId,
-      txnDate: line.txnDate,
-      valueDate: line.valueDate,
-      narration: line.narration,
-      debit: Number(line.debit),
-      credit: Number(line.credit),
-      refNumber: line.refNumber,
-      closingBalance: line.closingBalance == null ? null : Number(line.closingBalance),
-      status: line.status,
-      suggestions: suggestPaymentsForCredit(
-        {
-          credit: Number(line.credit),
-          narration: line.narration,
-          refNumber: line.refNumber,
-          txnDate: line.txnDate,
-          accountId: line.accountId,
-        },
-        payments,
-      ),
-    }));
+  /** One round-trip for the reconcile tab: unmatched credits, open payments, linked history. */
+  async listInbox(organizationId: string, accountId?: string) {
+    const [lines, payments, matched] = await Promise.all([
+      this.findUnmatchedCredits(organizationId, accountId),
+      this.loadUnlinkedBankishPayments(organizationId, accountId),
+      this.listMatched(organizationId, accountId),
+    ]);
+    return {
+      unmatched: this.withSuggestions(lines, payments),
+      payments: this.serializeUnlinkedPayments(payments),
+      matched,
+    };
   }
 
-  /** Booked non-cash payments not yet linked to a statement credit. */
+  async listUnmatched(organizationId: string, accountId?: string) {
+    const [lines, payments] = await Promise.all([
+      this.findUnmatchedCredits(organizationId, accountId),
+      this.loadUnlinkedBankishPayments(organizationId, accountId),
+    ]);
+    return this.withSuggestions(lines, payments);
+  }
+
+  /** Booked non-cash payments not yet fully covered by statement credits. */
   async listUnmatchedPayments(organizationId: string, accountId?: string) {
     const payments = await this.loadUnlinkedBankishPayments(organizationId, accountId);
-    return payments.map((payment) => ({
-      paymentId: payment.id,
-      invoiceId: payment.invoiceId,
-      invoiceNumber: payment.invoiceNumber,
-      invoiceStatus: payment.invoiceStatus,
-      customerName: payment.customerName,
-      mode: payment.mode,
-      amount: payment.amount,
-      paidAt: payment.paidAt,
-      reference: payment.reference,
-      accountId: payment.accountId,
-    }));
+    return this.serializeUnlinkedPayments(payments);
   }
 
   /** Already-linked statement credits (month-end history). */
@@ -245,20 +222,61 @@ export class BankStatementService {
   }
 
   async deleteLine(lineId: string, user: CurrentUserData) {
-    const line = await this.requireLine(lineId, user.organizationId);
-    if (line.status === BankStatementLineStatus.MATCHED) {
+    const result = await this.deleteLines([lineId], user);
+    return result.deleted;
+  }
+
+  async deleteLines(lineIds: string[], user: CurrentUserData) {
+    const uniqueIds = [...new Set(lineIds.filter(Boolean))];
+    if (!uniqueIds.length) {
+      throw new BadRequestException('Select at least one statement line');
+    }
+
+    const lines = await this.prisma.bankStatementLine.findMany({
+      where: { organizationId: user.organizationId, id: { in: uniqueIds } },
+    });
+    if (lines.length !== uniqueIds.length) {
+      throw new NotFoundException('One or more statement lines were not found');
+    }
+    if (lines.some((line) => line.status === BankStatementLineStatus.MATCHED)) {
       throw new BadRequestException('Unlink matched lines before deleting');
     }
-    return this.prisma.bankStatementLine.delete({ where: { id: line.id } });
+
+    const deleted = await this.prisma.bankStatementLine.deleteMany({
+      where: { organizationId: user.organizationId, id: { in: uniqueIds } },
+    });
+    return { count: deleted.count, deleted: lines[0] };
   }
 
   async confirmMatch(lineId: string, paymentId: string, user: CurrentUserData) {
-    const line = await this.requireLine(lineId, user.organizationId);
-    if (line.status !== BankStatementLineStatus.UNMATCHED) {
-      throw new BadRequestException('Line is already matched or ignored');
+    return this.confirmMatchMany([lineId], paymentId, user);
+  }
+
+  /**
+   * Link one or more statement credits to one booked payment.
+   * Credits may be splits (10+20+5+15 → ₹50 payment) as long as sum ≤ remaining
+   * and each credit is same calendar day as payment.paidAt.
+   */
+  async confirmMatchMany(lineIds: string[], paymentId: string, user: CurrentUserData) {
+    const uniqueIds = [...new Set(lineIds.filter(Boolean))];
+    if (!uniqueIds.length) {
+      throw new BadRequestException('Select at least one statement credit');
     }
-    if (!(Number(line.credit) > 0)) {
-      throw new BadRequestException('Only credit lines can be matched to payments');
+
+    const lines = await this.prisma.bankStatementLine.findMany({
+      where: { organizationId: user.organizationId, id: { in: uniqueIds } },
+    });
+    if (lines.length !== uniqueIds.length) {
+      throw new NotFoundException('One or more statement lines were not found');
+    }
+
+    for (const line of lines) {
+      if (line.status !== BankStatementLineStatus.UNMATCHED) {
+        throw new BadRequestException('Only unmatched credits can be linked');
+      }
+      if (!(Number(line.credit) > 0)) {
+        throw new BadRequestException('Only credit lines can be matched to payments');
+      }
     }
 
     const payment = await this.prisma.invoicePayment.findFirst({
@@ -275,46 +293,63 @@ export class BankStatementService {
       );
     }
 
-    const amountDiff = Math.abs(Number(payment.amount) - Number(line.credit));
-    if (amountDiff > 1) {
-      throw new BadRequestException('Payment amount does not match statement credit');
-    }
-
-    const alreadyLinked = await this.prisma.bankStatementLine.findFirst({
+    const creditSum = lines.reduce((sum, line) => sum + Number(line.credit), 0);
+    const linkedAgg = await this.prisma.bankStatementLine.aggregate({
       where: {
         organizationId: user.organizationId,
         invoicePaymentId: payment.id,
         status: BankStatementLineStatus.MATCHED,
       },
-      select: { id: true },
+      _sum: { credit: true },
     });
-    if (alreadyLinked) {
-      throw new BadRequestException('This payment is already linked to another statement line');
-    }
-
-    if (payment.accountId && payment.accountId !== line.accountId) {
+    const alreadyLinked = Number(linkedAgg._sum.credit || 0);
+    const remaining = Number(payment.amount) - alreadyLinked;
+    if (creditSum > remaining + AMOUNT_TOLERANCE) {
       throw new BadRequestException(
-        'Payment is booked to a different bank account than this statement',
+        `Selected credits (₹${creditSum.toFixed(2)}) exceed remaining payment capacity (₹${remaining.toFixed(2)})`,
       );
     }
 
+    for (const line of lines) {
+      if (!sameCalendarDay(payment.paidAt, line.txnDate)) {
+        throw new BadRequestException(
+          'Payment date must be the same calendar day as each bank credit date',
+        );
+      }
+      if (payment.accountId && payment.accountId !== line.accountId) {
+        throw new BadRequestException(
+          'Payment is booked to a different bank account than this statement',
+        );
+      }
+    }
+
+    const accountIds = new Set(lines.map((line) => line.accountId));
+    if (accountIds.size > 1) {
+      throw new BadRequestException('All selected credits must be from the same bank account');
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
-      const lineRow = await tx.bankStatementLine.update({
-        where: { id: line.id },
+      await tx.bankStatementLine.updateMany({
+        where: { organizationId: user.organizationId, id: { in: uniqueIds } },
         data: {
           status: BankStatementLineStatus.MATCHED,
           matchedInvoiceId: payment.invoiceId,
           invoicePaymentId: payment.id,
         },
       });
-      // Fill account on the payment if staff never picked one at booking time.
-      const accountId = payment.accountId || line.accountId;
+      const updatedRows = await tx.bankStatementLine.findMany({
+        where: { organizationId: user.organizationId, id: { in: uniqueIds } },
+      });
+      const byId = new Map(updatedRows.map((row) => [row.id, row]));
+      const rows = uniqueIds.map((id) => byId.get(id)).filter(Boolean);
+      const accountId = payment.accountId || lines[0].accountId;
       if (!payment.accountId) {
         await tx.invoicePayment.update({
           where: { id: payment.id },
           data: { accountId },
         });
       }
+      // Upsert once for the booked payment amount (not per credit).
       await this.financeService.syncAutomaticPayment(tx, {
         organizationId: user.organizationId,
         sourceType: 'INVOICE_PAYMENT',
@@ -329,17 +364,21 @@ export class BankStatementService {
         description: payment.notes ?? 'Invoice payment',
         createdById: user.userId,
       });
-      return lineRow;
+      return rows;
     });
 
+    const linkedAfter = alreadyLinked + creditSum;
     return {
-      line: updated,
+      lines: updated,
       payment: {
         id: payment.id,
         invoiceId: payment.invoiceId,
         invoiceNumber: payment.invoice.invoiceNumber,
         amount: Number(payment.amount),
         mode: payment.mode,
+        linkedCredits: linkedAfter,
+        remaining: Math.max(0, Number(payment.amount) - linkedAfter),
+        complete: Number(payment.amount) - linkedAfter <= AMOUNT_TOLERANCE,
       },
     };
   }
@@ -352,21 +391,83 @@ export class BankStatementService {
     return line;
   }
 
+  private findUnmatchedCredits(organizationId: string, accountId?: string) {
+    return this.prisma.bankStatementLine.findMany({
+      where: {
+        organizationId,
+        status: BankStatementLineStatus.UNMATCHED,
+        credit: { gt: 0 },
+        ...(accountId ? { accountId } : {}),
+      },
+      orderBy: [{ txnDate: 'desc' }, { createdAt: 'desc' }],
+      take: 200,
+    });
+  }
+
+  private withSuggestions(
+    lines: Awaited<ReturnType<BankStatementService['findUnmatchedCredits']>>,
+    payments: PaymentCandidate[],
+  ) {
+    const byDay = indexPaymentsByCalendarDay(payments);
+    return lines.map((line) => ({
+      id: line.id,
+      accountId: line.accountId,
+      txnDate: line.txnDate,
+      valueDate: line.valueDate,
+      narration: line.narration,
+      debit: Number(line.debit),
+      credit: Number(line.credit),
+      refNumber: line.refNumber,
+      closingBalance: line.closingBalance == null ? null : Number(line.closingBalance),
+      status: line.status,
+      suggestions: suggestPaymentsForCredit(
+        {
+          credit: Number(line.credit),
+          narration: line.narration,
+          refNumber: line.refNumber,
+          txnDate: line.txnDate,
+          accountId: line.accountId,
+        },
+        byDay.get(calendarDayKey(line.txnDate)) || [],
+      ),
+    }));
+  }
+
+  private serializeUnlinkedPayments(payments: PaymentCandidate[]) {
+    return payments.map((payment) => ({
+      paymentId: payment.id,
+      invoiceId: payment.invoiceId,
+      invoiceNumber: payment.invoiceNumber,
+      invoiceStatus: payment.invoiceStatus,
+      customerName: payment.customerName,
+      mode: payment.mode,
+      amount: payment.amount,
+      remaining: payment.remaining,
+      paidAt: payment.paidAt,
+      reference: payment.reference,
+      accountId: payment.accountId,
+    }));
+  }
+
   private async loadUnlinkedBankishPayments(
     organizationId: string,
     accountId?: string,
   ): Promise<PaymentCandidate[]> {
-    const linked = await this.prisma.bankStatementLine.findMany({
+    const grouped = await this.prisma.bankStatementLine.groupBy({
+      by: ['invoicePaymentId'],
       where: {
         organizationId,
         status: BankStatementLineStatus.MATCHED,
         invoicePaymentId: { not: null },
+        credit: { gt: 0 },
       },
-      select: { invoicePaymentId: true },
+      _sum: { credit: true },
     });
-    const linkedIds = linked
-      .map((row) => row.invoicePaymentId)
-      .filter((id): id is string => Boolean(id));
+    const linkedSumByPayment = new Map<string, number>();
+    for (const row of grouped) {
+      if (!row.invoicePaymentId) continue;
+      linkedSumByPayment.set(row.invoicePaymentId, Number(row._sum.credit || 0));
+    }
 
     const since = new Date();
     since.setDate(since.getDate() - 120);
@@ -376,7 +477,6 @@ export class BankStatementService {
         organizationId,
         mode: { in: [...BANKISH_PAYMENT_MODES] as PaymentMethod[] },
         paidAt: { gte: since },
-        ...(linkedIds.length ? { id: { notIn: linkedIds } } : {}),
         ...(accountId ? { OR: [{ accountId }, { accountId: null }] } : {}),
       },
       select: {
@@ -399,17 +499,25 @@ export class BankStatementService {
       take: 800,
     });
 
-    return rows.map((row) => ({
-      id: row.id,
-      amount: Number(row.amount),
-      mode: row.mode,
-      reference: row.reference,
-      paidAt: row.paidAt,
-      accountId: row.accountId,
-      invoiceId: row.invoiceId,
-      invoiceNumber: row.invoice.invoiceNumber,
-      invoiceStatus: row.invoice.status,
-      customerName: row.invoice.customer?.fullName || '',
-    }));
+    return rows
+      .map((row) => {
+        const amount = Number(row.amount);
+        const linkedSum = linkedSumByPayment.get(row.id) || 0;
+        const remaining = amount - linkedSum;
+        return {
+          id: row.id,
+          amount,
+          remaining,
+          mode: row.mode,
+          reference: row.reference,
+          paidAt: row.paidAt,
+          accountId: row.accountId,
+          invoiceId: row.invoiceId,
+          invoiceNumber: row.invoice.invoiceNumber,
+          invoiceStatus: row.invoice.status,
+          customerName: row.invoice.customer?.fullName || '',
+        };
+      })
+      .filter((row) => row.remaining > AMOUNT_TOLERANCE);
   }
 }
