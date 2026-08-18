@@ -250,8 +250,7 @@ export class AuthService {
 
     const membership = dbUser.members[0];
     const access =
-      membership &&
-      (await this.accessPolicy.getPolicyView(user.organizationId, membership.role));
+      membership && (await this.accessPolicy.getPolicyView(user.organizationId, membership.role));
 
     return {
       userId: dbUser.id,

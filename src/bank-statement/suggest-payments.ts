@@ -102,7 +102,8 @@ export const suggestPaymentsForCredit = (
       const exactRemaining = Math.abs(remaining - credit) <= AMOUNT_TOLERANCE;
 
       if (exactPayment) score += 100;
-      else if (exactRemaining) score += 90; // last split that completes the payment
+      else if (exactRemaining)
+        score += 90; // last split that completes the payment
       else score += 40; // partial toward a larger payment
 
       if (payment.accountId && payment.accountId === line.accountId) score += 40;
@@ -150,6 +151,27 @@ export const suggestPaymentsForCredit = (
     .filter(Boolean)
     .sort((a, b) => b!.score - a!.score)
     .slice(0, limit);
+};
+
+export type InvoiceBankReconcile = 'full' | 'partial' | 'none' | null;
+
+/** Invoice-level statement cover for bankish payments (cash / old-gold ignored). */
+export const invoiceBankReconcileStatus = (
+  payments: { id: string; amount: number | string; mode: string }[],
+  linkedByPaymentId: Map<string, number>,
+): InvoiceBankReconcile => {
+  const bankish = (payments || []).filter((payment) =>
+    BANKISH_PAYMENT_MODES.includes(payment.mode as (typeof BANKISH_PAYMENT_MODES)[number]),
+  );
+  if (!bankish.length) return null;
+  const due = bankish.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const linked = bankish.reduce(
+    (sum, payment) => sum + (linkedByPaymentId.get(payment.id) || 0),
+    0,
+  );
+  if (linked <= AMOUNT_TOLERANCE) return 'none';
+  if (due - linked <= AMOUNT_TOLERANCE) return 'full';
+  return 'partial';
 };
 
 /** Payments whose remaining capacity ≈ selectedCreditsSum (for bulk link). */

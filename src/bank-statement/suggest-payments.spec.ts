@@ -1,5 +1,6 @@
 import {
   indexPaymentsByCalendarDay,
+  invoiceBankReconcileStatus,
   paymentsMatchingCreditSum,
   suggestPaymentsForCredit,
 } from './suggest-payments';
@@ -129,5 +130,36 @@ describe('indexPaymentsByCalendarDay', () => {
     ]);
     expect([...byDay.keys()].sort()).toEqual(['2026-07-20', '2026-07-21']);
     expect(byDay.get('2026-07-20')?.map((p) => p.id)).toEqual(['a', 'c']);
+  });
+});
+
+describe('invoiceBankReconcileStatus', () => {
+  const linked = (entries: [string, number][]) => new Map(entries);
+
+  it('ignores cash-only invoices', () => {
+    expect(
+      invoiceBankReconcileStatus([{ id: 'c', amount: 500, mode: 'CASH' }], linked([])),
+    ).toBeNull();
+  });
+
+  it('marks unmatched when no statement credits are linked', () => {
+    expect(invoiceBankReconcileStatus([{ id: 'u', amount: 10000, mode: 'UPI' }], linked([]))).toBe(
+      'none',
+    );
+  });
+
+  it('marks partial when some bankish amount is still open', () => {
+    expect(
+      invoiceBankReconcileStatus([{ id: 'u', amount: 50000, mode: 'UPI' }], linked([['u', 10000]])),
+    ).toBe('partial');
+  });
+
+  it('marks fully matched at remaining ≤ ₹1', () => {
+    expect(
+      invoiceBankReconcileStatus(
+        [{ id: 'u', amount: 10000, mode: 'UPI' }],
+        linked([['u', 9999.5]]),
+      ),
+    ).toBe('full');
   });
 });

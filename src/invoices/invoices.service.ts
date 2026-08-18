@@ -33,6 +33,7 @@ import { StockService } from '../stock/stock.service';
 import { FinanceService } from '../finance/finance.service';
 import { CreateBillBookDto } from './dto/create-bill-book.dto';
 import { buildBillBookHtml, getBillBookTitle } from './utils/bill-book-html';
+import { invoiceBankReconcileStatus } from '../bank-statement/suggest-payments';
 
 const BILL_BOOK_QUERY_BATCH_SIZE = 100;
 
@@ -846,7 +847,7 @@ export class InvoicesService {
               customerId: true,
               customer: { select: { id: true, fullName: true, customerCode: true } },
               _count: { select: { items: true } },
-              payments: { select: { amount: true, mode: true } },
+              payments: { select: { id: true, amount: true, mode: true } },
             },
           }),
     };
@@ -856,12 +857,18 @@ export class InvoicesService {
       this.prisma.invoice.count({ where }),
     ]);
 
+    const paymentIds = invoices.flatMap((inv: any) =>
+      (inv.payments || []).map((payment: { id: string }) => payment.id),
+    );
+    const linkedByPaymentId = await this.linkedBankCreditByPaymentId(organizationId, paymentIds);
+
     return {
-      data: invoices.map((inv) => ({
+      data: invoices.map((inv: any) => ({
         ...inv,
         remainingBalance: new Decimal(inv.totalAmount)
           .minus(new Decimal(inv.paidAmount))
           .toNumber(),
+        bankReconcile: invoiceBankReconcileStatus(inv.payments || [], linkedByPaymentId),
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -911,12 +918,15 @@ export class InvoicesService {
           },
         })
       : [];
-    const matchByPaymentId = new Map<string, {
-      txnDate: Date;
-      refNumber: string | null;
-      narration: string;
-      credit: number;
-    }[]>();
+    const matchByPaymentId = new Map<
+      string,
+      {
+        txnDate: Date;
+        refNumber: string | null;
+        narration: string;
+        credit: number;
+      }[]
+    >();
     for (const row of bankMatches) {
       if (!row.invoicePaymentId) continue;
       const list = matchByPaymentId.get(row.invoicePaymentId) || [];
@@ -944,8 +954,17 @@ export class InvoicesService {
       .minus(new Decimal(invoice.paidAmount))
       .toDecimalPlaces(2);
 
+    const linkedByPaymentId = new Map<string, number>();
+    for (const [paymentId, lines] of matchByPaymentId) {
+      linkedByPaymentId.set(
+        paymentId,
+        lines.reduce((sum, line) => sum + Number(line.credit || 0), 0),
+      );
+    }
+
     return {
       ...invoice,
+      bankReconcile: invoiceBankReconcileStatus(invoice.payments, linkedByPaymentId),
       payments: invoice.payments.map((payment) => {
         const lines = matchByPaymentId.get(payment.id) || [];
         return {
@@ -953,6 +972,10 @@ export class InvoicesService {
           bankMatched: lines.length > 0,
           bankMatches: lines,
           bankMatch: lines[0] || null,
+          bankReconcile: invoiceBankReconcileStatus(
+            [{ id: payment.id, amount: payment.amount, mode: payment.mode }],
+            linkedByPaymentId,
+          ),
         };
       }),
       remainingBalance: remainingPayable.toNumber(),
@@ -2320,6 +2343,26 @@ export class InvoicesService {
     } else {
       return generateInvoiceHtml(invoiceData);
     }
+  }
+
+  private async linkedBankCreditByPaymentId(organizationId: string, paymentIds: string[]) {
+    const ids = [...new Set(paymentIds.filter(Boolean))];
+    if (!ids.length) return new Map<string, number>();
+    const grouped = await this.prisma.bankStatementLine.groupBy({
+      by: ['invoicePaymentId'],
+      where: {
+        organizationId,
+        status: BankStatementLineStatus.MATCHED,
+        invoicePaymentId: { in: ids },
+      },
+      _sum: { credit: true },
+    });
+    const linked = new Map<string, number>();
+    for (const row of grouped) {
+      if (!row.invoicePaymentId) continue;
+      linked.set(row.invoicePaymentId, Number(row._sum.credit || 0));
+    }
+    return linked;
   }
 
   private async syncInvoiceTreasury(

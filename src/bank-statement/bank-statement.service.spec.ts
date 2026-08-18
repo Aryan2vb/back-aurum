@@ -85,7 +85,10 @@ describe('BankStatementService.confirmMatchMany', () => {
     ...overrides,
   });
 
-  const makeMatchPrisma = (lines: ReturnType<typeof unmatchedLine>[], paymentOverrides: Record<string, unknown> = {}) => {
+  const makeMatchPrisma = (
+    lines: ReturnType<typeof unmatchedLine>[],
+    paymentOverrides: Record<string, unknown> = {},
+  ) => {
     const payment = {
       id: 'pay-1',
       organizationId: 'org-1',
@@ -102,9 +105,11 @@ describe('BankStatementService.confirmMatchMany', () => {
       bankStatementLine: {
         findMany: jest.fn().mockResolvedValue(lines),
         aggregate: jest.fn().mockResolvedValue({ _sum: { credit: 0 } }),
-        update: jest.fn().mockImplementation(({ where, data }) =>
-          Promise.resolve({ ...lines.find((l) => l.id === where.id), ...data }),
-        ),
+        update: jest
+          .fn()
+          .mockImplementation(({ where, data }) =>
+            Promise.resolve({ ...lines.find((l) => l.id === where.id), ...data }),
+          ),
         updateMany: jest.fn().mockResolvedValue({ count: lines.length }),
       },
       invoicePayment: {
@@ -117,7 +122,10 @@ describe('BankStatementService.confirmMatchMany', () => {
   };
 
   it('rejects linking a payment booked to a different bank account', async () => {
-    const { prisma } = makeMatchPrisma([unmatchedLine('line-1', 100)], { accountId: 'bank-b', amount: 100 });
+    const { prisma } = makeMatchPrisma([unmatchedLine('line-1', 100)], {
+      accountId: 'bank-b',
+      amount: 100,
+    });
     const service = new BankStatementService(prisma as any);
     await expect(service.confirmMatch('line-1', 'pay-1', user)).rejects.toBeInstanceOf(
       BadRequestException,
@@ -130,9 +138,9 @@ describe('BankStatementService.confirmMatchMany', () => {
       unmatchedLine('line-1', 10000, { txnDate: new Date('2026-07-21T00:00:00.000Z') }),
     ]);
     const service = new BankStatementService(prisma as any);
-    await expect(
-      service.confirmMatchMany(['line-1'], 'pay-1', user),
-    ).rejects.toThrow(/same calendar day/i);
+    await expect(service.confirmMatchMany(['line-1'], 'pay-1', user)).rejects.toThrow(
+      /same calendar day/i,
+    );
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -143,9 +151,9 @@ describe('BankStatementService.confirmMatchMany', () => {
     );
     prisma.bankStatementLine.aggregate.mockResolvedValue({ _sum: { credit: 40000 } });
     const service = new BankStatementService(prisma as any);
-    await expect(
-      service.confirmMatchMany(['line-1', 'line-2'], 'pay-1', user),
-    ).rejects.toThrow(/exceed remaining payment capacity/i);
+    await expect(service.confirmMatchMany(['line-1', 'line-2'], 'pay-1', user)).rejects.toThrow(
+      /exceed remaining payment capacity/i,
+    );
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -161,11 +169,7 @@ describe('BankStatementService.confirmMatchMany', () => {
     };
     const service = new BankStatementService(prisma as any, financeService as any);
 
-    const result = await service.confirmMatchMany(
-      ['line-1', 'line-2', 'line-3'],
-      'pay-1',
-      user,
-    );
+    const result = await service.confirmMatchMany(['line-1', 'line-2', 'line-3'], 'pay-1', user);
 
     expect(financeService.syncAutomaticPayment).toHaveBeenCalledTimes(1);
     expect(prisma.bankStatementLine.updateMany).toHaveBeenCalledTimes(1);
@@ -190,10 +194,12 @@ describe('BankStatementService.listInbox', () => {
   it('loads unmatched, payments, and matched in one pass without scanning every linked row', async () => {
     const prisma = {
       bankStatementLine: {
-        findMany: jest.fn().mockImplementation(async ({ where }: { where: { status?: string } }) => {
-          if (where.status === BankStatementLineStatus.UNMATCHED) return [];
-          return [];
-        }),
+        findMany: jest
+          .fn()
+          .mockImplementation(async ({ where }: { where: { status?: string } }) => {
+            if (where.status === BankStatementLineStatus.UNMATCHED) return [];
+            return [];
+          }),
         groupBy: jest.fn().mockResolvedValue([]),
       },
       invoicePayment: {

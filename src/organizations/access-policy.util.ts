@@ -51,14 +51,10 @@ export function isWithinAccessWindow(
   return nowM >= start || nowM < end;
 }
 
-export function normalizeModuleAccess(
-  raw: unknown,
-): Record<AccessModule, DelegatedRole[]> {
+export function normalizeModuleAccess(raw: unknown): Record<AccessModule, DelegatedRole[]> {
   const out = {} as Record<AccessModule, DelegatedRole[]>;
   const src =
-    raw && typeof raw === 'object' && !Array.isArray(raw)
-      ? (raw as Record<string, unknown>)
-      : {};
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
 
   for (const mod of ACCESS_MODULES) {
     const entry = src[mod];
@@ -68,9 +64,7 @@ export function normalizeModuleAccess(
     }
     const roles = entry
       .map(String)
-      .filter((r): r is DelegatedRole =>
-        (DELEGATED_ROLES as readonly string[]).includes(r),
-      );
+      .filter((r): r is DelegatedRole => (DELEGATED_ROLES as readonly string[]).includes(r));
     out[mod] = [...new Set(roles)];
   }
   return out;

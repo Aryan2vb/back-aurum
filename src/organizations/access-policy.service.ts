@@ -53,13 +53,7 @@ export class AccessPolicyService {
 
     const withinAccessWindow =
       role === OrganizationRole.OWNER ||
-      isWithinAccessWindow(
-        now,
-        timezone,
-        accessWindowStart,
-        accessWindowEnd,
-        accessWindowEnabled,
-      );
+      isWithinAccessWindow(now, timezone, accessWindowStart, accessWindowEnd, accessWindowEnabled);
 
     const modulesForRole = {} as Record<AccessModule, boolean>;
     for (const mod of ACCESS_MODULES) {
@@ -140,7 +134,8 @@ export class AccessPolicyService {
           accessWindowEnabled: dto.accessWindowEnabled ?? false,
           accessWindowStart: dto.accessWindowStart ?? '09:00',
           accessWindowEnd: dto.accessWindowEnd ?? '20:00',
-          moduleAccess: moduleAccess ?? (normalizeModuleAccess({}) as unknown as Prisma.InputJsonValue),
+          moduleAccess:
+            moduleAccess ?? (normalizeModuleAccess({}) as unknown as Prisma.InputJsonValue),
         },
       });
     } else {
