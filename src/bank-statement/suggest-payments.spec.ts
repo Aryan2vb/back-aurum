@@ -1,7 +1,9 @@
 import {
+  calendarDayKey,
   indexPaymentsByCalendarDay,
   invoiceBankReconcileStatus,
   paymentsMatchingCreditSum,
+  sameCalendarDay,
   suggestPaymentsForCredit,
 } from './suggest-payments';
 
@@ -54,6 +56,14 @@ describe('suggestPaymentsForCredit', () => {
     ]);
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0]?.paymentId).toBe('pay-1');
+  });
+
+  it('keeps 00:30 India time on the India banking day, not the previous UTC day', () => {
+    // 2026-07-19T19:00:00.000Z = 2026-07-20 00:30 IST
+    const paidAt = new Date('2026-07-19T19:00:00.000Z');
+    expect(calendarDayKey(paidAt)).toBe('2026-07-20');
+    expect(sameCalendarDay(paidAt, '2026-07-20')).toBe(true);
+    expect(sameCalendarDay(new Date('2026-07-19T18:30:00.000Z'), '2026-07-20')).toBe(true);
   });
 
   it('suggests a larger booked payment for a split credit', () => {

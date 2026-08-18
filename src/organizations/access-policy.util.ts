@@ -57,9 +57,13 @@ export function normalizeModuleAccess(raw: unknown): Record<AccessModule, Delega
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
 
   for (const mod of ACCESS_MODULES) {
+    if (!Object.prototype.hasOwnProperty.call(src, mod)) {
+      out[mod] = [...DEFAULT_MODULE_ROLES];
+      continue;
+    }
     const entry = src[mod];
     if (!Array.isArray(entry)) {
-      out[mod] = [...DEFAULT_MODULE_ROLES];
+      out[mod] = [];
       continue;
     }
     const roles = entry

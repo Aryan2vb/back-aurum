@@ -28,7 +28,9 @@ async function main() {
 
     await stockService.purgeTransactionsByReference(organizationId, referenceId);
     purged++;
-    console.log(`Purged orphan ref ${referenceId.slice(0, 8)}… (org ${organizationId.slice(0, 8)}…)`);
+    console.log(
+      `Purged orphan ref ${referenceId.slice(0, 8)}… (org ${organizationId.slice(0, 8)}…)`,
+    );
   }
 
   console.log(`Done. Purged ${purged} orphan reference(s).`);

@@ -36,7 +36,18 @@ export class BankStatementController {
 
   @Post('accounts/:accountId/upload')
   @Roles(...WRITE_ROLES)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        const name = (file.originalname || '').toLowerCase();
+        const mime = (file.mimetype || '').toLowerCase();
+        const ok =
+          name.endsWith('.txt') || mime.startsWith('text/') || mime === 'application/octet-stream';
+        cb(ok ? null : new BadRequestException('Upload an HDFC delimited .txt statement file'), ok);
+      },
+    }),
+  )
   upload(
     @Param('accountId') accountId: string,
     @UploadedFile() file: { buffer?: Buffer; originalname?: string } | undefined,

@@ -161,6 +161,16 @@ export class OrganizationsService {
         data: { role: newRole },
       });
 
+      await tx.session.updateMany({
+        where: {
+          userId: targetUserId,
+          organizationId: actor.organizationId,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { revokedAt: new Date() },
+      });
+
       await tx.auditLog.create({
         data: {
           organizationId: actor.organizationId,

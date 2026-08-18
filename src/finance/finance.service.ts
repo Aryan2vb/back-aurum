@@ -58,6 +58,15 @@ export class FinanceService {
       orderBy: { createdAt: 'asc' },
     });
     if (activeCash) {
+      await db.financialAccount.updateMany({
+        where: {
+          organizationId,
+          type: FinancialAccountType.CASH,
+          isDefault: true,
+          id: { not: activeCash.id },
+        },
+        data: { isDefault: false },
+      });
       return db.financialAccount.update({
         where: { id: activeCash.id },
         data: { isDefault: true },
@@ -698,10 +707,22 @@ export class FinanceService {
     db: Db = this.prisma,
   ) {
     const [movement, account] = await Promise.all([
-      db.financialMovement.findFirst({ where: { id: movementId, organizationId } }),
+      db.financialMovement.findFirst({
+        where: { id: movementId, organizationId },
+        include: { transaction: { select: { reversedAt: true } } },
+      }),
       db.financialAccount.findFirst({ where: { id: accountId, organizationId } }),
     ]);
     if (!movement) throw new NotFoundException('Financial movement not found');
     if (!account) throw new NotFoundException('Financial account not found');
+    if (account.status !== FinancialAccountStatus.ACTIVE) {
+      throw new BadRequestException('Financial account is not active');
+    }
+    if (movement.accountId) {
+      throw new BadRequestException('Movement already has an account assigned');
+    }
+    if (movement.transaction.reversedAt) {
+      throw new BadRequestException('Cannot assign a reversed transaction');
+    }
   }
 }

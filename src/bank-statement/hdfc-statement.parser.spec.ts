@@ -48,6 +48,15 @@ describe('parseHdfcDelimited', () => {
     });
   });
 
+  it('rejoins narration commas instead of treating them as extra columns', () => {
+    const text = `Date,Narration,Value Dat,Debit Amount,Credit Amount,Chq/Ref Number,Closing Balance
+20/07/26,UPI-FOO, BAR, BAZ-PAY,20/07/26,0.00,100.00,REF123,500.00`;
+    const [row] = parseHdfcDelimited(text);
+    expect(row.narration).toBe('UPI-FOO, BAR, BAZ-PAY');
+    expect(row.credit).toBe(100);
+    expect(row.refNumber).toBe('REF123');
+  });
+
   it('builds stable fingerprints for dedupe', () => {
     const [a] = parseHdfcDelimited(SAMPLE);
     const again = fingerprintHdfcRow(a);
@@ -60,6 +69,7 @@ describe('hdfc helpers', () => {
   it('parses amounts and dates', () => {
     expect(parseHdfcAmount('  1,200.50  ')).toBe(1200.5);
     expect(parseHdfcDate('04/07/26')?.toISOString().slice(0, 10)).toBe('2026-07-04');
+    expect(parseHdfcDate('31/02/26')).toBeNull();
     expect(normalizeHdfcRef('0000125696538778')).toBe('125696538778');
     expect(normalizeHdfcRef('000000000000000')).toBeNull();
   });

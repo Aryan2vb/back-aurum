@@ -24,7 +24,15 @@ export function parseHdfcDate(raw: string): Date | null {
   let year = Number(m[3]);
   if (year < 100) year += year >= 70 ? 1900 : 2000;
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  return new Date(Date.UTC(year, month - 1, day));
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
 }
 
 export function parseHdfcAmount(raw: string): number {
@@ -98,12 +106,23 @@ export function parseHdfcDelimited(text: string): HdfcStatementRow[] {
     const txnDate = parseHdfcDate(parts[0]);
     if (!txnDate) continue;
 
-    const narration = parts[1] || '';
-    const valueDate = parseHdfcDate(parts[2]);
-    const debit = parseHdfcAmount(parts[3]);
-    const credit = parseHdfcAmount(parts[4]);
-    const refNumber = normalizeHdfcRef(parts[5] || '');
-    const closingBalance = parts.length > 6 ? parseHdfcAmount(parts[6]) : null;
+    const tailCount = parts.length > 6 ? 4 : 3;
+    const tail = parts.slice(-tailCount);
+    const middle = parts.slice(1, parts.length - tailCount);
+    const debit = parseHdfcAmount(tail[0]);
+    const credit = parseHdfcAmount(tail[1]);
+    const refNumber = normalizeHdfcRef(tail[2] || '');
+    const closingBalance = tailCount === 4 ? parseHdfcAmount(tail[3]) : null;
+    let valueDate: Date | null = null;
+    let narrationParts = middle;
+    if (middle.length) {
+      const maybeValueDate = parseHdfcDate(middle[middle.length - 1]);
+      if (maybeValueDate) {
+        valueDate = maybeValueDate;
+        narrationParts = middle.slice(0, -1);
+      }
+    }
+    const narration = narrationParts.join(', ');
 
     if (debit <= 0 && credit <= 0) continue;
 

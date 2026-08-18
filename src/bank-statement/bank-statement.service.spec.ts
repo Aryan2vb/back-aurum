@@ -154,7 +154,8 @@ describe('BankStatementService.confirmMatchMany', () => {
     await expect(service.confirmMatchMany(['line-1', 'line-2'], 'pay-1', user)).rejects.toThrow(
       /exceed remaining payment capacity/i,
     );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.bankStatementLine.updateMany).not.toHaveBeenCalled();
   });
 
   it('upserts Treasury once with the full booked payment amount for split credits', async () => {

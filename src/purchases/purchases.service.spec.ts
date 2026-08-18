@@ -2,7 +2,7 @@ import { PurchasesService } from './purchases.service';
 
 describe('PurchasesService computeTotals', () => {
   it('includes hallmark and other charges in taxable amount and GST', () => {
-    const service = new PurchasesService({} as any, {} as any, {} as any);
+    const service = new PurchasesService({} as any, {} as any, {} as any, {} as any);
     const result = (service as any).computeTotals(
       [
         {
@@ -33,7 +33,7 @@ describe('PurchasesService computeTotals', () => {
   });
 
   it('applies signed bill-level adjustment after GST', () => {
-    const service = new PurchasesService({} as any, {} as any, {} as any);
+    const service = new PurchasesService({} as any, {} as any, {} as any, {} as any);
     const base = {
       addGst: true,
       gstInclusive: false,
@@ -60,7 +60,7 @@ describe('PurchasesService computeTotals', () => {
 
 describe('PurchasesService fund validation', () => {
   it('rejects combined payments that exceed the account balance', async () => {
-    const service = new PurchasesService({} as any, {} as any, {} as any);
+    const service = new PurchasesService({} as any, {} as any, {} as any, {} as any);
     const tx = {
       financialMovement: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 100_000 } }),
@@ -76,7 +76,7 @@ describe('PurchasesService fund validation', () => {
   });
 
   it('allows payments within the available account balance', async () => {
-    const service = new PurchasesService({} as any, {} as any, {} as any);
+    const service = new PurchasesService({} as any, {} as any, {} as any, {} as any);
     const tx = {
       financialMovement: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 100_000 } }),

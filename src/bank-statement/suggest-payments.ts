@@ -36,16 +36,21 @@ export type StatementCredit = {
 export const AMOUNT_TOLERANCE = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** YYYY-MM-DD for payment/bank dates (date-only compare; not invoice date). */
+/** YYYY-MM-DD in Asia/Kolkata for instants; date-only strings stay as written. */
 export const calendarDayKey = (value: Date | string | null | undefined): string => {
   if (!value) return '';
   if (typeof value === 'string') {
-    const m = value.match(/^(\d{4}-\d{2}-\d{2})/);
-    if (m) return m[1];
+    const trimmed = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   }
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
 };
 
 export const sameCalendarDay = (

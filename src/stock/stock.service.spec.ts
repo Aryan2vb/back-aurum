@@ -127,6 +127,37 @@ describe('StockService.initializeOpeningBalance', () => {
     expect(prisma.$transaction).toHaveBeenCalled();
     recalcSpy.mockRestore();
   });
+
+  it('reuses the stored rate when an update omits rate', async () => {
+    const existingOB = {
+      id: 'ob-1',
+      date: new Date('2026-04-01T00:00:00.000Z'),
+      rate: 5000,
+    };
+    const stockLedger = {
+      findFirst: jest.fn().mockResolvedValue(existingOB),
+      update: jest.fn().mockResolvedValue({ id: 'ob-1' }),
+    };
+    const tx = { stockLedger, stockBalance: {} };
+    const prisma = {
+      stockLedger,
+      $transaction: jest.fn((fn) => fn(tx)),
+    } as any;
+    const service = new StockService(prisma);
+    jest.spyOn(service as any, 'recalcRunningBalances').mockResolvedValue(undefined);
+
+    await service.initializeOpeningBalance('org-1', 'GOLD', '22K', 120);
+
+    expect(stockLedger.update).toHaveBeenCalledWith({
+      where: { id: 'ob-1' },
+      data: {
+        quantityIn: 120,
+        rate: 5000,
+        totalValue: 600000,
+        date: existingOB.date,
+      },
+    });
+  });
 });
 
 describe('StockService.purgeTransactionsByReference', () => {
@@ -243,7 +274,9 @@ describe('StockService metal purities', () => {
     const service = new StockService(prisma as any);
 
     const rows = await service.listPurities('org-1');
-    expect(prisma.orgMetalPurity.createMany).toHaveBeenCalled();
+    expect(prisma.orgMetalPurity.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skipDuplicates: true }),
+    );
     expect(prisma.orgMetalPurity.createMany.mock.calls[0][0].data).toHaveLength(6);
     expect(rows).toHaveLength(6);
   });

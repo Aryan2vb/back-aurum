@@ -90,6 +90,7 @@ export class BankStatementService {
             fingerprint: row.fingerprint,
             status: BankStatementLineStatus.UNMATCHED,
           })),
+          skipDuplicates: true,
         });
       }
 
@@ -270,15 +271,6 @@ export class BankStatementService {
       throw new NotFoundException('One or more statement lines were not found');
     }
 
-    for (const line of lines) {
-      if (line.status !== BankStatementLineStatus.UNMATCHED) {
-        throw new BadRequestException('Only unmatched credits can be linked');
-      }
-      if (!(Number(line.credit) > 0)) {
-        throw new BadRequestException('Only credit lines can be matched to payments');
-      }
-    }
-
     const payment = await this.prisma.invoicePayment.findFirst({
       where: { id: paymentId, organizationId: user.organizationId },
       include: {
@@ -294,23 +286,11 @@ export class BankStatementService {
     }
 
     const creditSum = lines.reduce((sum, line) => sum + Number(line.credit), 0);
-    const linkedAgg = await this.prisma.bankStatementLine.aggregate({
-      where: {
-        organizationId: user.organizationId,
-        invoicePaymentId: payment.id,
-        status: BankStatementLineStatus.MATCHED,
-      },
-      _sum: { credit: true },
-    });
-    const alreadyLinked = Number(linkedAgg._sum.credit || 0);
-    const remaining = Number(payment.amount) - alreadyLinked;
-    if (creditSum > remaining + AMOUNT_TOLERANCE) {
-      throw new BadRequestException(
-        `Selected credits (₹${creditSum.toFixed(2)}) exceed remaining payment capacity (₹${remaining.toFixed(2)})`,
-      );
-    }
 
     for (const line of lines) {
+      if (!(Number(line.credit) > 0)) {
+        throw new BadRequestException('Only credit lines can be matched to payments');
+      }
       if (!sameCalendarDay(payment.paidAt, line.txnDate)) {
         throw new BadRequestException(
           'Payment date must be the same calendar day as each bank credit date',
@@ -329,14 +309,37 @@ export class BankStatementService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.bankStatementLine.updateMany({
-        where: { organizationId: user.organizationId, id: { in: uniqueIds } },
+      const linkedAgg = await tx.bankStatementLine.aggregate({
+        where: {
+          organizationId: user.organizationId,
+          invoicePaymentId: payment.id,
+          status: BankStatementLineStatus.MATCHED,
+        },
+        _sum: { credit: true },
+      });
+      const alreadyLinked = Number(linkedAgg._sum.credit || 0);
+      const remaining = Number(payment.amount) - alreadyLinked;
+      if (creditSum > remaining + AMOUNT_TOLERANCE) {
+        throw new BadRequestException(
+          `Selected credits (₹${creditSum.toFixed(2)}) exceed remaining payment capacity (₹${remaining.toFixed(2)})`,
+        );
+      }
+
+      const matched = await tx.bankStatementLine.updateMany({
+        where: {
+          organizationId: user.organizationId,
+          id: { in: uniqueIds },
+          status: BankStatementLineStatus.UNMATCHED,
+        },
         data: {
           status: BankStatementLineStatus.MATCHED,
           matchedInvoiceId: payment.invoiceId,
           invoicePaymentId: payment.id,
         },
       });
+      if (matched.count !== uniqueIds.length) {
+        throw new BadRequestException('Only unmatched credits can be linked');
+      }
       const updatedRows = await tx.bankStatementLine.findMany({
         where: { organizationId: user.organizationId, id: { in: uniqueIds } },
       });
@@ -364,12 +367,12 @@ export class BankStatementService {
         description: payment.notes ?? 'Invoice payment',
         createdById: user.userId,
       });
-      return rows;
+      return { rows, alreadyLinked };
     });
 
-    const linkedAfter = alreadyLinked + creditSum;
+    const linkedAfter = updated.alreadyLinked + creditSum;
     return {
-      lines: updated,
+      lines: updated.rows,
       payment: {
         id: payment.id,
         invoiceId: payment.invoiceId,

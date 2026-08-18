@@ -1,8 +1,19 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  ParseEnumPipe,
+} from '@nestjs/common';
 import { StockService } from './stock.service';
 import { MetalType, OrganizationRole } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
+import { CreatePurityDto, OpeningBalanceDto, UpdatePurityDto } from './dto/stock.dto';
 
 @Controller('stock')
 export class StockController {
@@ -28,7 +39,7 @@ export class StockController {
   )
   async getLedger(
     @CurrentUser() user: CurrentUserData,
-    @Query('metalType') metalType?: MetalType,
+    @Query('metalType', new ParseEnumPipe(MetalType, { optional: true })) metalType?: MetalType,
     @Query('purity') purity?: string,
   ) {
     return this.stockService.getLedger(user.organizationId, metalType, purity);
@@ -67,10 +78,7 @@ export class StockController {
 
   @Post('purities')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
-  async createPurity(
-    @CurrentUser() user: CurrentUserData,
-    @Body() body: { metalType: MetalType; label: string },
-  ) {
+  async createPurity(@CurrentUser() user: CurrentUserData, @Body() body: CreatePurityDto) {
     return this.stockService.createPurity(user.organizationId, body.metalType, body.label);
   }
 
@@ -79,7 +87,7 @@ export class StockController {
   async updatePurity(
     @CurrentUser() user: CurrentUserData,
     @Param('id') id: string,
-    @Body() body: { isActive?: boolean; sortOrder?: number },
+    @Body() body: UpdatePurityDto,
   ) {
     return this.stockService.updatePurity(user.organizationId, id, body);
   }
@@ -94,14 +102,7 @@ export class StockController {
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   async initializeOpeningBalance(
     @CurrentUser() user: CurrentUserData,
-    @Body()
-    data: {
-      metalType: MetalType;
-      purity: string;
-      quantity: number;
-      rate?: number;
-      date?: string;
-    },
+    @Body() data: OpeningBalanceDto,
   ) {
     return this.stockService.initializeOpeningBalance(
       user.organizationId,

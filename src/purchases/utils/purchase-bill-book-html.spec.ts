@@ -68,6 +68,23 @@ describe('buildPurchaseBillBookHtml', () => {
     expect(html).toContain('Supplier invoice attachment missing');
     expect(html).not.toContain('javascript:');
   });
+
+  it('does not treat “.pdf” in a query string as a PDF attachment', () => {
+    const html = buildPurchaseBillBookHtml({
+      title: 'Purchase Bill Book - 1 Bills',
+      pages: [
+        {
+          billNo: 'Q-1',
+          vendorName: 'Vendor',
+          purchaseDate: '2026-04-01T00:00:00.000Z',
+          attachmentUrl: 'https://cdn.example.com/invoice.html?ref=.pdfscan',
+        },
+      ],
+    });
+
+    expect(html).toContain('Supplier invoice attachment missing');
+    expect(html).not.toContain('type="application/pdf"');
+  });
 });
 
 describe('getPurchaseBillBookTitle', () => {

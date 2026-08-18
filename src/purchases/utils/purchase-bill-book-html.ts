@@ -59,7 +59,7 @@ const isImageMime = (mime?: string | null, url?: string | null): boolean => {
 
 const isPdfMime = (mime?: string | null, url?: string | null): boolean => {
   if (mime === 'application/pdf') return true;
-  return (url || '').toLowerCase().includes('.pdf');
+  return /\.pdf(\?|$)/.test((url || '').toLowerCase());
 };
 
 const pageHeader = (page: PurchaseBillBookPage): string => {

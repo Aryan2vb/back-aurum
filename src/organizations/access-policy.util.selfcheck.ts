@@ -41,4 +41,9 @@ assert(roleCanAccessModule(OrganizationRole.ADMIN, 'stock', mods), 'admin stock'
 assert(!roleCanAccessModule(OrganizationRole.VIEWER, 'stock', mods), 'viewer no stock');
 assert(roleCanAccessModule(OrganizationRole.VIEWER, 'customers', mods), 'default customers');
 
+const malformed = normalizeModuleAccess({ stock: 'ADMIN', books: ['VIEWER'] });
+assert(malformed.stock.length === 0, 'present non-array → empty');
+assert(malformed.books.length === 1 && malformed.books[0] === 'VIEWER', 'valid array kept');
+assert(malformed.customers.length === 3, 'missing module → default roles');
+
 console.log('access-policy.util.selfcheck: ok');

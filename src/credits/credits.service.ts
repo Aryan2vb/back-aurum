@@ -704,6 +704,7 @@ export class CreditsService {
               amount,
               reference: ledgerEntry.id,
               notes: dto.notes,
+              paidAt: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
             },
           });
           await this.financeService.syncAutomaticPayment(tx, {

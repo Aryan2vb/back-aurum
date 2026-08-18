@@ -8,6 +8,7 @@ import {
   PurchaseStatus,
   TaxType,
   FinancialTransactionType,
+  Prisma,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { FinanceService } from '../finance/finance.service';
@@ -19,6 +20,7 @@ import {
 } from './utils/purchase-bill-book-html';
 
 const BILL_BOOK_QUERY_BATCH_SIZE = 100;
+const BILL_BOOK_UNFILTERED_MAX = 200;
 
 type PurchaseItemInput = {
   itemName?: string;
@@ -77,7 +79,7 @@ export class PurchasesService {
     private prisma: PrismaService,
     private stockService: StockService,
     private uploadService: UploadService,
-    private financeService: FinanceService = new FinanceService(prisma),
+    private financeService: FinanceService,
   ) {}
 
   async createPurchase(data: PurchaseBillInput) {
@@ -263,7 +265,7 @@ export class PurchasesService {
           );
           payment.accountId = account?.id ?? undefined;
         }
-        await this.assertSufficientTreasuryFunds(tx, data.organizationId, payments);
+        await this.assertSufficientTreasuryFunds(tx, data.organizationId, payments, id);
       }
 
       if (replacePayments) {
@@ -498,7 +500,9 @@ export class PurchasesService {
         ];
       }
 
+      const unfiltered = !dto.search?.trim();
       for (let offset = 0; ; offset += BILL_BOOK_QUERY_BATCH_SIZE) {
+        const take = unfiltered ? BILL_BOOK_UNFILTERED_MAX + 1 : BILL_BOOK_QUERY_BATCH_SIZE;
         const batch = await this.prisma.purchaseInvoice.findMany({
           where,
           select: {
@@ -513,9 +517,17 @@ export class PurchasesService {
           },
           orderBy: [{ purchaseDate: 'asc' }, { invoiceNumber: 'asc' }],
           skip: offset,
-          take: BILL_BOOK_QUERY_BATCH_SIZE,
+          take,
         });
         purchases.push(...batch);
+        if (unfiltered) {
+          if (purchases.length > BILL_BOOK_UNFILTERED_MAX) {
+            throw new BadRequestException(
+              `Too many purchase bills to print at once (max ${BILL_BOOK_UNFILTERED_MAX}). Filter by search or select specific bills.`,
+            );
+          }
+          break;
+        }
         if (batch.length < BILL_BOOK_QUERY_BATCH_SIZE) break;
       }
     }
@@ -605,68 +617,75 @@ export class PurchasesService {
       accountId?: string;
     },
   ) {
-    const purchase = await this.prisma.purchaseInvoice.findFirst({
-      where: { id, organizationId },
-    });
-    if (!purchase) throw new NotFoundException('Purchase not found');
-    if (purchase.status === PurchaseStatus.CANCELLED) {
-      throw new BadRequestException('Cannot record payment on a cancelled purchase');
-    }
-    if (purchase.status === PurchaseStatus.PAID) {
-      throw new BadRequestException('Purchase is already fully paid');
-    }
-
     const paymentAmount = new Decimal(dto.amount);
     if (paymentAmount.lte(0)) {
       throw new BadRequestException('Payment amount must be greater than 0');
     }
 
-    const grandTotal = new Decimal(purchase.grandTotal ?? purchase.totalAmount ?? 0);
-    const newPaidAmount = new Decimal(purchase.paidAmount).add(paymentAmount);
-    if (newPaidAmount.greaterThan(grandTotal)) {
-      throw new BadRequestException(
-        `Payment of ${dto.amount} would exceed remaining balance of ${grandTotal.minus(purchase.paidAmount).toNumber()}`,
-      );
-    }
-
-    const status = this.deriveStatus(newPaidAmount.toNumber(), grandTotal.toNumber());
     const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
 
-    return this.prisma.$transaction(async (tx) => {
-      const method = dto.paymentMethod ?? PaymentMethod.CASH;
-      const account = await this.financeService.resolvePaymentAccount(
-        tx,
-        organizationId,
-        method,
-        dto.accountId,
-      );
-      await this.assertSufficientTreasuryFunds(tx, organizationId, [
-        { amount: paymentAmount.toNumber(), accountId: account?.id },
-      ]);
-      await tx.purchasePayment.create({
-        data: {
-          purchaseInvoiceId: id,
-          organizationId,
-          mode: method,
-          accountId: account?.id,
-          amount: paymentAmount,
-          reference: dto.reference,
-          notes: dto.notes,
-          paidAt,
-        },
-      });
-      await this.syncPurchaseTreasury(tx, id, organizationId);
+    return this.prisma.$transaction(
+      async (tx) => {
+        const purchase = await tx.purchaseInvoice.findFirst({
+          where: { id, organizationId },
+        });
+        if (!purchase) throw new NotFoundException('Purchase not found');
+        if (purchase.status === PurchaseStatus.CANCELLED) {
+          throw new BadRequestException('Cannot record payment on a cancelled purchase');
+        }
+        if (purchase.status === PurchaseStatus.PAID) {
+          throw new BadRequestException('Purchase is already fully paid');
+        }
 
-      return tx.purchaseInvoice.update({
-        where: { id },
-        data: { paidAmount: newPaidAmount, status },
-        include: {
-          vendor: true,
-          items: true,
-          payments: { orderBy: { paidAt: 'desc' } },
-        },
-      });
-    });
+        const method = dto.paymentMethod ?? PaymentMethod.CASH;
+        const account = await this.financeService.resolvePaymentAccount(
+          tx,
+          organizationId,
+          method,
+          dto.accountId,
+        );
+        await this.assertSufficientTreasuryFunds(tx, organizationId, [
+          { amount: paymentAmount.toNumber(), accountId: account?.id },
+        ]);
+        await tx.purchasePayment.create({
+          data: {
+            purchaseInvoiceId: id,
+            organizationId,
+            mode: method,
+            accountId: account?.id,
+            amount: paymentAmount,
+            reference: dto.reference,
+            notes: dto.notes,
+            paidAt,
+          },
+        });
+
+        const paidAgg = await tx.purchasePayment.aggregate({
+          where: { purchaseInvoiceId: id, organizationId },
+          _sum: { amount: true },
+        });
+        const paidAmount = new Decimal(paidAgg._sum.amount ?? 0);
+        const grandTotal = new Decimal(purchase.grandTotal ?? purchase.totalAmount ?? 0);
+        if (paidAmount.greaterThan(grandTotal)) {
+          throw new BadRequestException(
+            `Payment of ${dto.amount} would exceed remaining balance of ${grandTotal.minus(purchase.paidAmount).toNumber()}`,
+          );
+        }
+        const status = this.deriveStatus(paidAmount.toNumber(), grandTotal.toNumber());
+        await this.syncPurchaseTreasury(tx, id, organizationId);
+
+        return tx.purchaseInvoice.update({
+          where: { id },
+          data: { paidAmount, status },
+          include: {
+            vendor: true,
+            items: true,
+            payments: { orderBy: { paidAt: 'desc' } },
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   private async resolveVendor(tx: any, data: PurchaseBillInput) {
@@ -751,8 +770,14 @@ export class PurchasesService {
     tx: any,
     organizationId: string,
     payments: Array<{ amount: number; accountId?: string }>,
+    excludePurchaseId?: string,
   ) {
-    if (!tx.financialMovement) return;
+    if (!tx.financialMovement) {
+      this.logger.warn(
+        'Treasury fund check skipped: financialMovement missing on transaction client',
+      );
+      return;
+    }
     const requiredByAccount = new Map<string, Decimal>();
     for (const payment of payments) {
       if (!payment.accountId) continue;
@@ -764,7 +789,20 @@ export class PurchasesService {
 
     for (const [accountId, required] of requiredByAccount) {
       const balance = await tx.financialMovement.aggregate({
-        where: { organizationId, accountId },
+        where: {
+          organizationId,
+          accountId,
+          ...(excludePurchaseId
+            ? {
+                NOT: {
+                  transaction: {
+                    sourceParentType: 'PURCHASE',
+                    sourceParentId: excludePurchaseId,
+                  },
+                },
+              }
+            : {}),
+        },
         _sum: { amount: true },
       });
       const available = new Decimal(balance._sum.amount ?? 0);

@@ -861,6 +861,7 @@ model PurchaseInvoice {
   items        PurchaseInvoiceItem[]
   payments     PurchasePayment[]
 
+  @@unique([organizationId, invoiceNumber])
   @@index([organizationId])
   @@index([organizationId, status])
 }

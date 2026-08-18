@@ -529,10 +529,6 @@ export class AdvanceService {
       new Decimal(entry.amount),
     );
 
-    this.logger.warn(
-      `Advance entry deleted: id=${ledgerEntryId} customer=${customerId} amount=${entry.amount} by=${user.userId}`,
-    );
-
     await this.prisma.$transaction(async (tx) => {
       await tx.ledgerEntry.update({
         where: { id: ledgerEntryId, organizationId },
@@ -540,6 +536,10 @@ export class AdvanceService {
       });
       await this.financeService.reverseSource(tx, organizationId, 'ADVANCE_LEDGER', ledgerEntryId);
     });
+
+    this.logger.warn(
+      `Advance entry deleted: id=${ledgerEntryId} customer=${customerId} amount=${entry.amount} by=${user.userId}`,
+    );
 
     return {
       deleted: true,

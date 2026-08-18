@@ -44,7 +44,7 @@ export class StockService {
     const purity = this.normalizePurity(rawPurity, metalType);
 
     const apply = async (db: Prisma.TransactionClient | PrismaService) => {
-      // Upsert on the unique key so concurrent first-inserts don't race.
+      const delta = quantityIn - quantityOut;
       const currentBalance = await db.stockBalance.upsert({
         where: {
           organizationId_metalType_purity: { organizationId, metalType, purity },
@@ -53,23 +53,18 @@ export class StockService {
           organizationId,
           metalType,
           purity,
-          quantity: 0,
+          quantity: delta,
         },
-        update: {},
+        update: { quantity: { increment: delta } },
       });
 
-      const newQuantity = Number(currentBalance.quantity) + quantityIn - quantityOut;
+      const newQuantity = Number(currentBalance.quantity);
 
       if (newQuantity < 0) {
         console.warn(
           `[StockService] Negative stock warning for ${purity} ${metalType}. New balance: ${newQuantity}`,
         );
       }
-
-      await db.stockBalance.update({
-        where: { id: currentBalance.id },
-        data: { quantity: newQuantity },
-      });
 
       const totalValue = rate ? rate * (quantityIn || quantityOut) : null;
 
@@ -125,47 +120,56 @@ export class StockService {
   ) {
     const normalizedPurity = this.normalizePurity(purity, metalType);
 
-    // Check if an opening balance already exists
-    const existingOB = await this.prisma.stockLedger.findFirst({
-      where: {
-        organizationId,
-        metalType,
-        purity: normalizedPurity,
-        transactionType: StockTransactionType.OPENING_BALANCE,
-      },
-    });
-
-    if (existingOB) {
-      const totalValue = rate ? rate * quantity : null;
-      const parsedDate = date ? new Date(date) : existingOB.date;
-
-      return this.prisma.$transaction(async (tx) => {
-        const updatedOB = await tx.stockLedger.update({
-          where: { id: existingOB.id },
-          data: {
-            quantityIn: quantity,
-            rate,
-            totalValue,
-            date: parsedDate,
+    return this.prisma.$transaction(
+      async (tx) => {
+        const existingOB = await tx.stockLedger.findFirst({
+          where: {
+            organizationId,
+            metalType,
+            purity: normalizedPurity,
+            transactionType: StockTransactionType.OPENING_BALANCE,
           },
         });
 
-        await this.recalcRunningBalances(organizationId, metalType, normalizedPurity, tx);
+        if (existingOB) {
+          const nextRate =
+            rate !== undefined
+              ? rate
+              : existingOB.rate != null
+                ? Number(existingOB.rate)
+                : undefined;
+          const totalValue = nextRate != null ? nextRate * quantity : null;
+          const parsedDate = date ? new Date(date) : existingOB.date;
 
-        return updatedOB;
-      });
-    }
+          const updatedOB = await tx.stockLedger.update({
+            where: { id: existingOB.id },
+            data: {
+              quantityIn: quantity,
+              rate: nextRate,
+              totalValue,
+              date: parsedDate,
+            },
+          });
 
-    return this.recordStockTransaction({
-      organizationId,
-      metalType,
-      purity: normalizedPurity,
-      transactionType: StockTransactionType.OPENING_BALANCE,
-      quantityIn: quantity,
-      rate,
-      date: date ? new Date(date) : undefined,
-      notes: 'Initial Opening Balance',
-    });
+          await this.recalcRunningBalances(organizationId, metalType, normalizedPurity, tx);
+
+          return updatedOB;
+        }
+
+        return this.recordStockTransaction({
+          organizationId,
+          metalType,
+          purity: normalizedPurity,
+          transactionType: StockTransactionType.OPENING_BALANCE,
+          quantityIn: quantity,
+          rate,
+          date: date ? new Date(date) : undefined,
+          notes: 'Initial Opening Balance',
+          prismaTx: tx,
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   async getGroupSummary(organizationId: string, startDateStr?: string, endDateStr?: string) {
@@ -597,7 +601,7 @@ export class StockService {
         sortOrder,
       })),
     ];
-    await this.prisma.orgMetalPurity.createMany({ data: rows });
+    await this.prisma.orgMetalPurity.createMany({ data: rows, skipDuplicates: true });
   }
 
   normalizePurity(purity: string, metalType: string): string {

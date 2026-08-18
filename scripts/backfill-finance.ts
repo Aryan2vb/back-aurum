@@ -4,6 +4,7 @@ import {
   InvoiceStatus,
   LedgerType,
   PaymentMethod,
+  Prisma,
   PrismaClient,
   PurchaseStatus,
 } from '@prisma/client';
@@ -12,6 +13,20 @@ import { FinanceService } from '../src/finance/finance.service';
 const prisma = new PrismaClient();
 const finance = new FinanceService(prisma as any);
 const dryRun = process.argv.includes('--dry-run');
+const BACKFILL_CHUNK = 25;
+const BACKFILL_TX = { maxWait: 10_000, timeout: 60_000 };
+
+async function forChunks<T>(
+  rows: T[],
+  work: (tx: Prisma.TransactionClient, row: T) => Promise<void>,
+) {
+  for (let i = 0; i < rows.length; i += BACKFILL_CHUNK) {
+    const chunk = rows.slice(i, i + BACKFILL_CHUNK);
+    await prisma.$transaction(async (tx) => {
+      for (const row of chunk) await work(tx, row);
+    }, BACKFILL_TX);
+  }
+}
 
 async function main() {
   const organizations = await prisma.organization.findMany({ select: { id: true } });
@@ -77,107 +92,106 @@ async function main() {
     counts.udharPayments += udharPayments.length;
 
     if (dryRun) continue;
-    await prisma.$transaction(async (tx) => {
-      for (const payment of invoicePayments) {
-        const accountId = payment.mode === PaymentMethod.CASH ? cash?.id : payment.accountId;
-        if (accountId !== payment.accountId) {
-          await tx.invoicePayment.update({ where: { id: payment.id }, data: { accountId } });
-        }
-        await finance.syncAutomaticPayment(
-          tx,
-          {
-            organizationId,
-            sourceType: 'INVOICE_PAYMENT',
-            sourceId: payment.id,
-            sourceParentType: 'INVOICE',
-            sourceParentId: payment.invoiceId,
-            transactionType: FinancialTransactionType.SALE_RECEIPT,
-            paymentMethod: payment.mode,
-            accountId,
-            amount: payment.amount,
-            occurredAt: payment.paidAt,
-            description: payment.notes,
-          },
-          true,
-        );
-      }
 
-      for (const payment of purchasePayments) {
-        const accountId = payment.mode === PaymentMethod.CASH ? cash?.id : payment.accountId;
-        if (accountId !== payment.accountId) {
-          await tx.purchasePayment.update({ where: { id: payment.id }, data: { accountId } });
-        }
-        await finance.syncAutomaticPayment(
-          tx,
-          {
-            organizationId,
-            sourceType: 'PURCHASE_PAYMENT',
-            sourceId: payment.id,
-            sourceParentType: 'PURCHASE',
-            sourceParentId: payment.purchaseInvoiceId,
-            transactionType: FinancialTransactionType.PURCHASE_PAYMENT,
-            paymentMethod: payment.mode,
-            accountId,
-            amount: payment.amount,
-            occurredAt: payment.paidAt,
-            description: payment.notes,
-          },
-          true,
-        );
+    await forChunks(invoicePayments, async (tx, payment) => {
+      const accountId = payment.mode === PaymentMethod.CASH ? cash?.id : payment.accountId;
+      if (accountId !== payment.accountId) {
+        await tx.invoicePayment.update({ where: { id: payment.id }, data: { accountId } });
       }
+      await finance.syncAutomaticPayment(
+        tx,
+        {
+          organizationId,
+          sourceType: 'INVOICE_PAYMENT',
+          sourceId: payment.id,
+          sourceParentType: 'INVOICE',
+          sourceParentId: payment.invoiceId,
+          transactionType: FinancialTransactionType.SALE_RECEIPT,
+          paymentMethod: payment.mode,
+          accountId,
+          amount: payment.amount,
+          occurredAt: payment.paidAt,
+          description: payment.notes,
+        },
+        true,
+      );
+    });
 
-      for (const entry of advanceEntries) {
-        const method = entry.paymentMethod ?? PaymentMethod.OTHER;
-        const accountId = method === PaymentMethod.CASH ? cash?.id : entry.accountId;
-        if (accountId !== entry.accountId) {
-          await tx.ledgerEntry.update({ where: { id: entry.id }, data: { accountId } });
-        }
-        await finance.syncAutomaticPayment(
-          tx,
-          {
-            organizationId,
-            sourceType: 'ADVANCE_LEDGER',
-            sourceId: entry.id,
-            sourceParentType: 'ADVANCE',
-            sourceParentId: entry.id,
-            transactionType:
-              entry.type === LedgerType.ADVANCE_REFUND
-                ? FinancialTransactionType.ADVANCE_REFUND
-                : FinancialTransactionType.ADVANCE_RECEIPT,
-            paymentMethod: method,
-            accountId,
-            amount: entry.amount,
-            occurredAt: entry.createdAt,
-            description: entry.description,
-          },
-          true,
-        );
+    await forChunks(purchasePayments, async (tx, payment) => {
+      const accountId = payment.mode === PaymentMethod.CASH ? cash?.id : payment.accountId;
+      if (accountId !== payment.accountId) {
+        await tx.purchasePayment.update({ where: { id: payment.id }, data: { accountId } });
       }
+      await finance.syncAutomaticPayment(
+        tx,
+        {
+          organizationId,
+          sourceType: 'PURCHASE_PAYMENT',
+          sourceId: payment.id,
+          sourceParentType: 'PURCHASE',
+          sourceParentId: payment.purchaseInvoiceId,
+          transactionType: FinancialTransactionType.PURCHASE_PAYMENT,
+          paymentMethod: payment.mode,
+          accountId,
+          amount: payment.amount,
+          occurredAt: payment.paidAt,
+          description: payment.notes,
+        },
+        true,
+      );
+    });
 
-      for (const payment of udharPayments) {
-        const method = payment.paymentMethod ?? PaymentMethod.OTHER;
-        const accountId = method === PaymentMethod.CASH ? cash?.id : payment.accountId;
-        if (accountId !== payment.accountId) {
-          await tx.ledgerEntry.update({ where: { id: payment.id }, data: { accountId } });
-        }
-        await finance.syncAutomaticPayment(
-          tx,
-          {
-            organizationId,
-            sourceType: 'UDHAR_PAYMENT',
-            sourceId: payment.id,
-            sourceParentType: 'UDHAR',
-            sourceParentId: payment.entityId!,
-            transactionType: FinancialTransactionType.UDHAR_COLLECTION,
-            paymentMethod: method,
-            accountId,
-            amount: payment.amount,
-            occurredAt: payment.createdAt,
-            description: payment.description,
-          },
-          true,
-        );
+    await forChunks(advanceEntries, async (tx, entry) => {
+      const method = entry.paymentMethod ?? PaymentMethod.OTHER;
+      const accountId = method === PaymentMethod.CASH ? cash?.id : entry.accountId;
+      if (accountId !== entry.accountId) {
+        await tx.ledgerEntry.update({ where: { id: entry.id }, data: { accountId } });
       }
+      await finance.syncAutomaticPayment(
+        tx,
+        {
+          organizationId,
+          sourceType: 'ADVANCE_LEDGER',
+          sourceId: entry.id,
+          sourceParentType: 'ADVANCE',
+          sourceParentId: entry.id,
+          transactionType:
+            entry.type === LedgerType.ADVANCE_REFUND
+              ? FinancialTransactionType.ADVANCE_REFUND
+              : FinancialTransactionType.ADVANCE_RECEIPT,
+          paymentMethod: method,
+          accountId,
+          amount: entry.amount,
+          occurredAt: entry.createdAt,
+          description: entry.description,
+        },
+        true,
+      );
+    });
+
+    await forChunks(udharPayments, async (tx, payment) => {
+      const method = payment.paymentMethod ?? PaymentMethod.OTHER;
+      const accountId = method === PaymentMethod.CASH ? cash?.id : payment.accountId;
+      if (accountId !== payment.accountId) {
+        await tx.ledgerEntry.update({ where: { id: payment.id }, data: { accountId } });
+      }
+      await finance.syncAutomaticPayment(
+        tx,
+        {
+          organizationId,
+          sourceType: 'UDHAR_PAYMENT',
+          sourceId: payment.id,
+          sourceParentType: 'UDHAR',
+          sourceParentId: payment.entityId!,
+          transactionType: FinancialTransactionType.UDHAR_COLLECTION,
+          paymentMethod: method,
+          accountId,
+          amount: payment.amount,
+          occurredAt: payment.createdAt,
+          description: payment.description,
+        },
+        true,
+      );
     });
   }
 
