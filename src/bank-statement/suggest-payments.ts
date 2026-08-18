@@ -157,7 +157,7 @@ export type InvoiceBankReconcile = 'full' | 'partial' | 'none' | null;
 
 /** Invoice-level statement cover for bankish payments (cash / old-gold ignored). */
 export const invoiceBankReconcileStatus = (
-  payments: { id: string; amount: number | string; mode: string }[],
+  payments: { id: string; amount: unknown; mode: string }[],
   linkedByPaymentId: Map<string, number>,
 ): InvoiceBankReconcile => {
   const bankish = (payments || []).filter((payment) =>
