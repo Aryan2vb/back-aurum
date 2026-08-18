@@ -89,6 +89,12 @@ export class FinanceController {
     return this.finance.listTransactions(user.organizationId, { accountId, from, to });
   }
 
+  @Post('backfill')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
+  backfill(@CurrentUser() user: CurrentUserData) {
+    return this.finance.backfillOrganization(user.organizationId);
+  }
+
   @Post('transactions')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   createTransaction(@Body() dto: CreateManualTransactionDto, @CurrentUser() user: CurrentUserData) {

@@ -3,8 +3,11 @@ import {
   FinancialAccountStatus,
   FinancialAccountType,
   FinancialTransactionType,
+  InvoiceStatus,
+  LedgerType,
   PaymentMethod,
   Prisma,
+  PurchaseStatus,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,6 +21,9 @@ import {
 import { buildManualMovements, isTreasuryPayment } from './ledger-rules';
 
 type Db = Prisma.TransactionClient | PrismaService;
+
+const BACKFILL_CHUNK = 25;
+const BACKFILL_TX = { maxWait: 10_000, timeout: 60_000 };
 
 export type AutomaticPaymentInput = {
   organizationId: string;
@@ -254,19 +260,34 @@ export class FinanceService {
           data: { isDefault: false },
         });
       }
-      const account = await tx.financialAccount.create({
-        data: {
-          organizationId: user.organizationId,
-          name: dto.name.trim(),
-          type: dto.type,
-          isDefault,
-          bankName: dto.bankName,
-          accountNumber: dto.accountNumber,
-          ifsc: dto.ifsc,
-          notes: dto.notes,
-          createdById: user.userId,
-        },
+      const name = dto.name.trim();
+      const duplicate = await tx.financialAccount.findFirst({
+        where: { organizationId: user.organizationId, name },
       });
+      if (duplicate) {
+        throw new BadRequestException(`An account named "${name}" already exists`);
+      }
+      let account;
+      try {
+        account = await tx.financialAccount.create({
+          data: {
+            organizationId: user.organizationId,
+            name,
+            type: dto.type,
+            isDefault,
+            bankName: dto.bankName,
+            accountNumber: dto.accountNumber,
+            ifsc: dto.ifsc,
+            notes: dto.notes,
+            createdById: user.userId,
+          },
+        });
+      } catch (error: any) {
+        if (error?.code === 'P2002') {
+          throw new BadRequestException(`An account named "${name}" already exists`);
+        }
+        throw error;
+      }
       if (dto.openingBalance) {
         const transaction = await tx.financialTransaction.create({
           data: {
@@ -676,28 +697,303 @@ export class FinanceService {
 
   async assignMovement(movementId: string, accountId: string, organizationId: string) {
     await this.assertAssignment(movementId, accountId, organizationId);
-    return this.prisma.financialMovement.update({
-      where: { id: movementId },
-      data: { accountId },
+    const movement = await this.prisma.financialMovement.findFirst({
+      where: { id: movementId, organizationId },
+      include: { transaction: { select: { sourceType: true, sourceId: true } } },
+    });
+    if (!movement) throw new NotFoundException('Financial movement not found');
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.financialMovement.update({
+        where: { id: movementId },
+        data: { accountId },
+      });
+      await this.stampSourceAccount(tx, organizationId, movement.transaction, accountId);
+      return updated;
     });
   }
 
-  async bulkAssignMovements(dto: BulkAssignMovementsDto, organizationId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      for (const assignment of dto.assignments) {
-        await this.assertAssignment(
-          assignment.movementId,
-          assignment.accountId,
+  private async stampSourceAccount(
+    db: Db,
+    organizationId: string,
+    transaction: { sourceType: string; sourceId: string },
+    accountId: string,
+  ) {
+    if (transaction.sourceType === 'INVOICE_PAYMENT') {
+      await db.invoicePayment.updateMany({
+        where: { id: transaction.sourceId, organizationId, accountId: null },
+        data: { accountId },
+      });
+    } else if (transaction.sourceType === 'PURCHASE_PAYMENT') {
+      await db.purchasePayment.updateMany({
+        where: { id: transaction.sourceId, organizationId, accountId: null },
+        data: { accountId },
+      });
+    } else if (
+      transaction.sourceType === 'ADVANCE_LEDGER' ||
+      transaction.sourceType === 'UDHAR_PAYMENT'
+    ) {
+      await db.ledgerEntry.updateMany({
+        where: { id: transaction.sourceId, organizationId, accountId: null },
+        data: { accountId },
+      });
+    }
+  }
+
+  async backfillOrganization(organizationId: string, dryRun = false) {
+    const cash = dryRun
+      ? await this.prisma.financialAccount.findFirst({
+          where: {
+            organizationId,
+            type: FinancialAccountType.CASH,
+            isDefault: true,
+            status: FinancialAccountStatus.ACTIVE,
+          },
+        })
+      : await this.ensureDefaultCash(this.prisma, organizationId);
+
+    const [invoicePayments, purchasePayments, advanceEntries, directUdhars] = await Promise.all([
+      this.prisma.invoicePayment.findMany({
+        where: {
           organizationId,
-          tx,
-        );
-        await tx.financialMovement.update({
-          where: { id: assignment.movementId },
-          data: { accountId: assignment.accountId },
-        });
-      }
-      return { updated: dto.assignments.length };
+          amount: { gt: 0 },
+          invoice: {
+            deletedAt: null,
+            status: { notIn: [InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED] },
+          },
+        },
+      }),
+      this.prisma.purchasePayment.findMany({
+        where: {
+          organizationId,
+          amount: { gt: 0 },
+          purchaseInvoice: { status: { not: PurchaseStatus.CANCELLED } },
+        },
+      }),
+      this.prisma.ledgerEntry.findMany({
+        where: {
+          organizationId,
+          amount: { gt: 0 },
+          deletedAt: null,
+          type: { in: [LedgerType.ADVANCE_RECEIVED, LedgerType.ADVANCE_REFUND] },
+        },
+      }),
+      this.prisma.udharEntry.findMany({
+        where: { organizationId, invoiceId: null },
+        select: { id: true },
+      }),
+    ]);
+    const udharPayments = await this.prisma.ledgerEntry.findMany({
+      where: {
+        organizationId,
+        amount: { gt: 0 },
+        deletedAt: null,
+        type: LedgerType.PAYMENT,
+        entityId: { in: directUdhars.map(({ id }) => id) },
+      },
     });
+
+    const counts = {
+      invoicePayments: invoicePayments.length,
+      purchasePayments: purchasePayments.length,
+      advanceEntries: advanceEntries.length,
+      udharPayments: udharPayments.length,
+    };
+    if (dryRun) return { dryRun: true, ...counts };
+
+    const forChunks = async <T>(
+      rows: T[],
+      work: (tx: Prisma.TransactionClient, row: T) => Promise<void>,
+    ) => {
+      for (let i = 0; i < rows.length; i += BACKFILL_CHUNK) {
+        const chunk = rows.slice(i, i + BACKFILL_CHUNK);
+        await this.prisma.$transaction(async (tx) => {
+          for (const row of chunk) await work(tx, row);
+        }, BACKFILL_TX);
+      }
+    };
+
+    await forChunks(invoicePayments, async (tx, payment) => {
+      const accountId = payment.mode === PaymentMethod.CASH ? cash?.id : payment.accountId;
+      if (accountId !== payment.accountId) {
+        await tx.invoicePayment.update({ where: { id: payment.id }, data: { accountId } });
+      }
+      await this.syncAutomaticPayment(
+        tx,
+        {
+          organizationId,
+          sourceType: 'INVOICE_PAYMENT',
+          sourceId: payment.id,
+          sourceParentType: 'INVOICE',
+          sourceParentId: payment.invoiceId,
+          transactionType: FinancialTransactionType.SALE_RECEIPT,
+          paymentMethod: payment.mode,
+          accountId,
+          amount: payment.amount,
+          occurredAt: payment.paidAt,
+          description: payment.notes,
+        },
+        true,
+      );
+    });
+
+    await forChunks(purchasePayments, async (tx, payment) => {
+      const accountId = payment.mode === PaymentMethod.CASH ? cash?.id : payment.accountId;
+      if (accountId !== payment.accountId) {
+        await tx.purchasePayment.update({ where: { id: payment.id }, data: { accountId } });
+      }
+      await this.syncAutomaticPayment(
+        tx,
+        {
+          organizationId,
+          sourceType: 'PURCHASE_PAYMENT',
+          sourceId: payment.id,
+          sourceParentType: 'PURCHASE',
+          sourceParentId: payment.purchaseInvoiceId,
+          transactionType: FinancialTransactionType.PURCHASE_PAYMENT,
+          paymentMethod: payment.mode,
+          accountId,
+          amount: payment.amount,
+          occurredAt: payment.paidAt,
+          description: payment.notes,
+        },
+        true,
+      );
+    });
+
+    await forChunks(advanceEntries, async (tx, entry) => {
+      const method = entry.paymentMethod ?? PaymentMethod.OTHER;
+      const accountId = method === PaymentMethod.CASH ? cash?.id : entry.accountId;
+      if (accountId !== entry.accountId) {
+        await tx.ledgerEntry.update({ where: { id: entry.id }, data: { accountId } });
+      }
+      await this.syncAutomaticPayment(
+        tx,
+        {
+          organizationId,
+          sourceType: 'ADVANCE_LEDGER',
+          sourceId: entry.id,
+          sourceParentType: 'ADVANCE',
+          sourceParentId: entry.id,
+          transactionType:
+            entry.type === LedgerType.ADVANCE_REFUND
+              ? FinancialTransactionType.ADVANCE_REFUND
+              : FinancialTransactionType.ADVANCE_RECEIPT,
+          paymentMethod: method,
+          accountId,
+          amount: entry.amount,
+          occurredAt: entry.createdAt,
+          description: entry.description,
+        },
+        true,
+      );
+    });
+
+    await forChunks(udharPayments, async (tx, payment) => {
+      const method = payment.paymentMethod ?? PaymentMethod.OTHER;
+      const accountId = method === PaymentMethod.CASH ? cash?.id : payment.accountId;
+      if (accountId !== payment.accountId) {
+        await tx.ledgerEntry.update({ where: { id: payment.id }, data: { accountId } });
+      }
+      await this.syncAutomaticPayment(
+        tx,
+        {
+          organizationId,
+          sourceType: 'UDHAR_PAYMENT',
+          sourceId: payment.id,
+          sourceParentType: 'UDHAR',
+          sourceParentId: payment.entityId!,
+          transactionType: FinancialTransactionType.UDHAR_COLLECTION,
+          paymentMethod: method,
+          accountId,
+          amount: payment.amount,
+          occurredAt: payment.createdAt,
+          description: payment.description,
+        },
+        true,
+      );
+    });
+
+    if (!dryRun) {
+      const assigned = await this.prisma.financialMovement.findMany({
+        where: {
+          organizationId,
+          accountId: { not: null },
+          transaction: {
+            reversedAt: null,
+            sourceType: { in: ['INVOICE_PAYMENT', 'PURCHASE_PAYMENT', 'ADVANCE_LEDGER', 'UDHAR_PAYMENT'] },
+          },
+        },
+        select: {
+          accountId: true,
+          transaction: { select: { sourceType: true, sourceId: true } },
+        },
+      });
+      for (const row of assigned) {
+        if (!row.accountId) continue;
+        await this.stampSourceAccount(this.prisma, organizationId, row.transaction, row.accountId);
+      }
+    }
+
+    return { dryRun: false, ...counts };
+  }
+
+  async bulkAssignMovements(dto: BulkAssignMovementsDto, organizationId: string) {
+    const assignments = dto.assignments;
+    if (!assignments.length) return { updated: 0 };
+
+    const accountIds = [...new Set(assignments.map((a) => a.accountId))];
+    const accounts = await this.prisma.financialAccount.findMany({
+      where: { id: { in: accountIds }, organizationId },
+    });
+    const accountById = new Map(accounts.map((a) => [a.id, a]));
+    for (const accountId of accountIds) {
+      const account = accountById.get(accountId);
+      if (!account) throw new NotFoundException('Financial account not found');
+      if (account.status !== FinancialAccountStatus.ACTIVE) {
+        throw new BadRequestException('Financial account is not active');
+      }
+    }
+
+    const movementIds = [...new Set(assignments.map((a) => a.movementId))];
+    let updated = 0;
+    for (let i = 0; i < movementIds.length; i += BACKFILL_CHUNK) {
+      const chunkIds = movementIds.slice(i, i + BACKFILL_CHUNK);
+      const chunkAssignments = assignments.filter((a) => chunkIds.includes(a.movementId));
+      await this.prisma.$transaction(
+        async (tx) => {
+          const movements = await tx.financialMovement.findMany({
+            where: { id: { in: chunkIds }, organizationId },
+            include: {
+              transaction: { select: { reversedAt: true, sourceType: true, sourceId: true } },
+            },
+          });
+          const byId = new Map(movements.map((m) => [m.id, m]));
+          for (const assignment of chunkAssignments) {
+            const movement = byId.get(assignment.movementId);
+            if (!movement) throw new NotFoundException('Financial movement not found');
+            if (movement.accountId) {
+              throw new BadRequestException('Movement already has an account assigned');
+            }
+            if (movement.transaction.reversedAt) {
+              throw new BadRequestException('Cannot assign a reversed transaction');
+            }
+            await tx.financialMovement.update({
+              where: { id: assignment.movementId },
+              data: { accountId: assignment.accountId },
+            });
+            await this.stampSourceAccount(
+              tx,
+              organizationId,
+              movement.transaction,
+              assignment.accountId,
+            );
+            updated += 1;
+          }
+        },
+        BACKFILL_TX,
+      );
+    }
+    return { updated };
   }
 
   private async assertAssignment(

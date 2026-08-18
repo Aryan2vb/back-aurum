@@ -472,14 +472,10 @@ export class BankStatementService {
       linkedSumByPayment.set(row.invoicePaymentId, Number(row._sum.credit || 0));
     }
 
-    const since = new Date();
-    since.setDate(since.getDate() - 120);
-
     const rows = await this.prisma.invoicePayment.findMany({
       where: {
         organizationId,
         mode: { in: [...BANKISH_PAYMENT_MODES] as PaymentMethod[] },
-        paidAt: { gte: since },
         ...(accountId ? { OR: [{ accountId }, { accountId: null }] } : {}),
       },
       select: {
@@ -499,7 +495,6 @@ export class BankStatementService {
         },
       },
       orderBy: { paidAt: 'desc' },
-      take: 800,
     });
 
     return rows

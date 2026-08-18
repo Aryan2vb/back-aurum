@@ -126,3 +126,33 @@ describe('FinanceService automatic posting', () => {
     ]);
   });
 });
+
+describe('FinanceService.backfillOrganization', () => {
+  it('counts payments without writing when dryRun is true', async () => {
+    const prisma = {
+      financialAccount: { findFirst: jest.fn().mockResolvedValue({ id: 'cash-1' }) },
+      invoicePayment: { findMany: jest.fn().mockResolvedValue([{ id: 'ip-1' }]) },
+      purchasePayment: { findMany: jest.fn().mockResolvedValue([]) },
+      ledgerEntry: { findMany: jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]) },
+      udharEntry: { findMany: jest.fn().mockResolvedValue([]) },
+      financialMovement: { findMany: jest.fn() },
+      $transaction: jest.fn(),
+    };
+    const service = new FinanceService(prisma as any);
+    service.ensureDefaultCash = jest.fn();
+    service.syncAutomaticPayment = jest.fn();
+
+    const result = await service.backfillOrganization('org-1', true);
+
+    expect(result).toEqual({
+      dryRun: true,
+      invoicePayments: 1,
+      purchasePayments: 0,
+      advanceEntries: 0,
+      udharPayments: 0,
+    });
+    expect(service.ensureDefaultCash).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
