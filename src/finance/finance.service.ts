@@ -920,7 +920,9 @@ export class FinanceService {
           accountId: { not: null },
           transaction: {
             reversedAt: null,
-            sourceType: { in: ['INVOICE_PAYMENT', 'PURCHASE_PAYMENT', 'ADVANCE_LEDGER', 'UDHAR_PAYMENT'] },
+            sourceType: {
+              in: ['INVOICE_PAYMENT', 'PURCHASE_PAYMENT', 'ADVANCE_LEDGER', 'UDHAR_PAYMENT'],
+            },
           },
         },
         select: {
@@ -959,39 +961,36 @@ export class FinanceService {
     for (let i = 0; i < movementIds.length; i += BACKFILL_CHUNK) {
       const chunkIds = movementIds.slice(i, i + BACKFILL_CHUNK);
       const chunkAssignments = assignments.filter((a) => chunkIds.includes(a.movementId));
-      await this.prisma.$transaction(
-        async (tx) => {
-          const movements = await tx.financialMovement.findMany({
-            where: { id: { in: chunkIds }, organizationId },
-            include: {
-              transaction: { select: { reversedAt: true, sourceType: true, sourceId: true } },
-            },
-          });
-          const byId = new Map(movements.map((m) => [m.id, m]));
-          for (const assignment of chunkAssignments) {
-            const movement = byId.get(assignment.movementId);
-            if (!movement) throw new NotFoundException('Financial movement not found');
-            if (movement.accountId) {
-              throw new BadRequestException('Movement already has an account assigned');
-            }
-            if (movement.transaction.reversedAt) {
-              throw new BadRequestException('Cannot assign a reversed transaction');
-            }
-            await tx.financialMovement.update({
-              where: { id: assignment.movementId },
-              data: { accountId: assignment.accountId },
-            });
-            await this.stampSourceAccount(
-              tx,
-              organizationId,
-              movement.transaction,
-              assignment.accountId,
-            );
-            updated += 1;
+      await this.prisma.$transaction(async (tx) => {
+        const movements = await tx.financialMovement.findMany({
+          where: { id: { in: chunkIds }, organizationId },
+          include: {
+            transaction: { select: { reversedAt: true, sourceType: true, sourceId: true } },
+          },
+        });
+        const byId = new Map(movements.map((m) => [m.id, m]));
+        for (const assignment of chunkAssignments) {
+          const movement = byId.get(assignment.movementId);
+          if (!movement) throw new NotFoundException('Financial movement not found');
+          if (movement.accountId) {
+            throw new BadRequestException('Movement already has an account assigned');
           }
-        },
-        BACKFILL_TX,
-      );
+          if (movement.transaction.reversedAt) {
+            throw new BadRequestException('Cannot assign a reversed transaction');
+          }
+          await tx.financialMovement.update({
+            where: { id: assignment.movementId },
+            data: { accountId: assignment.accountId },
+          });
+          await this.stampSourceAccount(
+            tx,
+            organizationId,
+            movement.transaction,
+            assignment.accountId,
+          );
+          updated += 1;
+        }
+      }, BACKFILL_TX);
     }
     return { updated };
   }
