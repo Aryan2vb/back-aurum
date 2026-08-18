@@ -57,6 +57,16 @@ describe('parseHdfcDelimited', () => {
     expect(row.refNumber).toBe('REF123');
   });
 
+  it('keeps comma narration intact when the export has no closing balance column', () => {
+    const text = `Date,Narration,Value Dat,Debit Amount,Credit Amount,Chq/Ref Number
+20/07/26,UPI-FOO, BAR, BAZ-PAY,20/07/26,0.00,100.00,REF123`;
+    const [row] = parseHdfcDelimited(text);
+    expect(row.narration).toBe('UPI-FOO, BAR, BAZ-PAY');
+    expect(row.credit).toBe(100);
+    expect(row.refNumber).toBe('REF123');
+    expect(row.closingBalance).toBeNull();
+  });
+
   it('builds stable fingerprints for dedupe', () => {
     const [a] = parseHdfcDelimited(SAMPLE);
     const again = fingerprintHdfcRow(a);

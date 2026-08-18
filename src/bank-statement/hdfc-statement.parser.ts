@@ -96,6 +96,8 @@ export function parseHdfcDelimited(text: string): HdfcStatementRow[] {
   const headerIdx = lines.findIndex(
     (line) => /debit\s*amount/i.test(line) && /credit\s*amount/i.test(line),
   );
+  const hasClosingBalance =
+    headerIdx >= 0 ? /closing\s*balance/i.test(lines[headerIdx]) : undefined;
   const dataLines = headerIdx >= 0 ? lines.slice(headerIdx + 1) : lines;
 
   const rows: HdfcStatementRow[] = [];
@@ -106,7 +108,8 @@ export function parseHdfcDelimited(text: string): HdfcStatementRow[] {
     const txnDate = parseHdfcDate(parts[0]);
     if (!txnDate) continue;
 
-    const tailCount = parts.length > 6 ? 4 : 3;
+    const tailCount =
+      hasClosingBalance === undefined ? (parts.length > 6 ? 4 : 3) : hasClosingBalance ? 4 : 3;
     const tail = parts.slice(-tailCount);
     const middle = parts.slice(1, parts.length - tailCount);
     const debit = parseHdfcAmount(tail[0]);
