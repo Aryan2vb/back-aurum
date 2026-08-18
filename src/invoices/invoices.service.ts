@@ -1771,6 +1771,7 @@ export class InvoicesService {
           dispatchDocNo: dummyDto.dispatchDocNo,
           destination: dummyDto.destination,
           termsOfDelivery: dummyDto.termsOfDelivery,
+          templateType: dummyDto.templateType,
           invoiceDate: financials.invoiceDate,
           financialYear: financials.financialYear,
           notes: financials.notes,
