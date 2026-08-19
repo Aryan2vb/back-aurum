@@ -502,30 +502,39 @@ export class BankStatementService {
     if (line.status !== BankStatementLineStatus.MATCHED) {
       throw new BadRequestException('Only matched lines can be unlinked');
     }
-    if (line.financialTransactionId) {
-      const createdHere = await this.prisma.financialTransaction.findFirst({
-        where: {
-          id: line.financialTransactionId,
-          organizationId: user.organizationId,
-          sourceParentType: STATEMENT_CREATED.sourceParentType,
-          sourceParentId: line.id,
-          reversedAt: null,
-        },
-        select: { id: true },
-      });
-      if (createdHere) {
-        await this.financeService.reverseTransaction(createdHere.id, user);
+    return this.prisma.$transaction(async (tx) => {
+      if (line.financialTransactionId) {
+        const createdHere = await tx.financialTransaction.findFirst({
+          where: {
+            id: line.financialTransactionId,
+            organizationId: user.organizationId,
+            sourceParentType: STATEMENT_CREATED.sourceParentType,
+            sourceParentId: line.id,
+            reversedAt: null,
+          },
+          select: { id: true, sourceType: true },
+        });
+        if (createdHere?.sourceType === 'ADVANCE_LEDGER') {
+          // Reversing only the treasury leg would leave the customer holding an
+          // advance balance with no money behind it.
+          throw new BadRequestException(
+            'This credit created a customer advance. Refund the advance instead of unlinking it.',
+          );
+        }
+        if (createdHere) {
+          await this.financeService.reverseTransactionIn(tx, createdHere.id, user);
+        }
       }
-    }
-    return this.prisma.bankStatementLine.update({
-      where: { id: line.id },
-      data: {
-        status: BankStatementLineStatus.UNMATCHED,
-        matchedInvoiceId: null,
-        invoicePaymentId: null,
-        purchasePaymentId: null,
-        financialTransactionId: null,
-      },
+      return tx.bankStatementLine.update({
+        where: { id: line.id },
+        data: {
+          status: BankStatementLineStatus.UNMATCHED,
+          matchedInvoiceId: null,
+          invoicePaymentId: null,
+          purchasePaymentId: null,
+          financialTransactionId: null,
+        },
+      });
     });
   }
 
@@ -550,16 +559,20 @@ export class BankStatementService {
       throw new BadRequestException('Unlink matched lines before deleting');
     }
 
-    const deleted = await this.prisma.bankStatementLine.deleteMany({
-      where: {
-        organizationId: user.organizationId,
-        id: { in: uniqueIds },
-        status: { not: BankStatementLineStatus.MATCHED },
-      },
+    // In a transaction so a line matched concurrently rolls the whole delete back.
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.bankStatementLine.deleteMany({
+        where: {
+          organizationId: user.organizationId,
+          id: { in: uniqueIds },
+          status: { not: BankStatementLineStatus.MATCHED },
+        },
+      });
+      if (result.count !== uniqueIds.length) {
+        throw new BadRequestException('Unlink matched lines before deleting');
+      }
+      return result;
     });
-    if (deleted.count !== uniqueIds.length) {
-      throw new BadRequestException('Unlink matched lines before deleting');
-    }
     return { count: deleted.count, deleted: lines[0] };
   }
 
@@ -644,16 +657,6 @@ export class BankStatementService {
       if (!(Number(line.credit) > 0)) {
         throw new BadRequestException('Only credit lines can be matched to payments');
       }
-      if (!sameCalendarDay(payment.paidAt, line.txnDate)) {
-        throw new BadRequestException(
-          'Payment date must be the same calendar day as each bank credit date',
-        );
-      }
-      if (payment.accountId && payment.accountId !== line.accountId) {
-        throw new BadRequestException(
-          'Payment is booked to a different bank account than this statement',
-        );
-      }
     }
 
     const accountIds = new Set(lines.map((line) => line.accountId));
@@ -667,6 +670,20 @@ export class BankStatementService {
         where: { id: paymentId, organizationId: user.organizationId },
       });
       if (!booked) throw new NotFoundException('Payment not found');
+
+      // Date / account are validated against the in-transaction row on every retry.
+      for (const line of lines) {
+        if (!sameCalendarDay(booked.paidAt, line.txnDate)) {
+          throw new BadRequestException(
+            'Payment date must be the same calendar day as each bank credit date',
+          );
+        }
+        if (booked.accountId && booked.accountId !== line.accountId) {
+          throw new BadRequestException(
+            'Payment is booked to a different bank account than this statement',
+          );
+        }
+      }
 
       const linkedAgg = await tx.bankStatementLine.aggregate({
         where: {
@@ -972,8 +989,27 @@ export class BankStatementService {
       }
     }
 
-    const amount = Math.abs(Number(bankMovement.amount));
     const updated = await runSerializable(this.prisma, async (tx) => {
+      // Re-read so a concurrent reversal cannot be matched against.
+      const booked = await tx.financialTransaction.findFirst({
+        where: { id: transaction.id, organizationId: user.organizationId, reversedAt: null },
+        include: { movements: true },
+      });
+      if (!booked) throw new NotFoundException('Cash & Bank entry not found');
+      const bookedMovement = booked.movements.find(
+        (movement) =>
+          movement.accountId === bankAccountId &&
+          (direction === 'credit' ? Number(movement.amount) > 0 : Number(movement.amount) < 0),
+      );
+      if (!bookedMovement) {
+        throw new BadRequestException(
+          direction === 'credit'
+            ? 'This entry is not money into this bank account'
+            : 'This entry is not money out of this bank account',
+        );
+      }
+      const bookedAmount = Math.abs(Number(bookedMovement.amount));
+
       let alreadyLinked = 0;
       if (direction === 'credit') {
         const linkedAgg = await tx.bankStatementLine.aggregate({
@@ -996,7 +1032,7 @@ export class BankStatementService {
         });
         alreadyLinked = Number(linkedAgg._sum.debit || 0);
       }
-      const remaining = amount - alreadyLinked;
+      const remaining = bookedAmount - alreadyLinked;
       if (lineSum > remaining + AMOUNT_TOLERANCE) {
         throw new BadRequestException(
           `Selected lines (₹${lineSum.toFixed(2)}) exceed remaining entry capacity (₹${remaining.toFixed(2)})`,
@@ -1024,6 +1060,7 @@ export class BankStatementService {
       return {
         rows: uniqueIds.map((id) => byId.get(id)).filter(Boolean),
         alreadyLinked,
+        amount: bookedAmount,
       };
     });
 
@@ -1035,12 +1072,12 @@ export class BankStatementService {
         id: transaction.id,
         kind,
         invoiceNumber: label,
-        amount,
+        amount: updated.amount,
         mode: label,
         linkedCredits: direction === 'credit' ? linkedAfter : undefined,
         linkedDebits: direction === 'debit' ? linkedAfter : undefined,
-        remaining: Math.max(0, amount - linkedAfter),
-        complete: amount - linkedAfter <= AMOUNT_TOLERANCE,
+        remaining: Math.max(0, updated.amount - linkedAfter),
+        complete: updated.amount - linkedAfter <= AMOUNT_TOLERANCE,
       },
     };
   }
@@ -1076,16 +1113,6 @@ export class BankStatementService {
       if (!(Number(line.debit) > 0)) {
         throw new BadRequestException('Only debit lines can be matched to purchase payments');
       }
-      if (!sameCalendarDay(payment.paidAt, line.txnDate)) {
-        throw new BadRequestException(
-          'Payment date must be the same calendar day as each bank debit date',
-        );
-      }
-      if (payment.accountId && payment.accountId !== line.accountId) {
-        throw new BadRequestException(
-          'Payment is booked to a different bank account than this statement',
-        );
-      }
     }
 
     const accountIds = new Set(lines.map((line) => line.accountId));
@@ -1094,16 +1121,35 @@ export class BankStatementService {
     }
 
     const updated = await runSerializable(this.prisma, async (tx) => {
+      // Re-read inside the transaction: the booked amount / account can change under us.
+      const booked = await tx.purchasePayment.findFirst({
+        where: { id: payment.id, organizationId: user.organizationId },
+      });
+      if (!booked) throw new NotFoundException('Purchase payment not found');
+
+      for (const line of lines) {
+        if (!sameCalendarDay(booked.paidAt, line.txnDate)) {
+          throw new BadRequestException(
+            'Payment date must be the same calendar day as each bank debit date',
+          );
+        }
+        if (booked.accountId && booked.accountId !== line.accountId) {
+          throw new BadRequestException(
+            'Payment is booked to a different bank account than this statement',
+          );
+        }
+      }
+
       const linkedAgg = await tx.bankStatementLine.aggregate({
         where: {
           organizationId: user.organizationId,
-          purchasePaymentId: payment.id,
+          purchasePaymentId: booked.id,
           status: BankStatementLineStatus.MATCHED,
         },
         _sum: { debit: true },
       });
       const alreadyLinked = Number(linkedAgg._sum.debit || 0);
-      const remaining = Number(payment.amount) - alreadyLinked;
+      const remaining = Number(booked.amount) - alreadyLinked;
       if (debitSum > remaining + AMOUNT_TOLERANCE) {
         throw new BadRequestException(
           `Selected debits (₹${debitSum.toFixed(2)}) exceed remaining payment capacity (₹${remaining.toFixed(2)})`,
@@ -1129,28 +1175,28 @@ export class BankStatementService {
       });
       const byId = new Map(updatedRows.map((row) => [row.id, row]));
       const rows = uniqueIds.map((id) => byId.get(id)).filter(Boolean);
-      const accountId = payment.accountId || lines[0].accountId;
-      if (!payment.accountId) {
+      const accountId = booked.accountId || lines[0].accountId;
+      if (!booked.accountId) {
         await tx.purchasePayment.update({
-          where: { id: payment.id },
+          where: { id: booked.id },
           data: { accountId },
         });
       }
       await this.financeService.syncAutomaticPayment(tx, {
         organizationId: user.organizationId,
         sourceType: 'PURCHASE_PAYMENT',
-        sourceId: payment.id,
+        sourceId: booked.id,
         sourceParentType: 'PURCHASE',
-        sourceParentId: payment.purchaseInvoiceId,
+        sourceParentId: booked.purchaseInvoiceId,
         transactionType: FinancialTransactionType.PURCHASE_PAYMENT,
-        paymentMethod: payment.mode,
+        paymentMethod: booked.mode,
         accountId,
-        amount: payment.amount,
-        occurredAt: payment.paidAt,
-        description: payment.notes ?? 'Purchase payment',
+        amount: booked.amount,
+        occurredAt: booked.paidAt,
+        description: booked.notes ?? 'Purchase payment',
         createdById: user.userId,
       });
-      return { rows, alreadyLinked };
+      return { rows, alreadyLinked, amount: Number(booked.amount) };
     });
 
     const linkedAfter = updated.alreadyLinked + debitSum;
@@ -1161,11 +1207,11 @@ export class BankStatementService {
         id: payment.id,
         kind: 'PURCHASE' as const,
         invoiceNumber: billLabel,
-        amount: Number(payment.amount),
+        amount: updated.amount,
         mode: payment.mode,
         linkedDebits: linkedAfter,
-        remaining: Math.max(0, Number(payment.amount) - linkedAfter),
-        complete: Number(payment.amount) - linkedAfter <= AMOUNT_TOLERANCE,
+        remaining: Math.max(0, updated.amount - linkedAfter),
+        complete: updated.amount - linkedAfter <= AMOUNT_TOLERANCE,
         customerName: payment.purchaseInvoice.vendorName || '',
       },
     };

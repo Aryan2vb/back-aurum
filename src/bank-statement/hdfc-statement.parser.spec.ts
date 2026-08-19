@@ -67,6 +67,19 @@ describe('parseHdfcDelimited', () => {
     expect(row.closingBalance).toBeNull();
   });
 
+  it('keeps comma-split reference numbers together when the export has a header', () => {
+    const text = `Date,Narration,Value Dat,Debit Amount,Credit Amount,Chq/Ref Number,Closing Balance
+06/07/26,NEFT CR-UTIB0001920-CASHFREE,06/07/26,0.00,1.00,AXISCN,1397974004,432.71`;
+    const [row] = parseHdfcDelimited(text);
+    expect(row).toMatchObject({
+      debit: 0,
+      credit: 1,
+      narration: 'NEFT CR-UTIB0001920-CASHFREE',
+      refNumber: 'AXISCN,1397974004',
+      closingBalance: 432.71,
+    });
+  });
+
   it('builds stable fingerprints for dedupe', () => {
     const [a] = parseHdfcDelimited(SAMPLE);
     const again = fingerprintHdfcRow(a);

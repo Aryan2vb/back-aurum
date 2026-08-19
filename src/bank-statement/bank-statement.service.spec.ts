@@ -12,7 +12,7 @@ describe('BankStatementService reconcile cleanup', () => {
   };
 
   const makeService = (overrides: Record<string, unknown> = {}) => {
-    const prisma = {
+    const prisma: Record<string, any> = {
       bankStatementLine: {
         findFirst: jest.fn().mockResolvedValue(line),
         findMany: jest.fn().mockResolvedValue([line]),
@@ -22,10 +22,11 @@ describe('BankStatementService reconcile cleanup', () => {
       },
       ...overrides,
     };
+    prisma.$transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma));
     return {
       service: new BankStatementService(
         prisma as any,
-        { reverseTransaction: jest.fn() } as any,
+        { reverseTransactionIn: jest.fn() } as any,
         {} as any,
       ),
       prisma,
@@ -54,21 +55,22 @@ describe('BankStatementService reconcile cleanup', () => {
       matchedInvoiceId: null,
       financialTransactionId: 'tx-existing',
     };
-    const reverseTransaction = jest.fn();
-    const prisma = {
+    const reverseTransactionIn = jest.fn();
+    const prisma: Record<string, any> = {
       bankStatementLine: {
         findFirst: jest.fn().mockResolvedValue(matchedTreasury),
         update: jest.fn().mockResolvedValue(matchedTreasury),
       },
       financialTransaction: { findFirst: jest.fn().mockResolvedValue(null) },
     };
+    prisma.$transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma));
     const service = new BankStatementService(
       prisma as any,
-      { reverseTransaction } as any,
+      { reverseTransactionIn } as any,
       {} as any,
     );
     await service.unmatch('line-1', { organizationId: 'org-1' } as any);
-    expect(reverseTransaction).not.toHaveBeenCalled();
+    expect(reverseTransactionIn).not.toHaveBeenCalled();
   });
 
   it('reverses a treasury entry created from the statement line', async () => {
@@ -78,24 +80,58 @@ describe('BankStatementService reconcile cleanup', () => {
       matchedInvoiceId: null,
       financialTransactionId: 'tx-created',
     };
-    const reverseTransaction = jest.fn();
-    const prisma = {
+    const reverseTransactionIn = jest.fn();
+    const prisma: Record<string, any> = {
       bankStatementLine: {
         findFirst: jest.fn().mockResolvedValue(created),
         update: jest.fn().mockResolvedValue(created),
       },
-      financialTransaction: { findFirst: jest.fn().mockResolvedValue({ id: 'tx-created' }) },
+      financialTransaction: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'tx-created', sourceType: 'MANUAL' }),
+      },
     };
+    prisma.$transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma));
     const service = new BankStatementService(
       prisma as any,
-      { reverseTransaction } as any,
+      { reverseTransactionIn } as any,
       {} as any,
     );
     await service.unmatch('line-1', { organizationId: 'org-1', userId: 'u1' } as any);
-    expect(reverseTransaction).toHaveBeenCalledWith(
+    expect(reverseTransactionIn).toHaveBeenCalledWith(
+      prisma,
       'tx-created',
       expect.objectContaining({ organizationId: 'org-1' }),
     );
+  });
+
+  it('refuses to unlink a credit that created a customer advance', async () => {
+    const advanceLine = {
+      ...line,
+      invoicePaymentId: null,
+      matchedInvoiceId: null,
+      financialTransactionId: 'tx-advance',
+    };
+    const reverseTransactionIn = jest.fn();
+    const prisma: Record<string, any> = {
+      bankStatementLine: {
+        findFirst: jest.fn().mockResolvedValue(advanceLine),
+        update: jest.fn(),
+      },
+      financialTransaction: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'tx-advance', sourceType: 'ADVANCE_LEDGER' }),
+      },
+    };
+    prisma.$transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma));
+    const service = new BankStatementService(
+      prisma as any,
+      { reverseTransactionIn } as any,
+      {} as any,
+    );
+    await expect(
+      service.unmatch('line-1', { organizationId: 'org-1', userId: 'u1' } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(reverseTransactionIn).not.toHaveBeenCalled();
+    expect(prisma.bankStatementLine.update).not.toHaveBeenCalled();
   });
 
   it('rejects deleting matched lines without unlinking first', async () => {
@@ -194,7 +230,7 @@ describe('BankStatementService.confirmMatchMany', () => {
     await expect(service.confirmMatch('line-1', 'pay-1', user)).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bankStatementLine.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects credits on a different calendar day than payment.paidAt', async () => {
@@ -205,7 +241,7 @@ describe('BankStatementService.confirmMatchMany', () => {
     await expect(service.confirmMatchMany(['line-1'], 'pay-1', user)).rejects.toThrow(
       /same calendar day/i,
     );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.bankStatementLine.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects when selected credits exceed remaining capacity beyond ₹1', async () => {

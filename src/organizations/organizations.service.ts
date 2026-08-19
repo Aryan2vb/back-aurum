@@ -210,6 +210,17 @@ export class OrganizationsService {
         if (ownerCount <= 1) throw new ForbiddenException('Cannot remove the last owner');
       }
 
+      // A removed member must lose access immediately, not when their token expires.
+      await tx.session.updateMany({
+        where: {
+          userId: targetUserId,
+          organizationId: actor.organizationId,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { revokedAt: new Date() },
+      });
+
       await tx.organizationMember.delete({
         where: { id: membership.id },
       });

@@ -114,11 +114,13 @@ export class StockService {
   }
 
   async getLedger(organizationId: string, metalType?: MetalType, purity?: string) {
+    // Rows are stored normalized ("22K"), so a raw "22.00" filter would match nothing.
+    const normalizedPurity = purity ? this.normalizePurity(purity, metalType ?? '') : undefined;
     return this.prisma.stockLedger.findMany({
       where: {
         organizationId,
         ...(metalType && { metalType }),
-        ...(purity && { purity }),
+        ...(normalizedPurity && { purity: normalizedPurity }),
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     });
@@ -344,6 +346,10 @@ export class StockService {
       };
 
       if (!startDate) {
+        // Without a period start nothing is "opening", but opening-balance rows are
+        // still real stock — count them as the first inward.
+        pRecord.inQty += pRecord.opQty;
+        pRecord.inVal += pRecord.opVal;
         pRecord.opQty = 0;
         pRecord.opVal = 0;
       }
@@ -473,7 +479,13 @@ export class StockService {
     referenceId: string,
     prismaTx?: Prisma.TransactionClient,
   ) {
-    const db = prismaTx || this.prisma;
+    // Delete + rebuild must be atomic, so own a transaction when the caller has none.
+    if (!prismaTx) {
+      return this.prisma.$transaction((tx) =>
+        this.purgeTransactionsByReference(organizationId, referenceId, tx),
+      );
+    }
+    const db = prismaTx;
 
     const entries = await db.stockLedger.findMany({
       where: { organizationId, referenceId },
@@ -502,22 +514,32 @@ export class StockService {
     purity: string,
     db: Prisma.TransactionClient | PrismaService,
   ) {
-    const ledgerEntries = await db.stockLedger.findMany({
+    // One windowed UPDATE instead of a round-trip per ledger row: a backdated edit
+    // can touch every row of the bucket.
+    await db.$executeRaw`
+      UPDATE "StockLedger" AS sl
+      SET "runningBalance" = agg.running
+      FROM (
+        SELECT id,
+               SUM("quantityIn" - "quantityOut") OVER (
+                 ORDER BY "date" ASC, "createdAt" ASC, id ASC
+                 ROWS UNBOUNDED PRECEDING
+               ) AS running
+        FROM "StockLedger"
+        WHERE "organizationId" = ${organizationId}
+          AND "metalType" = ${metalType}::"MetalType"
+          AND "purity" = ${purity}
+      ) AS agg
+      WHERE sl.id = agg.id
+        AND sl."runningBalance" IS DISTINCT FROM agg.running
+    `;
+
+    const totals = await db.stockLedger.aggregate({
       where: { organizationId, metalType, purity },
-      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      _sum: { quantityIn: true, quantityOut: true },
     });
-
-    let currentRunning = 0;
-    for (const entry of ledgerEntries) {
-      const qtyIn = Number(entry.quantityIn);
-      const qtyOut = Number(entry.quantityOut);
-      currentRunning = currentRunning + qtyIn - qtyOut;
-
-      await db.stockLedger.update({
-        where: { id: entry.id },
-        data: { runningBalance: currentRunning },
-      });
-    }
+    const currentRunning =
+      Number(totals._sum.quantityIn ?? 0) - Number(totals._sum.quantityOut ?? 0);
 
     await db.stockBalance.upsert({
       where: {
@@ -548,35 +570,49 @@ export class StockService {
 
     await this.ensureDefaultPurities(organizationId);
 
-    const existing = await this.prisma.orgMetalPurity.findFirst({
-      where: {
-        organizationId,
-        metalType,
-        label: { equals: label, mode: 'insensitive' },
-      },
-    });
-    if (existing) {
-      if (existing.isActive) {
-        throw new BadRequestException(`Purity "${existing.label}" already exists for ${metalType}`);
-      }
-      return this.prisma.orgMetalPurity.update({
-        where: { id: existing.id },
-        data: { isActive: true, label },
-      });
-    }
+    const existing = await this.findPurityByLabel(organizationId, metalType, label);
+    if (existing) return this.reuseExistingPurity(existing, label);
 
     const maxSort = await this.prisma.orgMetalPurity.aggregate({
       where: { organizationId, metalType },
       _max: { sortOrder: true },
     });
 
-    return this.prisma.orgMetalPurity.create({
-      data: {
-        organizationId,
-        metalType,
-        label,
-        sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-      },
+    try {
+      return await this.prisma.orgMetalPurity.create({
+        data: {
+          organizationId,
+          metalType,
+          label,
+          sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
+        },
+      });
+    } catch (error: any) {
+      if (error?.code !== 'P2002') throw error;
+      const raced = await this.findPurityByLabel(organizationId, metalType, label);
+      if (!raced) throw error;
+      return this.reuseExistingPurity(raced, label);
+    }
+  }
+
+  private findPurityByLabel(organizationId: string, metalType: MetalType, label: string) {
+    return this.prisma.orgMetalPurity.findFirst({
+      where: { organizationId, metalType, label: { equals: label, mode: 'insensitive' } },
+    });
+  }
+
+  private reuseExistingPurity(
+    existing: { id: string; label: string; isActive: boolean; metalType: MetalType },
+    label: string,
+  ) {
+    if (existing.isActive) {
+      throw new BadRequestException(
+        `Purity "${existing.label}" already exists for ${existing.metalType}`,
+      );
+    }
+    return this.prisma.orgMetalPurity.update({
+      where: { id: existing.id },
+      data: { isActive: true, label },
     });
   }
 

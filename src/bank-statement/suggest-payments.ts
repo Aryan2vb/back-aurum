@@ -61,6 +61,8 @@ type StatementLineMatch = {
 
 export const AMOUNT_TOLERANCE = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Shortest reference that is specific enough to score a match on. */
+const MIN_REF_MATCH_LENGTH = 4;
 
 /** YYYY-MM-DD in Asia/Kolkata for instants; date-only strings stay as written. */
 export const calendarDayKey = (value: Date | string | null | undefined): string => {
@@ -143,9 +145,14 @@ export const suggestPaymentsForLine = (
       else score += 35;
 
       const payRef = (payment.reference || '').toUpperCase().trim();
-      if (bankRef && payRef && (bankRef.includes(payRef) || payRef.includes(bankRef))) {
+      // Short refs like "1" or "chq 7" substring-match almost anything.
+      if (
+        payRef.length >= MIN_REF_MATCH_LENGTH &&
+        bankRef.length >= MIN_REF_MATCH_LENGTH &&
+        (bankRef.includes(payRef) || payRef.includes(bankRef))
+      ) {
         score += 90;
-      } else if (payRef && payRef.length >= 4 && narration.includes(payRef)) {
+      } else if (payRef && payRef.length >= MIN_REF_MATCH_LENGTH && narration.includes(payRef)) {
         score += 70;
       }
 

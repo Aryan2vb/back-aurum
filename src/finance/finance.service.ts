@@ -33,6 +33,8 @@ function endOfRange(value?: string): Date | undefined {
 const BACKFILL_CHUNK = 25;
 const BACKFILL_TX = { maxWait: 10_000, timeout: 60_000 };
 const CASH_ACCOUNT_NAME = 'Cash';
+const TRANSACTION_PAGE_SIZE = 200;
+const MAX_PAGE_SIZE = 1000;
 
 export type AutomaticPaymentInput = {
   organizationId: string;
@@ -350,10 +352,20 @@ export class FinanceService {
           data: { isDefault: false },
         });
       }
-      const updated = await tx.financialAccount.update({
-        where: { id },
-        data: { ...accountFields, name: accountFields.name?.trim() },
-      });
+      let updated;
+      try {
+        updated = await tx.financialAccount.update({
+          where: { id },
+          data: { ...accountFields, name: accountFields.name?.trim() },
+        });
+      } catch (error: any) {
+        if (error?.code === 'P2002') {
+          throw new BadRequestException(
+            `An account named "${accountFields.name?.trim()}" already exists`,
+          );
+        }
+        throw error;
+      }
       if (openingBalance !== undefined || openingDate !== undefined) {
         await this.upsertAccountOpeningBalance(tx, {
           organizationId: user.organizationId,
@@ -562,9 +574,13 @@ export class FinanceService {
 
   async listTransactions(
     organizationId: string,
-    filters: { accountId?: string; from?: string; to?: string },
+    filters: { accountId?: string; from?: string; to?: string; limit?: number },
   ) {
     return this.prisma.financialTransaction.findMany({
+      take: Math.min(
+        Math.max(Math.trunc(filters.limit || TRANSACTION_PAGE_SIZE), 1),
+        MAX_PAGE_SIZE,
+      ),
       where: {
         organizationId,
         reversedAt: null,
@@ -706,29 +722,32 @@ export class FinanceService {
   }
 
   async reverseTransaction(id: string, user: CurrentUserData) {
-    const transaction = await this.prisma.financialTransaction.findFirst({
+    return this.prisma.$transaction((tx) => this.reverseTransactionIn(tx, id, user));
+  }
+
+  /** Same as reverseTransaction but participates in a caller-owned transaction. */
+  async reverseTransactionIn(db: Db, id: string, user: CurrentUserData) {
+    const transaction = await db.financialTransaction.findFirst({
       where: { id, organizationId: user.organizationId, reversedAt: null },
     });
     if (!transaction) throw new NotFoundException('Financial transaction not found');
-    return this.prisma.$transaction(async (tx) => {
-      if ((tx as any).bankStatementLine?.updateMany) {
-        await tx.bankStatementLine.updateMany({
-          where: {
-            organizationId: user.organizationId,
-            financialTransactionId: id,
-            status: BankStatementLineStatus.MATCHED,
-          },
-          data: {
-            status: BankStatementLineStatus.UNMATCHED,
-            financialTransactionId: null,
-          },
-        });
-      }
-      await tx.financialMovement.deleteMany({ where: { transactionId: id } });
-      return tx.financialTransaction.update({
-        where: { id },
-        data: { reversedAt: new Date() },
+    if ((db as any).bankStatementLine?.updateMany) {
+      await db.bankStatementLine.updateMany({
+        where: {
+          organizationId: user.organizationId,
+          financialTransactionId: id,
+          status: BankStatementLineStatus.MATCHED,
+        },
+        data: {
+          status: BankStatementLineStatus.UNMATCHED,
+          financialTransactionId: null,
+        },
       });
+    }
+    await db.financialMovement.deleteMany({ where: { transactionId: id } });
+    return db.financialTransaction.update({
+      where: { id },
+      data: { reversedAt: new Date() },
     });
   }
 
@@ -860,7 +879,8 @@ export class FinanceService {
     };
 
     await forChunks(invoicePayments, async (tx, payment) => {
-      const accountId = payment.mode === PaymentMethod.CASH ? cash?.id : payment.accountId;
+      const accountId =
+        (payment.mode === PaymentMethod.CASH ? cash?.id : payment.accountId) ?? null;
       if (accountId !== payment.accountId) {
         await tx.invoicePayment.update({ where: { id: payment.id }, data: { accountId } });
       }
@@ -884,7 +904,8 @@ export class FinanceService {
     });
 
     await forChunks(purchasePayments, async (tx, payment) => {
-      const accountId = payment.mode === PaymentMethod.CASH ? cash?.id : payment.accountId;
+      const accountId =
+        (payment.mode === PaymentMethod.CASH ? cash?.id : payment.accountId) ?? null;
       if (accountId !== payment.accountId) {
         await tx.purchasePayment.update({ where: { id: payment.id }, data: { accountId } });
       }
@@ -909,7 +930,7 @@ export class FinanceService {
 
     await forChunks(advanceEntries, async (tx, entry) => {
       const method = entry.paymentMethod ?? PaymentMethod.OTHER;
-      const accountId = method === PaymentMethod.CASH ? cash?.id : entry.accountId;
+      const accountId = (method === PaymentMethod.CASH ? cash?.id : entry.accountId) ?? null;
       if (accountId !== entry.accountId) {
         await tx.ledgerEntry.update({ where: { id: entry.id }, data: { accountId } });
       }
@@ -937,7 +958,7 @@ export class FinanceService {
 
     await forChunks(udharPayments, async (tx, payment) => {
       const method = payment.paymentMethod ?? PaymentMethod.OTHER;
-      const accountId = method === PaymentMethod.CASH ? cash?.id : payment.accountId;
+      const accountId = (method === PaymentMethod.CASH ? cash?.id : payment.accountId) ?? null;
       if (accountId !== payment.accountId) {
         await tx.ledgerEntry.update({ where: { id: payment.id }, data: { accountId } });
       }
@@ -1049,6 +1070,9 @@ export class FinanceService {
     }
 
     let updated = 0;
+    // ponytail: one transaction per chunk, so a failure in a later chunk leaves earlier
+    // chunks committed and the caller sees the error instead of a partial count.
+    // Upgrade path: wrap the whole loop once assignment batches stay small enough.
     for (let i = 0; i < movementIds.length; i += BACKFILL_CHUNK) {
       const chunkIds = movementIds.slice(i, i + BACKFILL_CHUNK);
       const chunkIdSet = new Set(chunkIds);
@@ -1070,10 +1094,13 @@ export class FinanceService {
           if (movement.transaction.reversedAt) {
             throw new BadRequestException('Cannot assign a reversed transaction');
           }
-          await tx.financialMovement.update({
-            where: { id: assignment.movementId },
+          const claimed = await tx.financialMovement.updateMany({
+            where: { id: assignment.movementId, organizationId, accountId: null },
             data: { accountId: assignment.accountId },
           });
+          if (claimed.count !== 1) {
+            throw new BadRequestException('Movement already has an account assigned');
+          }
           await this.stampSourceAccount(
             tx,
             organizationId,

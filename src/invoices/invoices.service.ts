@@ -1710,22 +1710,32 @@ export class InvoicesService {
           });
         }
 
-        // Create new payments
+        // Create new payments — resolve accounts one at a time (concurrent
+        // resolution can create duplicate default-cash rows).
         if (dto.payments.length > 0) {
-          await tx.invoicePayment.createMany({
-            data: dto.payments.map((p) => ({
+          const paymentRows = [];
+          for (const p of dto.payments) {
+            const account = await this.financeService.resolvePaymentAccount(
+              tx,
+              organizationId,
+              p.mode as PaymentMethod,
+              p.accountId,
+              true,
+            );
+            paymentRows.push({
               invoiceId: id,
               organizationId,
               mode: p.mode,
               amount: new Decimal(p.amount),
               reference: p.reference,
               notes: p.notes,
-              accountId: p.accountId,
+              accountId: account?.id ?? null,
               paidAt: this._consumeMatchingExistingPayment(p, existingPaymentsToPreserve)
                 ? new Date(`${p.paidAt}T00:00:00.000Z`)
                 : this._parsePaymentPaidAt(p.paidAt, financials.invoiceDate),
-            })),
-          });
+            });
+          }
+          await tx.invoicePayment.createMany({ data: paymentRows });
         }
       }
 

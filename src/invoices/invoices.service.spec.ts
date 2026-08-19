@@ -837,6 +837,78 @@ describe('InvoicesService invoice sequence allocation', () => {
     );
   });
 
+  it('rejects a replacement payment pointing at another organization account', async () => {
+    const tx = {
+      invoice: {
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
+      },
+      invoiceItem: { deleteMany: jest.fn(), createMany: jest.fn() },
+      invoicePayment: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn(),
+        createMany: jest.fn(),
+      },
+      bankStatementLine: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      orgInvoiceSettings: { findUnique: jest.fn().mockResolvedValue(settings) },
+    };
+    const prisma = {
+      invoice: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'invoice-1',
+          organizationId,
+          customerId: 'customer-1',
+          status: 'PAID',
+          paidAmount: new Decimal(103),
+          modeOfPayment: 'UPI',
+          invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
+          invoiceNumber: 'INV/1/25-26',
+          sequence: 1,
+          buyerSnapshot: { data: { name: 'Customer' } },
+          items: [],
+          payments: [],
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    };
+    const finance = financeServiceMock();
+    finance.resolvePaymentAccount = jest
+      .fn()
+      .mockRejectedValue(new BadRequestException('Financial account not found'));
+    const service = new InvoicesService(
+      prisma as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      stockServiceMock(),
+      finance,
+    ) as any;
+    service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
+      grandTotal: new Decimal(103),
+      paidAmount: new Decimal(103),
+      invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
+      financialYear,
+      buyerSnapshot: { version: 1, data: { name: 'Customer' } },
+      companySnapshot: { version: 1, data: {} },
+      lineItems: [],
+    });
+    service._syncInvoiceFinancialsWithLedger = jest.fn();
+
+    await expect(
+      service.update(
+        'invoice-1',
+        {
+          payments: [
+            { mode: 'UPI', amount: 103, accountId: 'account-of-another-org', paidAt: '2025-04-01' },
+          ],
+        },
+        { organizationId, userId: 'user-1' },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.invoicePayment.createMany).not.toHaveBeenCalled();
+  });
+
   it('uses manual sequence when creating a finalized invoice directly', async () => {
     const tx = {
       ...buildTx({ currentSequence: { nextSequence: 18 } }),

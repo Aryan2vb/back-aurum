@@ -10,6 +10,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
+  Min,
   NotEquals,
   ValidateIf,
   ValidateNested,
@@ -188,4 +190,11 @@ export class FinanceDateRangeQueryDto {
   @IsOptional()
   @IsString()
   accountId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(1000)
+  @Type(() => Number)
+  limit?: number;
 }

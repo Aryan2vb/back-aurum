@@ -90,6 +90,7 @@ export class FinanceController {
       accountId: query.accountId,
       from: query.from,
       to: query.to,
+      limit: query.limit,
     });
   }
 

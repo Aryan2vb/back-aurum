@@ -162,38 +162,66 @@ describe('StockService.initializeOpeningBalance', () => {
 });
 
 describe('StockService.purgeTransactionsByReference', () => {
-  it('deletes ledger rows for the reference then rebuilds balances', async () => {
+  it('deletes ledger rows for the reference then rebuilds balances in one transaction', async () => {
     const stockLedger = {
-      findMany: jest
-        .fn()
-        .mockResolvedValueOnce([{ metalType: 'GOLD', purity: '22K' }])
-        .mockResolvedValueOnce([
-          {
-            id: 'ob-1',
-            transactionType: StockTransactionType.OPENING_BALANCE,
-            quantityIn: 50,
-            quantityOut: 0,
-          },
-        ]),
+      findMany: jest.fn().mockResolvedValue([{ metalType: 'GOLD', purity: '22K' }]),
+      aggregate: jest.fn().mockResolvedValue({ _sum: { quantityIn: 50, quantityOut: 0 } }),
       deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
-      update: jest.fn().mockResolvedValue({}),
     };
     const stockBalance = {
       upsert: jest.fn().mockResolvedValue({}),
     };
-    const prisma = { stockLedger, stockBalance } as any;
+    const tx = { stockLedger, stockBalance, $executeRaw: jest.fn().mockResolvedValue(1) };
+    const prisma = { $transaction: jest.fn((fn: any) => fn(tx)) } as any;
     const service = new StockService(prisma);
 
     await service.purgeTransactionsByReference('org-1', 'pur-1');
 
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(stockLedger.deleteMany).toHaveBeenCalledWith({
       where: { organizationId: 'org-1', referenceId: 'pur-1' },
     });
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(stockBalance.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         update: { quantity: 50 },
       }),
     );
+  });
+});
+
+describe('StockService.getGroupSummary', () => {
+  it('keeps opening-balance stock in closing when no start date is given', async () => {
+    const prisma = {
+      stockLedger: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            metalType: 'GOLD',
+            purity: '22K',
+            transactionType: StockTransactionType.OPENING_BALANCE,
+            quantityIn: 100,
+            quantityOut: 0,
+            rate: 5000,
+            date: new Date('2026-04-01T00:00:00.000Z'),
+          },
+          {
+            metalType: 'GOLD',
+            purity: '22K',
+            transactionType: StockTransactionType.SALE,
+            quantityIn: 0,
+            quantityOut: 30,
+            rate: 6000,
+            date: new Date('2026-05-01T00:00:00.000Z'),
+          },
+        ]),
+      },
+    } as any;
+    const service = new StockService(prisma);
+
+    const [row] = await service.getGroupSummary('org-1');
+
+    expect(row.opening.quantity).toBe(0);
+    expect(row.closing.quantity).toBe(70);
   });
 });
 

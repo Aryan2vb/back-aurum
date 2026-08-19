@@ -95,8 +95,15 @@ function isHdfcAmountField(raw: string): boolean {
   return /^-?\d+\.\d{1,2}$/.test(cleaned);
 }
 
-/** Headerless rows: find debit/credit by amount positions so comma-split refs stay in refNumber. */
-function parseHdfcHeaderlessRow(parts: string[]): {
+/**
+ * Find debit/credit by amount position rather than by field count, so both narration
+ * and reference numbers may contain commas. `hasClosingBalance` comes from the header
+ * when there is one; otherwise the trailing amount decides.
+ */
+function parseHdfcRow(
+  parts: string[],
+  hasClosingBalance?: boolean,
+): {
   debit: number;
   credit: number;
   refNumber: string | null;
@@ -118,7 +125,11 @@ function parseHdfcHeaderlessRow(parts: string[]): {
   const rest = parts.slice(amountIdx + 2);
   let closingBalance: number | null = null;
   let refParts = rest;
-  if (rest.length && isHdfcAmountField(rest[rest.length - 1])) {
+  const trailingIsBalance =
+    hasClosingBalance === undefined
+      ? Boolean(rest.length) && isHdfcAmountField(rest[rest.length - 1])
+      : hasClosingBalance && rest.length > 1;
+  if (trailingIsBalance) {
     closingBalance = parseHdfcAmount(rest[rest.length - 1]);
     refParts = rest.slice(0, -1);
   }
@@ -174,40 +185,10 @@ export function parseHdfcDelimited(text: string): HdfcStatementRow[] {
     const txnDate = parseHdfcDate(parts[0]);
     if (!txnDate) continue;
 
-    let debit: number;
-    let credit: number;
-    let refNumber: string | null;
-    let closingBalance: number | null;
-    let valueDate: Date | null = null;
-    let narration: string;
-
-    if (hasClosingBalance === undefined) {
-      const parsedRow = parseHdfcHeaderlessRow(parts);
-      if (!parsedRow) continue;
-      debit = parsedRow.debit;
-      credit = parsedRow.credit;
-      refNumber = parsedRow.refNumber;
-      closingBalance = parsedRow.closingBalance;
-      valueDate = parsedRow.valueDate;
-      narration = parsedRow.narration;
-    } else {
-      const tailCount = hasClosingBalance ? 4 : 3;
-      const tail = parts.slice(-tailCount);
-      const middle = parts.slice(1, parts.length - tailCount);
-      debit = parseHdfcAmount(tail[0]);
-      credit = parseHdfcAmount(tail[1]);
-      refNumber = normalizeHdfcRef(tail[2] || '');
-      closingBalance = tailCount === 4 ? parseHdfcAmount(tail[3]) : null;
-      let narrationParts = middle;
-      if (middle.length) {
-        const maybeValueDate = parseHdfcDate(middle[middle.length - 1]);
-        if (maybeValueDate) {
-          valueDate = maybeValueDate;
-          narrationParts = middle.slice(0, -1);
-        }
-      }
-      narration = narrationParts.join(', ');
-    }
+    const parsedRow = parseHdfcRow(parts, hasClosingBalance);
+    if (!parsedRow) continue;
+    const { debit, credit, refNumber, valueDate, narration } = parsedRow;
+    const closingBalance = parsedRow.closingBalance;
 
     if (debit <= 0 && credit <= 0) continue;
 

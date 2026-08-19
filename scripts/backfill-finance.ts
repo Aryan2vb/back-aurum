@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { FinanceService } from '../src/finance/finance.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 

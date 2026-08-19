@@ -3,6 +3,7 @@
  * (e.g. purchase deleted under old reverse-on-delete behavior).
  * Run: npx ts-node scripts/purge-orphan-stock-ledger.ts [--apply]
  */
+import 'reflect-metadata';
 import { StockTransactionType } from '@prisma/client';
 import { StockService } from '../src/stock/stock.service';
 import { PrismaService } from '../src/prisma/prisma.service';

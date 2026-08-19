@@ -469,6 +469,12 @@ export class CreditsService {
         );
       }
 
+      // Read the link before the delete: InvoicePayment.ledgerEntryId is SetNull,
+      // so after deleting the ledger entry the payment can no longer be found.
+      const invoicePayment = await tx.invoicePayment.findFirst({
+        where: { organizationId: user.organizationId, ledgerEntryId: transactionId },
+      });
+
       await tx.ledgerEntry.delete({
         where: { id: transactionId, organizationId: user.organizationId },
       });
@@ -522,13 +528,6 @@ export class CreditsService {
             data: {
               paidAmount: newInvoicePaidAmount,
               status: newStatus as any,
-            },
-          });
-          const invoicePayment = await tx.invoicePayment.findFirst({
-            where: {
-              invoiceId: invoice.id,
-              organizationId: user.organizationId,
-              ledgerEntryId: payment.id,
             },
           });
           if (invoicePayment) {
@@ -745,6 +744,8 @@ export class CreditsService {
           this.logger.log(`Invoice ${invoice.id} synced successfully`);
         } else {
           this.logger.warn(`Invoice ${udhar.invoiceId} not found or deleted`);
+          // Still a real collection — book it to the bank book as an udhar payment.
+          await this.syncUdharPayment(tx, ledgerEntry, udharId, user);
         }
       } else {
         this.logger.log(`No invoice linked to udhar ${udharId}`);
