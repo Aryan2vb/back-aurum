@@ -108,8 +108,16 @@ export function parseHdfcDelimited(text: string): HdfcStatementRow[] {
     const txnDate = parseHdfcDate(parts[0]);
     if (!txnDate) continue;
 
-    const tailCount =
+    const tailCountHint =
       hasClosingBalance === undefined ? (parts.length > 6 ? 4 : 3) : hasClosingBalance ? 4 : 3;
+    let tailCount = tailCountHint;
+    if (hasClosingBalance === undefined && tailCount === 4) {
+      const candidate = parts.slice(-4);
+      if (!AMOUNT_RE.test(String(candidate[0] || '').replace(/,/g, '').trim())
+        || !AMOUNT_RE.test(String(candidate[1] || '').replace(/,/g, '').trim())) {
+        tailCount = 3;
+      }
+    }
     const tail = parts.slice(-tailCount);
     const middle = parts.slice(1, parts.length - tailCount);
     const debit = parseHdfcAmount(tail[0]);

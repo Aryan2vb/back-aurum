@@ -131,6 +131,24 @@ export class StockService {
           },
         });
 
+        const earliestOther = await tx.stockLedger.findFirst({
+          where: {
+            organizationId,
+            metalType,
+            purity: normalizedPurity,
+            ...(existingOB ? { NOT: { id: existingOB.id } } : {}),
+          },
+          orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+        });
+        const openingDate = date
+          ? new Date(date)
+          : existingOB?.date ?? earliestOther?.date ?? new Date();
+        if (earliestOther && openingDate.getTime() > earliestOther.date.getTime()) {
+          throw new BadRequestException(
+            'Opening balance must be on or before the first stock transaction for this metal and purity',
+          );
+        }
+
         if (existingOB) {
           const nextRate =
             rate !== undefined
@@ -139,7 +157,7 @@ export class StockService {
                 ? Number(existingOB.rate)
                 : undefined;
           const totalValue = nextRate != null ? nextRate * quantity : null;
-          const parsedDate = date ? new Date(date) : existingOB.date;
+          const parsedDate = openingDate;
 
           const updatedOB = await tx.stockLedger.update({
             where: { id: existingOB.id },
@@ -163,7 +181,7 @@ export class StockService {
           transactionType: StockTransactionType.OPENING_BALANCE,
           quantityIn: quantity,
           rate,
-          date: date ? new Date(date) : undefined,
+          date: openingDate,
           notes: 'Initial Opening Balance',
           prismaTx: tx,
         });
@@ -477,12 +495,7 @@ export class StockService {
     for (const entry of ledgerEntries) {
       const qtyIn = Number(entry.quantityIn);
       const qtyOut = Number(entry.quantityOut);
-
-      if (entry.transactionType === StockTransactionType.OPENING_BALANCE) {
-        currentRunning = qtyIn;
-      } else {
-        currentRunning = currentRunning + qtyIn - qtyOut;
-      }
+      currentRunning = currentRunning + qtyIn - qtyOut;
 
       await db.stockLedger.update({
         where: { id: entry.id },

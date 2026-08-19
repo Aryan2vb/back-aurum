@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  BankStatementLineStatus,
   FinancialAccountStatus,
   FinancialAccountType,
   FinancialTransactionType,
@@ -288,7 +289,7 @@ export class FinanceService {
         }
         throw error;
       }
-      if (dto.openingBalance) {
+      if (dto.openingBalance !== undefined) {
         const transaction = await tx.financialTransaction.create({
           data: {
             organizationId: user.organizationId,
@@ -494,8 +495,16 @@ export class FinanceService {
   }
 
   async createManualTransaction(dto: CreateManualTransactionDto, user: CurrentUserData) {
+    return this.prisma.$transaction(async (tx) => this.createManualTransactionIn(tx, dto, user));
+  }
+
+  async createManualTransactionIn(
+    db: Db,
+    dto: Omit<CreateManualTransactionDto, 'occurredAt'> & { occurredAt?: string | Date },
+    user: CurrentUserData,
+  ) {
     const ids = [...new Set([dto.fromAccountId, dto.toAccountId, dto.accountId].filter(Boolean))];
-    const accounts = await this.prisma.financialAccount.findMany({
+    const accounts = await db.financialAccount.findMany({
       where: {
         id: { in: ids as string[] },
         organizationId: user.organizationId,
@@ -511,28 +520,26 @@ export class FinanceService {
       to: dto.toAccountId ? byId.get(dto.toAccountId) : undefined,
       account: dto.accountId ? byId.get(dto.accountId) : undefined,
     });
-    return this.prisma.$transaction(async (tx) => {
-      return tx.financialTransaction.create({
-        data: {
-          organizationId: user.organizationId,
-          type: dto.type,
-          sourceType: 'MANUAL',
-          sourceId: crypto.randomUUID(),
-          description: dto.description,
-          reference: dto.reference,
-          occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date(),
-          createdById: user.userId,
-          movements: {
-            create: movements.map((movement) => ({
-              organizationId: user.organizationId,
-              accountId: movement.accountId,
-              amount: new Decimal(movement.amount),
-              description: dto.description,
-            })),
-          },
+    return db.financialTransaction.create({
+      data: {
+        organizationId: user.organizationId,
+        type: dto.type,
+        sourceType: 'MANUAL',
+        sourceId: crypto.randomUUID(),
+        description: dto.description,
+        reference: dto.reference,
+        occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date(),
+        createdById: user.userId,
+        movements: {
+          create: movements.map((movement) => ({
+            organizationId: user.organizationId,
+            accountId: movement.accountId,
+            amount: new Decimal(movement.amount),
+            description: dto.description,
+          })),
         },
-        include: { movements: true },
-      });
+      },
+      include: { movements: true },
     });
   }
 
@@ -687,6 +694,19 @@ export class FinanceService {
     });
     if (!transaction) throw new NotFoundException('Financial transaction not found');
     return this.prisma.$transaction(async (tx) => {
+      if ((tx as any).bankStatementLine?.updateMany) {
+        await tx.bankStatementLine.updateMany({
+          where: {
+            organizationId: user.organizationId,
+            financialTransactionId: id,
+            status: BankStatementLineStatus.MATCHED,
+          },
+          data: {
+            status: BankStatementLineStatus.UNMATCHED,
+            financialTransactionId: null,
+          },
+        });
+      }
       await tx.financialMovement.deleteMany({ where: { transactionId: id } });
       return tx.financialTransaction.update({
         where: { id },
@@ -696,19 +716,22 @@ export class FinanceService {
   }
 
   async assignMovement(movementId: string, accountId: string, organizationId: string) {
-    await this.assertAssignment(movementId, accountId, organizationId);
-    const movement = await this.prisma.financialMovement.findFirst({
-      where: { id: movementId, organizationId },
-      include: { transaction: { select: { sourceType: true, sourceId: true } } },
-    });
-    if (!movement) throw new NotFoundException('Financial movement not found');
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.financialMovement.update({
-        where: { id: movementId },
+      await this.assertAssignment(movementId, accountId, organizationId, tx);
+      const movement = await tx.financialMovement.findFirst({
+        where: { id: movementId, organizationId, accountId: null },
+        include: { transaction: { select: { sourceType: true, sourceId: true } } },
+      });
+      if (!movement) throw new NotFoundException('Financial movement not found');
+      const updated = await tx.financialMovement.updateMany({
+        where: { id: movementId, organizationId, accountId: null },
         data: { accountId },
       });
+      if (updated.count !== 1) {
+        throw new BadRequestException('Movement already has an account assigned');
+      }
       await this.stampSourceAccount(tx, organizationId, movement.transaction, accountId);
-      return updated;
+      return tx.financialMovement.findFirstOrThrow({ where: { id: movementId, organizationId } });
     });
   }
 
@@ -940,7 +963,18 @@ export class FinanceService {
   }
 
   async bulkAssignMovements(dto: BulkAssignMovementsDto, organizationId: string) {
-    const assignments = dto.assignments;
+    const byMovementId = new Map<string, string>();
+    for (const assignment of dto.assignments) {
+      const existing = byMovementId.get(assignment.movementId);
+      if (existing && existing !== assignment.accountId) {
+        throw new BadRequestException('Duplicate movementId with conflicting account assignments');
+      }
+      byMovementId.set(assignment.movementId, assignment.accountId);
+    }
+    const assignments = [...byMovementId.entries()].map(([movementId, accountId]) => ({
+      movementId,
+      accountId,
+    }));
     if (!assignments.length) return { updated: 0 };
 
     const accountIds = [...new Set(assignments.map((a) => a.accountId))];
@@ -956,11 +990,12 @@ export class FinanceService {
       }
     }
 
-    const movementIds = [...new Set(assignments.map((a) => a.movementId))];
+    const movementIds = assignments.map((a) => a.movementId);
     let updated = 0;
     for (let i = 0; i < movementIds.length; i += BACKFILL_CHUNK) {
       const chunkIds = movementIds.slice(i, i + BACKFILL_CHUNK);
-      const chunkAssignments = assignments.filter((a) => chunkIds.includes(a.movementId));
+      const chunkIdSet = new Set(chunkIds);
+      const chunkAssignments = assignments.filter((a) => chunkIdSet.has(a.movementId));
       await this.prisma.$transaction(async (tx) => {
         const movements = await tx.financialMovement.findMany({
           where: { id: { in: chunkIds }, organizationId },

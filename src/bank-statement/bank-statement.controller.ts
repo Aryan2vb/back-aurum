@@ -16,6 +16,7 @@ import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { BankStatementService } from './bank-statement.service';
 import {
+  CreateAndMatchBankStatementDto,
   ConfirmBankStatementMatchDto,
   ConfirmBankStatementMatchBulkDto,
   DeleteBankStatementLinesBulkDto,
@@ -121,7 +122,7 @@ export class BankStatementController {
     @Body() dto: ConfirmBankStatementMatchDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.bankStatements.confirmMatch(id, dto.paymentId, user);
+    return this.bankStatements.confirmMatch(id, dto.paymentId, user, dto.kind);
   }
 
   @Post('match-bulk')
@@ -130,6 +131,16 @@ export class BankStatementController {
     @Body() dto: ConfirmBankStatementMatchBulkDto,
     @CurrentUser() user: CurrentUserData,
   ) {
-    return this.bankStatements.confirmMatchMany(dto.lineIds, dto.paymentId, user);
+    return this.bankStatements.confirmMatchMany(dto.lineIds, dto.paymentId, user, dto.kind);
+  }
+
+  @Post('lines/:id/create-and-match')
+  @Roles(...WRITE_ROLES)
+  createAndMatch(
+    @Param('id') id: string,
+    @Body() dto: CreateAndMatchBankStatementDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.bankStatements.createAndMatch(id, dto, user);
   }
 }

@@ -655,6 +655,30 @@ export class InvoicesService {
         });
       }
 
+      const paymentCreates = dto.payments?.length
+        ? await Promise.all(
+            dto.payments.map(async (p) => {
+              const mode = (p.mode as PaymentMethod) ?? PaymentMethod.CASH;
+              const account = await this.financeService.resolvePaymentAccount(
+                tx,
+                organizationId,
+                mode,
+                p.accountId,
+                true,
+              );
+              return {
+                organizationId,
+                mode,
+                amount: new Decimal(p.amount),
+                reference: p.reference,
+                notes: p.notes,
+                accountId: account?.id ?? p.accountId,
+                paidAt: this._parsePaymentPaidAt(p.paidAt, invoiceDate),
+              };
+            }),
+          )
+        : [];
+
       // 1. Create Invoice
       const invoice = await tx.invoice.create({
         data: {
@@ -691,19 +715,7 @@ export class InvoicesService {
           createdById: userId,
           invoiceNumber,
           sequence: sequenceVal,
-          payments: dto.payments?.length
-            ? {
-                create: dto.payments.map((p) => ({
-                  organizationId,
-                  mode: p.mode,
-                  amount: new Decimal(p.amount),
-                  reference: p.reference,
-                  notes: p.notes,
-                  accountId: p.accountId,
-                  paidAt: this._parsePaymentPaidAt(p.paidAt, invoiceDate),
-                })),
-              }
-            : undefined,
+          payments: paymentCreates.length ? { create: paymentCreates } : undefined,
           items: {
             create: lineItems.map((item) => ({
               organizationId,
@@ -1013,6 +1025,14 @@ export class InvoicesService {
     const newInvoiceStatus = isFullyPaid ? InvoiceStatus.PAID : InvoiceStatus.PARTIAL;
 
     return this.prisma.$transaction(async (tx) => {
+      const mode = dto.paymentMethod ?? PaymentMethod.CASH;
+      const account = await this.financeService.resolvePaymentAccount(
+        tx,
+        user.organizationId,
+        mode,
+        dto.accountId,
+        true,
+      );
       const updatedInvoice = await tx.invoice.update({
         where: { id, organizationId: user.organizationId },
         data: {
@@ -1029,7 +1049,7 @@ export class InvoicesService {
           amount: paymentAmount,
           reference: dto.reference,
           notes: dto.notes,
-          accountId: dto.accountId,
+          accountId: account?.id ?? dto.accountId,
         },
       });
 
@@ -2373,8 +2393,6 @@ export class InvoicesService {
     userId?: string,
     allowUnassignedNonCash = true,
   ) {
-    if (!(tx as any).invoicePayment?.findMany) return;
-
     const payments = await tx.invoicePayment.findMany({
       where: { invoiceId, organizationId },
     });
@@ -2412,7 +2430,7 @@ export class InvoicesService {
     organizationId: string,
     paymentIds: string[],
   ) {
-    if (!paymentIds.length || !(tx as any).bankStatementLine?.updateMany) return;
+    if (!paymentIds.length) return;
     await tx.bankStatementLine.updateMany({
       where: {
         organizationId,

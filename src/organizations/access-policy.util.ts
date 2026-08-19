@@ -44,7 +44,7 @@ export function isWithinAccessWindow(
   if (!enabled) return true;
   const start = parseHmToMinutes(startHm);
   const end = parseHmToMinutes(endHm);
-  if (start === null || end === null) return true;
+  if (start === null || end === null) return false;
   if (start === end) return false; // zero-width window = locked for non-owners
   const nowM = minutesNowInTimeZone(now, timeZone);
   if (start < end) return nowM >= start && nowM < end;
@@ -52,9 +52,11 @@ export function isWithinAccessWindow(
 }
 
 export function normalizeModuleAccess(raw: unknown): Record<AccessModule, DelegatedRole[]> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new TypeError('moduleAccess must be an object');
+  }
   const out = {} as Record<AccessModule, DelegatedRole[]>;
-  const src =
-    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const src = raw as Record<string, unknown>;
 
   for (const mod of ACCESS_MODULES) {
     if (!Object.prototype.hasOwnProperty.call(src, mod)) {

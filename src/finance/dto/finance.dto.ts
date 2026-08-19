@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -145,7 +147,31 @@ export class BulkMovementAssignmentItemDto {
 
 export class BulkAssignMovementsDto {
   @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(500)
   @ValidateNested({ each: true })
   @Type(() => BulkMovementAssignmentItemDto)
   assignments: BulkMovementAssignmentItemDto[];
+}
+
+export class FinanceDateRangeQueryDto {
+  @IsOptional()
+  @IsDateString()
+  dateFrom?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dateTo?: string;
+
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+
+  @IsOptional()
+  @IsString()
+  accountId?: string;
 }

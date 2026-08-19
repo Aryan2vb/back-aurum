@@ -31,6 +31,16 @@ export class UpdatePurityDto {
   sortOrder?: number;
 }
 
+export class StockDateRangeQueryDto {
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
 export class OpeningBalanceDto {
   @IsEnum(MetalType)
   metalType: MetalType;

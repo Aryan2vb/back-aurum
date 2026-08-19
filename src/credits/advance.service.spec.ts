@@ -134,15 +134,20 @@ describe('AdvanceService.receiveAdvance', () => {
     };
 
     const tx = {
+      customer: { findFirst: jest.fn().mockResolvedValue({ id: ARYAN, fullName: 'Aryan Soni' }) },
       ledgerEntry: { create: jest.fn().mockResolvedValue(createdEntry) },
+      financialTransaction: { update: jest.fn().mockResolvedValue({ id: 'tx-1' }) },
     };
 
     const prisma = {
-      customer: { findFirst: jest.fn().mockResolvedValue({ id: ARYAN }) },
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
+    const financeService = {
+      resolvePaymentAccount: jest.fn().mockResolvedValue({ id: 'bank-1' }),
+      syncAutomaticPayment: jest.fn().mockResolvedValue({ id: 'tx-1' }),
+    };
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, financeService as any);
     const result = await service.receiveAdvance(ARYAN, dto, user());
 
     expect(tx.ledgerEntry.create).toHaveBeenCalledWith(
@@ -158,11 +163,15 @@ describe('AdvanceService.receiveAdvance', () => {
     );
     expect(result.type).toBe(LedgerType.ADVANCE_RECEIVED);
     expect(result.amount.toNumber()).toBe(100000);
+    expect(result.transactionId).toBe('tx-1');
   });
 
   it('throws NotFoundException when customer does not exist', async () => {
-    const prisma = {
+    const tx = {
       customer: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
     const service = new AdvanceService(prisma);

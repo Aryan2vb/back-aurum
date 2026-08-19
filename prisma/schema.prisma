@@ -68,6 +68,7 @@ model Organization {
   financialMovements FinancialMovement[]
   bankStatementImports BankStatementImport[]
   bankStatementLines   BankStatementLine[]
+  udharEntries           UdharEntry[]
 
   @@index([status])
   @@index([deletedAt])
@@ -389,6 +390,7 @@ model UdharEntry {
   nextReminderDate  DateTime?
   reminderFrequency ReminderFrequency?
   customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invoice           Invoice?           @relation(fields: [invoiceId], references: [id])
   ledgerEntry       LedgerEntry        @relation(fields: [ledgerEntryId], references: [id], onDelete: Cascade)
 
@@ -493,6 +495,7 @@ model Invoice {
   items                   InvoiceItem[]
   payments                InvoicePayment[]
   udharEntries            UdharEntry[]
+  bankStatementMatches    BankStatementLine[]
 
   @@unique([organizationId, invoiceNumber])
   @@unique([organizationId, financialYear, sequence])
@@ -573,6 +576,7 @@ model InvoicePayment {
   invoice        Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   financialAccount FinancialAccount? @relation(fields: [accountId], references: [id])
+  bankStatementLines BankStatementLine[]
 
   @@index([invoiceId])
   @@index([organizationId])
@@ -907,6 +911,7 @@ model PurchasePayment {
   purchaseInvoice PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
   organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   financialAccount FinancialAccount? @relation(fields: [accountId], references: [id])
+  bankStatementLines BankStatementLine[]
 
   @@index([purchaseInvoiceId])
   @@index([organizationId])
@@ -975,19 +980,28 @@ model BankStatementLine {
   closingBalance   Decimal?                @db.Decimal(14, 2)
   fingerprint      String
   status           BankStatementLineStatus @default(UNMATCHED)
-  matchedInvoiceId String?
-  invoicePaymentId String?
-  createdAt        DateTime                @default(now())
+  matchedInvoiceId        String?
+  invoicePaymentId        String?
+  purchasePaymentId       String?
+  financialTransactionId  String?
+  createdAt               DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
   organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   import           BankStatementImport     @relation(fields: [importId], references: [id], onDelete: Cascade)
   account          FinancialAccount        @relation(fields: [accountId], references: [id])
+  matchedInvoice   Invoice?                @relation(fields: [matchedInvoiceId], references: [id], onDelete: SetNull)
+  invoicePayment   InvoicePayment?         @relation(fields: [invoicePaymentId], references: [id], onDelete: SetNull)
+  purchasePayment  PurchasePayment?        @relation(fields: [purchasePaymentId], references: [id], onDelete: SetNull)
+  financialTransaction FinancialTransaction? @relation(fields: [financialTransactionId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, accountId, fingerprint])
   @@index([organizationId, status])
   @@index([organizationId, accountId, status])
   @@index([organizationId, invoicePaymentId])
   @@index([organizationId, status, invoicePaymentId])
+  @@index([organizationId, purchasePaymentId])
+  @@index([organizationId, status, purchasePaymentId])
+  @@index([organizationId, financialTransactionId])
   @@index([importId])
 }
 
@@ -1009,6 +1023,7 @@ model FinancialTransaction {
   updatedAt        DateTime                 @updatedAt
   organization     Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   movements        FinancialMovement[]
+  bankStatementLines BankStatementLine[]
 
   @@unique([organizationId, sourceType, sourceId])
   @@index([organizationId, occurredAt])

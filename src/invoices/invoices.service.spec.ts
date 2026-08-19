@@ -140,6 +140,12 @@ describe('InvoicesService invoice sequence allocation', () => {
       findUnique: jest.fn().mockResolvedValue(currentSequence),
       upsert: jest.fn().mockResolvedValue(upsertResult),
     },
+    invoicePayment: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    bankStatementLine: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
   });
 
   it('auto allocates the current next sequence and increments the counter', async () => {
@@ -530,8 +536,12 @@ describe('InvoicesService invoice sequence allocation', () => {
         createMany: jest.fn(),
       },
       invoicePayment: {
+        findMany: jest.fn().mockResolvedValue([]),
         deleteMany: jest.fn(),
         createMany: jest.fn(),
+      },
+      bankStatementLine: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       orgInvoiceSettings: {
         findUnique: jest.fn().mockResolvedValue(settings),
@@ -621,8 +631,12 @@ describe('InvoicesService invoice sequence allocation', () => {
         createMany: jest.fn(),
       },
       invoicePayment: {
+        findMany: jest.fn().mockResolvedValue([]),
         deleteMany: jest.fn(),
         createMany: jest.fn(),
+      },
+      bankStatementLine: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       orgInvoiceSettings: {
         findUnique: jest.fn().mockResolvedValue(settings),
@@ -743,8 +757,12 @@ describe('InvoicesService invoice sequence allocation', () => {
         createMany: jest.fn(),
       },
       invoicePayment: {
+        findMany: jest.fn().mockResolvedValue([]),
         deleteMany: jest.fn(),
         createMany: jest.fn(),
+      },
+      bankStatementLine: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       orgInvoiceSettings: {
         findUnique: jest.fn().mockResolvedValue(settings),

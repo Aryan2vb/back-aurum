@@ -411,6 +411,25 @@ export class CreditsService {
               },
               preserveHistoricalAssignment,
             );
+          } else {
+            await this.financeService.syncAutomaticPayment(
+              tx,
+              {
+                organizationId: user.organizationId,
+                sourceType: 'UDHAR_PAYMENT',
+                sourceId: payment.id,
+                sourceParentType: 'UDHAR',
+                sourceParentId: udharId,
+                transactionType: FinancialTransactionType.UDHAR_COLLECTION,
+                paymentMethod: method,
+                accountId: account?.id,
+                amount: newAmount,
+                occurredAt: dto.transactionDate ? new Date(dto.transactionDate) : payment.createdAt,
+                description: dto.notes,
+                createdById: user.userId,
+              },
+              preserveHistoricalAssignment,
+            );
           }
         }
       } else {

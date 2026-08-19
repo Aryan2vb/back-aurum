@@ -117,42 +117,47 @@ export class AccessPolicyService {
       } catch {
         throw new BadRequestException('Invalid IANA timezone');
       }
-      await this.prisma.organization.update({
-        where: { id: organizationId },
-        data: { timezone: dto.timezone },
-      });
     }
 
-    const existing = await this.prisma.orgAccessPolicy.findUnique({
-      where: { organizationId },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      if (dto.timezone !== undefined) {
+        await tx.organization.update({
+          where: { id: organizationId },
+          data: { timezone: dto.timezone },
+        });
+      }
 
-    if (!existing) {
-      await this.prisma.orgAccessPolicy.create({
-        data: {
-          organizationId,
-          accessWindowEnabled: dto.accessWindowEnabled ?? false,
-          accessWindowStart: dto.accessWindowStart ?? '09:00',
-          accessWindowEnd: dto.accessWindowEnd ?? '20:00',
-          moduleAccess:
-            moduleAccess ?? (normalizeModuleAccess({}) as unknown as Prisma.InputJsonValue),
-        },
-      });
-    } else {
-      await this.prisma.orgAccessPolicy.update({
+      const existing = await tx.orgAccessPolicy.findUnique({
         where: { organizationId },
-        data: {
-          ...(dto.accessWindowEnabled !== undefined
-            ? { accessWindowEnabled: dto.accessWindowEnabled }
-            : {}),
-          ...(dto.accessWindowStart !== undefined
-            ? { accessWindowStart: dto.accessWindowStart }
-            : {}),
-          ...(dto.accessWindowEnd !== undefined ? { accessWindowEnd: dto.accessWindowEnd } : {}),
-          ...(moduleAccess !== undefined ? { moduleAccess } : {}),
-        },
       });
-    }
+
+      if (!existing) {
+        await tx.orgAccessPolicy.create({
+          data: {
+            organizationId,
+            accessWindowEnabled: dto.accessWindowEnabled ?? false,
+            accessWindowStart: dto.accessWindowStart ?? '09:00',
+            accessWindowEnd: dto.accessWindowEnd ?? '20:00',
+            moduleAccess:
+              moduleAccess ?? (normalizeModuleAccess({}) as unknown as Prisma.InputJsonValue),
+          },
+        });
+      } else {
+        await tx.orgAccessPolicy.update({
+          where: { organizationId },
+          data: {
+            ...(dto.accessWindowEnabled !== undefined
+              ? { accessWindowEnabled: dto.accessWindowEnabled }
+              : {}),
+            ...(dto.accessWindowStart !== undefined
+              ? { accessWindowStart: dto.accessWindowStart }
+              : {}),
+            ...(dto.accessWindowEnd !== undefined ? { accessWindowEnd: dto.accessWindowEnd } : {}),
+            ...(moduleAccess !== undefined ? { moduleAccess } : {}),
+          },
+        });
+      }
+    });
 
     return this.getPolicyView(organizationId, OrganizationRole.OWNER);
   }

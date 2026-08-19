@@ -113,86 +113,104 @@ export class AdvanceService {
   // ─────────────────────────────────────────────────────────────────────────
 
   async receiveAdvance(customerId: string, dto: ReceiveAdvanceDto, user: CurrentUserData) {
+    return this.prisma.$transaction(async (tx) =>
+      this.receiveAdvanceIn(tx, customerId, dto, user),
+    );
+  }
+
+  /** Same as receiveAdvance but participates in a caller-owned transaction (e.g. bank reconcile). */
+  async receiveAdvanceIn(
+    tx: Prisma.TransactionClient,
+    customerId: string,
+    dto: ReceiveAdvanceDto,
+    user: CurrentUserData,
+  ) {
     const { organizationId, userId } = user;
 
-    const customer = await this.prisma.customer.findFirst({
+    const customer = await tx.customer.findFirst({
       where: { id: customerId, organizationId, deletedAt: null },
     });
     if (!customer) throw new NotFoundException('Customer not found');
 
     const amount = new Decimal(dto.amount);
+    const entryDate = this.resolveAdvanceDate(dto.receivedAt);
 
-    // Resolve the entry date — allow backdating, reject future dates
-    let entryDate: Date = new Date();
-    if (dto.receivedAt) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(dto.receivedAt)) {
-        throw new BadRequestException('receivedAt must be in YYYY-MM-DD format');
-      }
-      const parsed = new Date(`${dto.receivedAt}T00:00:00.000Z`);
-      if (isNaN(parsed.getTime())) {
-        throw new BadRequestException('receivedAt is an invalid date');
-      }
-      const today = new Date();
-      today.setUTCHours(23, 59, 59, 999);
-      if (parsed > today) {
-        throw new BadRequestException('receivedAt cannot be a future date');
-      }
-      entryDate = parsed;
+    const account = await this.financeService.resolvePaymentAccount(
+      tx,
+      organizationId,
+      dto.paymentMethod,
+      dto.accountId,
+    );
+    const ledger = await tx.ledgerEntry.create({
+      data: {
+        organizationId,
+        customerId,
+        amount,
+        type: LedgerType.ADVANCE_RECEIVED,
+        description: dto.notes ?? `Advance received via ${dto.paymentMethod}`,
+        paymentMethod: dto.paymentMethod,
+        entityId: null,
+        referenceLedgerEntryId: null,
+        invoiceId: null,
+        createdById: userId,
+        createdAt: entryDate,
+        accountId: account?.id,
+      },
+    });
+    const transaction = await this.financeService.syncAutomaticPayment(tx, {
+      organizationId,
+      sourceType: 'ADVANCE_LEDGER',
+      sourceId: ledger.id,
+      sourceParentType: 'ADVANCE',
+      sourceParentId: ledger.id,
+      transactionType: FinancialTransactionType.ADVANCE_RECEIPT,
+      paymentMethod: dto.paymentMethod,
+      accountId: ledger.accountId,
+      amount: ledger.amount,
+      occurredAt: ledger.createdAt,
+      description: ledger.description,
+      createdById: userId,
+    });
+    if (transaction && dto.reference) {
+      await tx.financialTransaction.update({
+        where: { id: transaction.id },
+        data: { reference: dto.reference },
+      });
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const account = await this.financeService.resolvePaymentAccount(
-        tx,
-        organizationId,
-        dto.paymentMethod,
-        dto.accountId,
-      );
-      const ledger = await tx.ledgerEntry.create({
-        data: {
-          organizationId,
-          customerId,
-          amount,
-          type: LedgerType.ADVANCE_RECEIVED,
-          description: dto.notes ?? `Advance received via ${dto.paymentMethod}`,
-          paymentMethod: dto.paymentMethod,
-          entityId: null,
-          referenceLedgerEntryId: null,
-          invoiceId: null,
-          createdById: userId,
-          createdAt: entryDate,
-          accountId: account?.id,
-        },
-      });
-      await this.financeService.syncAutomaticPayment(tx, {
-        organizationId,
-        sourceType: 'ADVANCE_LEDGER',
-        sourceId: ledger.id,
-        sourceParentType: 'ADVANCE',
-        sourceParentId: ledger.id,
-        transactionType: FinancialTransactionType.ADVANCE_RECEIPT,
-        paymentMethod: dto.paymentMethod,
-        accountId: ledger.accountId,
-        amount: ledger.amount,
-        occurredAt: ledger.createdAt,
-        description: ledger.description,
-        createdById: userId,
-      });
+    this.logger.log(
+      `Advance received: customer=${customerId} amount=${amount} date=${entryDate.toISOString().slice(0, 10)} ref=${dto.reference ?? '-'} ledger=${ledger.id}`,
+    );
 
-      this.logger.log(
-        `Advance received: customer=${customerId} amount=${amount} date=${entryDate.toISOString().slice(0, 10)} ref=${dto.reference ?? '-'} ledger=${ledger.id}`,
-      );
+    return {
+      id: ledger.id,
+      customerId,
+      amount: ledger.amount,
+      type: ledger.type,
+      paymentMethod: dto.paymentMethod,
+      reference: dto.reference,
+      description: ledger.description,
+      createdAt: ledger.createdAt,
+      transactionId: transaction?.id ?? null,
+      customerName: customer.fullName,
+    };
+  }
 
-      return {
-        id: ledger.id,
-        customerId,
-        amount: ledger.amount,
-        type: ledger.type,
-        paymentMethod: dto.paymentMethod,
-        reference: dto.reference,
-        description: ledger.description,
-        createdAt: ledger.createdAt,
-      };
-    });
+  private resolveAdvanceDate(receivedAt?: string): Date {
+    if (!receivedAt) return new Date();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(receivedAt)) {
+      throw new BadRequestException('receivedAt must be in YYYY-MM-DD format');
+    }
+    const parsed = new Date(`${receivedAt}T00:00:00.000Z`);
+    if (isNaN(parsed.getTime())) {
+      throw new BadRequestException('receivedAt is an invalid date');
+    }
+    const today = new Date();
+    today.setUTCHours(23, 59, 59, 999);
+    if (parsed > today) {
+      throw new BadRequestException('receivedAt cannot be a future date');
+    }
+    return parsed;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

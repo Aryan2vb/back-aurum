@@ -12,6 +12,7 @@ import {
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { FinanceService } from '../finance/finance.service';
+import { isTreasuryPayment } from '../finance/ledger-rules';
 import { CreatePurchaseBillBookDto } from './dto/create-purchase-bill-book.dto';
 import {
   buildPurchaseBillBookHtml,
@@ -187,7 +188,7 @@ export class PurchasesService {
       await this.syncPurchaseTreasury(tx, purchase.id, data.organizationId);
 
       return purchase;
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async updateAttachment(
@@ -238,7 +239,11 @@ export class PurchasesService {
           items?: PurchaseItemInput[];
         },
       );
-      const computed = this.computeTotals(itemInputs, data);
+      const computed = this.computeTotals(itemInputs, {
+        ...data,
+        addGst: data.addGst ?? existing.addGst,
+        gstInclusive: data.gstInclusive ?? existing.gstInclusive,
+      });
       const { finalVendorId, vendorData } = await this.resolveVendor(tx, data);
 
       const replacePayments = Array.isArray(data.payments);
@@ -304,8 +309,8 @@ export class PurchasesService {
           grandTotal: computed.grandTotal,
           paidAmount,
           status,
-          addGst: !!data.addGst,
-          gstInclusive: !!data.gstInclusive,
+          addGst: data.addGst ?? existing.addGst,
+          gstInclusive: data.gstInclusive ?? existing.gstInclusive,
           totalGoldWeight: computed.totalGoldWeight,
           totalSilverWeight: computed.totalSilverWeight,
           totalMetalAmount: computed.totalMetalAmount,
@@ -363,7 +368,7 @@ export class PurchasesService {
       }
 
       return purchase;
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   private async updateAttachmentOnly(id: string, data: PurchaseBillInput) {
@@ -520,12 +525,12 @@ export class PurchasesService {
           take,
         });
         purchases.push(...batch);
+        if (purchases.length > BILL_BOOK_UNFILTERED_MAX) {
+          throw new BadRequestException(
+            `Too many purchase bills to print at once (max ${BILL_BOOK_UNFILTERED_MAX}). Filter by search or select specific bills.`,
+          );
+        }
         if (unfiltered) {
-          if (purchases.length > BILL_BOOK_UNFILTERED_MAX) {
-            throw new BadRequestException(
-              `Too many purchase bills to print at once (max ${BILL_BOOK_UNFILTERED_MAX}). Filter by search or select specific bills.`,
-            );
-          }
           break;
         }
         if (batch.length < BILL_BOOK_QUERY_BATCH_SIZE) break;
@@ -626,6 +631,12 @@ export class PurchasesService {
 
     return this.prisma.$transaction(
       async (tx) => {
+        const lockedIds = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM "PurchaseInvoice"
+          WHERE id = ${id} AND "organizationId" = ${organizationId}
+          FOR UPDATE
+        `;
+        if (!lockedIds.length) throw new NotFoundException('Purchase not found');
         const purchase = await tx.purchaseInvoice.findFirst({
           where: { id, organizationId },
         });
@@ -769,18 +780,20 @@ export class PurchasesService {
   private async assertSufficientTreasuryFunds(
     tx: any,
     organizationId: string,
-    payments: Array<{ amount: number; accountId?: string }>,
+    payments: Array<{ amount: number; accountId?: string; mode?: PaymentMethod }>,
     excludePurchaseId?: string,
   ) {
     if (!tx.financialMovement) {
-      this.logger.warn(
-        'Treasury fund check skipped: financialMovement missing on transaction client',
-      );
-      return;
+      throw new BadRequestException('Treasury fund check is unavailable');
     }
     const requiredByAccount = new Map<string, Decimal>();
     for (const payment of payments) {
-      if (!payment.accountId) continue;
+      if (!payment.accountId) {
+        if (payment.mode && isTreasuryPayment(payment.mode)) {
+          throw new BadRequestException('Treasury-backed payments require an account');
+        }
+        continue;
+      }
       requiredByAccount.set(
         payment.accountId,
         (requiredByAccount.get(payment.accountId) ?? new Decimal(0)).add(payment.amount),

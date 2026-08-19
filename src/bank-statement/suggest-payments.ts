@@ -10,23 +10,49 @@ export const BANKISH_PAYMENT_MODES = [
   'OTHER',
 ] as const;
 
+export type PaymentCandidateKind =
+  | 'INVOICE'
+  | 'LOAN'
+  | 'CASH_DEPOSIT'
+  | 'MONEY_IN'
+  | 'MONEY_OUT'
+  | 'ADVANCE'
+  | 'PURCHASE';
+
 export type PaymentCandidate = {
   id: string;
   amount: number;
-  /** payment.amount − already-linked statement credits */
+  /** payment.amount − already-linked statement lines */
   remaining: number;
   mode: string;
   reference: string | null;
   paidAt: Date | string;
   accountId: string | null;
-  invoiceId: string;
-  invoiceNumber: string;
-  invoiceStatus: string;
-  customerName: string;
+  kind?: PaymentCandidateKind;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  invoiceStatus?: string;
+  customerName?: string;
 };
 
 export type StatementCredit = {
   credit: number;
+  narration: string;
+  refNumber: string | null;
+  txnDate: Date | string;
+  accountId: string;
+};
+
+export type StatementDebit = {
+  debit: number;
+  narration: string;
+  refNumber: string | null;
+  txnDate: Date | string;
+  accountId: string;
+};
+
+type StatementLineMatch = {
+  amount: number;
   narration: string;
   refNumber: string | null;
   txnDate: Date | string;
@@ -81,16 +107,15 @@ const daysBetween = (a: Date | string, b: Date | string) =>
   Math.abs(new Date(a).getTime() - new Date(b).getTime()) / DAY_MS;
 
 /**
- * Score existing invoice payments against a bank credit.
- * Same calendar day as bank txn (payment paidAt). Credit may be a split
- * that fills part of a larger booked payment (remaining ≥ credit).
+ * Score booked payments against a bank statement line (credit or debit).
+ * Same calendar day as bank txn. Line amount may be a split toward a larger payment.
  */
-export const suggestPaymentsForCredit = (
-  line: StatementCredit,
+export const suggestPaymentsForLine = (
+  line: StatementLineMatch,
   payments: PaymentCandidate[],
   limit = 5,
 ) => {
-  const credit = Number(line.credit);
+  const lineAmount = Number(line.amount);
   const narration = (line.narration || '').toUpperCase();
   const bankRef = (line.refNumber || '').toUpperCase().trim();
   const bankDay = calendarDayKey(line.txnDate);
@@ -100,16 +125,15 @@ export const suggestPaymentsForCredit = (
       if (!sameCalendarDay(payment.paidAt, line.txnDate)) return null;
 
       const remaining = Number(payment.remaining ?? payment.amount);
-      if (credit > remaining + AMOUNT_TOLERANCE) return null;
+      if (lineAmount > remaining + AMOUNT_TOLERANCE) return null;
 
       let score = 0;
-      const exactPayment = Math.abs(Number(payment.amount) - credit) <= AMOUNT_TOLERANCE;
-      const exactRemaining = Math.abs(remaining - credit) <= AMOUNT_TOLERANCE;
+      const exactPayment = Math.abs(Number(payment.amount) - lineAmount) <= AMOUNT_TOLERANCE;
+      const exactRemaining = Math.abs(remaining - lineAmount) <= AMOUNT_TOLERANCE;
 
       if (exactPayment) score += 100;
-      else if (exactRemaining)
-        score += 90; // last split that completes the payment
-      else score += 40; // partial toward a larger payment
+      else if (exactRemaining) score += 90;
+      else score += 40;
 
       if (payment.accountId && payment.accountId === line.accountId) score += 40;
       else if (!payment.accountId) score += 10;
@@ -139,6 +163,7 @@ export const suggestPaymentsForCredit = (
       if (score <= 0) return null;
       return {
         paymentId: payment.id,
+        kind: payment.kind || 'INVOICE',
         invoiceId: payment.invoiceId,
         invoiceNumber: payment.invoiceNumber,
         invoiceStatus: payment.invoiceStatus,
@@ -158,6 +183,41 @@ export const suggestPaymentsForCredit = (
     .slice(0, limit);
 };
 
+/** @deprecated use suggestPaymentsForLine */
+export const suggestPaymentsForCredit = (
+  line: StatementCredit,
+  payments: PaymentCandidate[],
+  limit = 5,
+) =>
+  suggestPaymentsForLine(
+    {
+      amount: Number(line.credit),
+      narration: line.narration,
+      refNumber: line.refNumber,
+      txnDate: line.txnDate,
+      accountId: line.accountId,
+    },
+    payments,
+    limit,
+  );
+
+export const suggestPaymentsForDebit = (
+  line: StatementDebit,
+  payments: PaymentCandidate[],
+  limit = 5,
+) =>
+  suggestPaymentsForLine(
+    {
+      amount: Number(line.debit),
+      narration: line.narration,
+      refNumber: line.refNumber,
+      txnDate: line.txnDate,
+      accountId: line.accountId,
+    },
+    payments,
+    limit,
+  );
+
 export type InvoiceBankReconcile = 'full' | 'partial' | 'none' | null;
 
 /** Invoice-level statement cover for bankish payments (cash / old-gold ignored). */
@@ -174,8 +234,8 @@ export const invoiceBankReconcileStatus = (
     (sum, payment) => sum + (linkedByPaymentId.get(payment.id) || 0),
     0,
   );
-  if (linked <= AMOUNT_TOLERANCE) return 'none';
   if (due - linked <= AMOUNT_TOLERANCE) return 'full';
+  if (linked <= AMOUNT_TOLERANCE) return 'none';
   return 'partial';
 };
 

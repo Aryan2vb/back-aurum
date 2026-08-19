@@ -7,6 +7,7 @@ import {
   BulkAssignMovementsDto,
   CreateFinancialAccountDto,
   CreateManualTransactionDto,
+  FinanceDateRangeQueryDto,
   UpdateFinancialAccountDto,
 } from './dto/finance.dto';
 import { FinanceService } from './finance.service';
@@ -39,10 +40,12 @@ export class FinanceController {
   getAccountLedger(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserData,
-    @Query('dateFrom') dateFrom?: string,
-    @Query('dateTo') dateTo?: string,
+    @Query() query: FinanceDateRangeQueryDto,
   ) {
-    return this.finance.getAccountLedger(user.organizationId, id, { dateFrom, dateTo });
+    return this.finance.getAccountLedger(user.organizationId, id, {
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+    });
   }
 
   @Get('books')
@@ -50,10 +53,12 @@ export class FinanceController {
   getBook(
     @CurrentUser() user: CurrentUserData,
     @Query('type', new ParseEnumPipe(FinancialAccountType)) type: FinancialAccountType,
-    @Query('dateFrom') dateFrom?: string,
-    @Query('dateTo') dateTo?: string,
+    @Query() query: FinanceDateRangeQueryDto,
   ) {
-    return this.finance.getBook(user.organizationId, type, { dateFrom, dateTo });
+    return this.finance.getBook(user.organizationId, type, {
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+    });
   }
 
   @Get('unassigned')
@@ -82,11 +87,13 @@ export class FinanceController {
   @Roles(...ALL_ROLES)
   listTransactions(
     @CurrentUser() user: CurrentUserData,
-    @Query('accountId') accountId?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Query() query: FinanceDateRangeQueryDto,
   ) {
-    return this.finance.listTransactions(user.organizationId, { accountId, from, to });
+    return this.finance.listTransactions(user.organizationId, {
+      accountId: query.accountId,
+      from: query.from,
+      to: query.to,
+    });
   }
 
   @Post('backfill')
