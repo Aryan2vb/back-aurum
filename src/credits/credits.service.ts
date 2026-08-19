@@ -22,7 +22,7 @@ export class CreditsService {
 
   constructor(
     private prisma: PrismaService,
-    private financeService: FinanceService = new FinanceService(prisma),
+    private financeService: FinanceService,
   ) {
     this.logger.log('CreditsService initialized in Pure Ledger mode');
   }
@@ -319,7 +319,7 @@ export class CreditsService {
           description: dto.notes || payment.description,
           createdAt: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
           paymentMethod: method,
-          accountId: account?.id,
+          accountId: preserveHistoricalAssignment ? payment.accountId : (account?.id ?? null),
         },
       });
 
@@ -379,7 +379,7 @@ export class CreditsService {
             where: {
               invoiceId: invoice.id,
               organizationId: user.organizationId,
-              reference: payment.id,
+              ledgerEntryId: payment.id,
             },
           });
           if (invoicePayment) {
@@ -388,7 +388,9 @@ export class CreditsService {
               data: {
                 amount: newAmount,
                 mode: method,
-                accountId: account?.id,
+                accountId: preserveHistoricalAssignment
+                  ? invoicePayment.accountId
+                  : (account?.id ?? null),
                 paidAt: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
                 notes: dto.notes,
               },
@@ -526,7 +528,7 @@ export class CreditsService {
             where: {
               invoiceId: invoice.id,
               organizationId: user.organizationId,
-              reference: payment.id,
+              ledgerEntryId: payment.id,
             },
           });
           if (invoicePayment) {
@@ -540,7 +542,6 @@ export class CreditsService {
               where: {
                 organizationId: user.organizationId,
                 invoicePaymentId: invoicePayment.id,
-                status: BankStatementLineStatus.MATCHED,
               },
               data: {
                 status: BankStatementLineStatus.UNMATCHED,
@@ -721,7 +722,8 @@ export class CreditsService {
               mode: method,
               accountId: account?.id,
               amount,
-              reference: ledgerEntry.id,
+              ledgerEntryId: ledgerEntry.id,
+              reference: dto.referenceNumber,
               notes: dto.notes,
               paidAt: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
             },

@@ -84,111 +84,114 @@ export class PurchasesService {
   ) {}
 
   async createPurchase(data: PurchaseBillInput) {
-    return this.prisma.$transaction(async (tx) => {
-      const purchaseDate = data.purchaseDate ? new Date(data.purchaseDate) : new Date();
-      const itemInputs = this.normalizeItems(data);
-      const computed = this.computeTotals(itemInputs, data);
-      const { finalVendorId, vendorData } = await this.resolveVendor(tx, data);
-      const payments = this.normalizePayments(data.payments, purchaseDate);
-      for (const payment of payments) {
-        const account = await this.financeService.resolvePaymentAccount(
-          tx,
-          data.organizationId,
-          payment.mode,
-          payment.accountId,
-        );
-        payment.accountId = account?.id ?? undefined;
-      }
-      await this.assertSufficientTreasuryFunds(tx, data.organizationId, payments);
-      const paidAmount = this.sumPayments(payments);
-      this.assertPaidNotOver(paidAmount, computed.grandTotal);
-      const status = this.deriveStatus(paidAmount, computed.grandTotal);
+    return this.prisma.$transaction(
+      async (tx) => {
+        const purchaseDate = data.purchaseDate ? new Date(data.purchaseDate) : new Date();
+        const itemInputs = this.normalizeItems(data);
+        const computed = this.computeTotals(itemInputs, data);
+        const { finalVendorId, vendorData } = await this.resolveVendor(tx, data);
+        const payments = this.normalizePayments(data.payments, purchaseDate);
+        for (const payment of payments) {
+          const account = await this.financeService.resolvePaymentAccount(
+            tx,
+            data.organizationId,
+            payment.mode,
+            payment.accountId,
+          );
+          payment.accountId = account?.id ?? undefined;
+        }
+        await this.assertSufficientTreasuryFunds(tx, data.organizationId, payments);
+        const paidAmount = this.sumPayments(payments);
+        this.assertPaidNotOver(paidAmount, computed.grandTotal);
+        const status = this.deriveStatus(paidAmount, computed.grandTotal);
 
-      const purchase = await tx.purchaseInvoice.create({
-        data: {
-          organizationId: data.organizationId,
-          vendorId: finalVendorId,
-          vendorName: vendorData?.name,
-          vendorGstin: vendorData?.gstin,
-          vendorStateCode: vendorData?.stateCode,
-          vendorStateName: vendorData?.stateName,
-          invoiceNumber: data.invoiceNumber,
-          billSeries: data.billSeries,
-          purchaseDate,
-          dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-          metalType: computed.primaryMetalType,
-          purity: computed.primaryPurity,
-          totalWeight: computed.totalWeight,
-          rate: computed.primaryRate,
-          totalAmount: computed.grandTotal,
-          taxableAmount: computed.taxableAmount,
-          taxType: data.taxType || 'CGST_SGST',
-          cgstRate: computed.cgstRate,
-          sgstRate: computed.sgstRate,
-          igstRate: computed.igstRate,
-          cgstAmount: computed.cgstAmount,
-          sgstAmount: computed.sgstAmount,
-          igstAmount: computed.igstAmount,
-          grandTotal: computed.grandTotal,
-          paidAmount,
-          status,
-          addGst: !!data.addGst,
-          gstInclusive: !!data.gstInclusive,
-          totalGoldWeight: computed.totalGoldWeight,
-          totalSilverWeight: computed.totalSilverWeight,
-          totalMetalAmount: computed.totalMetalAmount,
-          totalHallmarkingCharges: computed.totalHallmarkingCharges,
-          totalOtherCharges: computed.totalOtherCharges,
-          adjustment: computed.adjustment,
-          notes: data.notes,
-          attachmentUrl: data.attachmentUrl ?? undefined,
-          attachmentKey: data.attachmentKey ?? undefined,
-          attachmentName: data.attachmentName ?? undefined,
-          attachmentMime: data.attachmentMime ?? undefined,
-          items: {
-            create: computed.items.map((item, index) => ({
-              organizationId: data.organizationId,
-              slNo: index + 1,
-              itemName: item.itemName,
-              metalType: item.metalType,
-              purity: item.purity,
-              grossWeight: item.grossWeight,
-              netWeight: item.netWeight,
-              rate: item.rate,
-              hallmarkingCharge: item.hallmarkingCharge,
-              otherCharges: item.otherCharges,
-              totalAmount: item.totalAmount,
-            })),
+        const purchase = await tx.purchaseInvoice.create({
+          data: {
+            organizationId: data.organizationId,
+            vendorId: finalVendorId,
+            vendorName: vendorData?.name,
+            vendorGstin: vendorData?.gstin,
+            vendorStateCode: vendorData?.stateCode,
+            vendorStateName: vendorData?.stateName,
+            invoiceNumber: data.invoiceNumber,
+            billSeries: data.billSeries,
+            purchaseDate,
+            dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+            metalType: computed.primaryMetalType,
+            purity: computed.primaryPurity,
+            totalWeight: computed.totalWeight,
+            rate: computed.primaryRate,
+            totalAmount: computed.grandTotal,
+            taxableAmount: computed.taxableAmount,
+            taxType: data.taxType || 'CGST_SGST',
+            cgstRate: computed.cgstRate,
+            sgstRate: computed.sgstRate,
+            igstRate: computed.igstRate,
+            cgstAmount: computed.cgstAmount,
+            sgstAmount: computed.sgstAmount,
+            igstAmount: computed.igstAmount,
+            grandTotal: computed.grandTotal,
+            paidAmount,
+            status,
+            addGst: !!data.addGst,
+            gstInclusive: !!data.gstInclusive,
+            totalGoldWeight: computed.totalGoldWeight,
+            totalSilverWeight: computed.totalSilverWeight,
+            totalMetalAmount: computed.totalMetalAmount,
+            totalHallmarkingCharges: computed.totalHallmarkingCharges,
+            totalOtherCharges: computed.totalOtherCharges,
+            adjustment: computed.adjustment,
+            notes: data.notes,
+            attachmentUrl: data.attachmentUrl ?? undefined,
+            attachmentKey: data.attachmentKey ?? undefined,
+            attachmentName: data.attachmentName ?? undefined,
+            attachmentMime: data.attachmentMime ?? undefined,
+            items: {
+              create: computed.items.map((item, index) => ({
+                organizationId: data.organizationId,
+                slNo: index + 1,
+                itemName: item.itemName,
+                metalType: item.metalType,
+                purity: item.purity,
+                grossWeight: item.grossWeight,
+                netWeight: item.netWeight,
+                rate: item.rate,
+                hallmarkingCharge: item.hallmarkingCharge,
+                otherCharges: item.otherCharges,
+                totalAmount: item.totalAmount,
+              })),
+            },
+            payments: payments.length
+              ? {
+                  create: payments.map((p) => ({
+                    organizationId: data.organizationId,
+                    mode: p.mode,
+                    amount: p.amount,
+                    reference: p.reference,
+                    notes: p.notes,
+                    paidAt: p.paidAt,
+                    accountId: p.accountId,
+                  })),
+                }
+              : undefined,
           },
-          payments: payments.length
-            ? {
-                create: payments.map((p) => ({
-                  organizationId: data.organizationId,
-                  mode: p.mode,
-                  amount: p.amount,
-                  reference: p.reference,
-                  notes: p.notes,
-                  paidAt: p.paidAt,
-                  accountId: p.accountId,
-                })),
-              }
-            : undefined,
-        },
-        include: { items: true, vendor: true, payments: true },
-      });
+          include: { items: true, vendor: true, payments: true },
+        });
 
-      await this.stockService.syncPurchaseStockForInvoice({
-        organizationId: data.organizationId,
-        purchaseId: purchase.id,
-        invoiceNumber: purchase.invoiceNumber,
-        purchaseDate,
-        items: computed.items,
-        prismaTx: tx as any,
-      });
-      await this.syncPurchaseTreasury(tx, purchase.id, data.organizationId);
+        await this.stockService.syncPurchaseStockForInvoice({
+          organizationId: data.organizationId,
+          purchaseId: purchase.id,
+          invoiceNumber: purchase.invoiceNumber,
+          purchaseDate,
+          items: computed.items,
+          prismaTx: tx as any,
+        });
+        await this.syncPurchaseTreasury(tx, purchase.id, data.organizationId);
 
-      return purchase;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        return purchase;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   async updateAttachment(
@@ -219,156 +222,168 @@ export class PurchasesService {
       return this.updateAttachmentOnly(id, data);
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.purchaseInvoice.findFirst({
-        where: { id, organizationId: data.organizationId },
-        include: { payments: true },
-      });
-      if (!existing) throw new NotFoundException('Purchase not found');
-      if (existing.status === PurchaseStatus.CANCELLED) {
-        throw new BadRequestException('Cannot edit a cancelled purchase');
-      }
-
-      const purchaseDate = data.purchaseDate ? new Date(data.purchaseDate) : existing.purchaseDate;
-      const itemInputs = this.normalizeItems(
-        data as {
-          metalType: MetalType;
-          purity: string;
-          totalWeight: number;
-          rate?: number;
-          items?: PurchaseItemInput[];
-        },
-      );
-      const computed = this.computeTotals(itemInputs, {
-        ...data,
-        addGst: data.addGst ?? existing.addGst,
-        gstInclusive: data.gstInclusive ?? existing.gstInclusive,
-      });
-      const { finalVendorId, vendorData } = await this.resolveVendor(tx, data);
-
-      const replacePayments = Array.isArray(data.payments);
-      const payments = replacePayments
-        ? this.normalizePayments(data.payments, purchaseDate)
-        : existing.payments.map((p) => ({
-            mode: p.mode,
-            amount: Number(p.amount),
-            paidAt: p.paidAt,
-            reference: p.reference || undefined,
-            notes: p.notes || undefined,
-            accountId: p.accountId || undefined,
-          }));
-      const paidAmount = this.sumPayments(payments);
-      this.assertPaidNotOver(paidAmount, computed.grandTotal);
-      const status = this.deriveStatus(paidAmount, computed.grandTotal);
-      if (replacePayments) {
-        for (const payment of payments) {
-          const account = await this.financeService.resolvePaymentAccount(
-            tx,
-            data.organizationId,
-            payment.mode,
-            payment.accountId,
-          );
-          payment.accountId = account?.id ?? undefined;
+    let oldAttachmentKey: string | null = null;
+    let nextAttachmentKey: string | null | undefined;
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.purchaseInvoice.findFirst({
+          where: { id, organizationId: data.organizationId },
+          include: { payments: true },
+        });
+        if (!existing) throw new NotFoundException('Purchase not found');
+        if (existing.status === PurchaseStatus.CANCELLED) {
+          throw new BadRequestException('Cannot edit a cancelled purchase');
         }
-        await this.assertSufficientTreasuryFunds(tx, data.organizationId, payments, id);
-      }
 
-      if (replacePayments) {
-        await tx.purchasePayment.deleteMany({ where: { purchaseInvoiceId: id } });
-      }
-
-      await tx.purchaseInvoiceItem.deleteMany({ where: { purchaseInvoiceId: id } });
-
-      const attachmentData = hasAttachmentPatch ? this.buildAttachmentUpdate(data) : {};
-
-      const purchase = await tx.purchaseInvoice.update({
-        where: { id },
-        data: {
-          vendorId: finalVendorId,
-          vendorName: vendorData?.name,
-          vendorGstin: vendorData?.gstin,
-          vendorStateCode: vendorData?.stateCode,
-          vendorStateName: vendorData?.stateName,
-          invoiceNumber: data.invoiceNumber,
-          billSeries: data.billSeries,
-          purchaseDate,
-          dueDate: data.dueDate ? new Date(data.dueDate) : existing.dueDate,
-          metalType: computed.primaryMetalType,
-          purity: computed.primaryPurity,
-          totalWeight: computed.totalWeight,
-          rate: computed.primaryRate,
-          totalAmount: computed.grandTotal,
-          taxableAmount: computed.taxableAmount,
-          taxType: data.taxType || existing.taxType,
-          cgstRate: computed.cgstRate,
-          sgstRate: computed.sgstRate,
-          igstRate: computed.igstRate,
-          cgstAmount: computed.cgstAmount,
-          sgstAmount: computed.sgstAmount,
-          igstAmount: computed.igstAmount,
-          grandTotal: computed.grandTotal,
-          paidAmount,
-          status,
+        const purchaseDate = data.purchaseDate
+          ? new Date(data.purchaseDate)
+          : existing.purchaseDate;
+        const itemInputs = this.normalizeItems(
+          data as {
+            metalType: MetalType;
+            purity: string;
+            totalWeight: number;
+            rate?: number;
+            items?: PurchaseItemInput[];
+          },
+        );
+        const computed = this.computeTotals(itemInputs, {
+          ...data,
           addGst: data.addGst ?? existing.addGst,
           gstInclusive: data.gstInclusive ?? existing.gstInclusive,
-          totalGoldWeight: computed.totalGoldWeight,
-          totalSilverWeight: computed.totalSilverWeight,
-          totalMetalAmount: computed.totalMetalAmount,
-          totalHallmarkingCharges: computed.totalHallmarkingCharges,
-          totalOtherCharges: computed.totalOtherCharges,
-          adjustment: computed.adjustment,
-          notes: data.notes,
-          ...attachmentData,
-          items: {
-            create: computed.items.map((item, index) => ({
-              organizationId: data.organizationId,
-              slNo: index + 1,
-              itemName: item.itemName,
-              metalType: item.metalType,
-              purity: item.purity,
-              grossWeight: item.grossWeight,
-              netWeight: item.netWeight,
-              rate: item.rate,
-              hallmarkingCharge: item.hallmarkingCharge,
-              otherCharges: item.otherCharges,
-              totalAmount: item.totalAmount,
-            })),
+        });
+        const { finalVendorId, vendorData } = await this.resolveVendor(tx, data);
+
+        const replacePayments = Array.isArray(data.payments);
+        const payments = replacePayments
+          ? this.normalizePayments(data.payments, purchaseDate)
+          : existing.payments.map((p) => ({
+              mode: p.mode,
+              amount: Number(p.amount),
+              paidAt: p.paidAt,
+              reference: p.reference || undefined,
+              notes: p.notes || undefined,
+              accountId: p.accountId || undefined,
+            }));
+        const paidAmount = this.sumPayments(payments);
+        this.assertPaidNotOver(paidAmount, computed.grandTotal);
+        const status = this.deriveStatus(paidAmount, computed.grandTotal);
+        if (replacePayments) {
+          for (const payment of payments) {
+            const account = await this.financeService.resolvePaymentAccount(
+              tx,
+              data.organizationId,
+              payment.mode,
+              payment.accountId,
+            );
+            payment.accountId = account?.id ?? undefined;
+          }
+          await this.assertSufficientTreasuryFunds(tx, data.organizationId, payments, id);
+        }
+
+        if (replacePayments) {
+          await tx.purchasePayment.deleteMany({ where: { purchaseInvoiceId: id } });
+        }
+
+        await tx.purchaseInvoiceItem.deleteMany({ where: { purchaseInvoiceId: id } });
+
+        const attachmentData = hasAttachmentPatch ? this.buildAttachmentUpdate(data) : {};
+
+        const purchase = await tx.purchaseInvoice.update({
+          where: { id },
+          data: {
+            vendorId: finalVendorId,
+            vendorName: vendorData?.name,
+            vendorGstin: vendorData?.gstin,
+            vendorStateCode: vendorData?.stateCode,
+            vendorStateName: vendorData?.stateName,
+            invoiceNumber: data.invoiceNumber,
+            billSeries: data.billSeries,
+            purchaseDate,
+            dueDate: data.dueDate ? new Date(data.dueDate) : existing.dueDate,
+            metalType: computed.primaryMetalType,
+            purity: computed.primaryPurity,
+            totalWeight: computed.totalWeight,
+            rate: computed.primaryRate,
+            totalAmount: computed.grandTotal,
+            taxableAmount: computed.taxableAmount,
+            taxType: data.taxType || existing.taxType,
+            cgstRate: computed.cgstRate,
+            sgstRate: computed.sgstRate,
+            igstRate: computed.igstRate,
+            cgstAmount: computed.cgstAmount,
+            sgstAmount: computed.sgstAmount,
+            igstAmount: computed.igstAmount,
+            grandTotal: computed.grandTotal,
+            paidAmount,
+            status,
+            addGst: data.addGst ?? existing.addGst,
+            gstInclusive: data.gstInclusive ?? existing.gstInclusive,
+            totalGoldWeight: computed.totalGoldWeight,
+            totalSilverWeight: computed.totalSilverWeight,
+            totalMetalAmount: computed.totalMetalAmount,
+            totalHallmarkingCharges: computed.totalHallmarkingCharges,
+            totalOtherCharges: computed.totalOtherCharges,
+            adjustment: computed.adjustment,
+            notes: data.notes,
+            ...attachmentData,
+            items: {
+              create: computed.items.map((item, index) => ({
+                organizationId: data.organizationId,
+                slNo: index + 1,
+                itemName: item.itemName,
+                metalType: item.metalType,
+                purity: item.purity,
+                grossWeight: item.grossWeight,
+                netWeight: item.netWeight,
+                rate: item.rate,
+                hallmarkingCharge: item.hallmarkingCharge,
+                otherCharges: item.otherCharges,
+                totalAmount: item.totalAmount,
+              })),
+            },
+            ...(replacePayments && payments.length
+              ? {
+                  payments: {
+                    create: payments.map((p) => ({
+                      organizationId: data.organizationId,
+                      mode: p.mode,
+                      amount: p.amount,
+                      reference: p.reference,
+                      notes: p.notes,
+                      paidAt: p.paidAt,
+                      accountId: p.accountId,
+                    })),
+                  },
+                }
+              : {}),
           },
-          ...(replacePayments && payments.length
-            ? {
-                payments: {
-                  create: payments.map((p) => ({
-                    organizationId: data.organizationId,
-                    mode: p.mode,
-                    amount: p.amount,
-                    reference: p.reference,
-                    notes: p.notes,
-                    paidAt: p.paidAt,
-                    accountId: p.accountId,
-                  })),
-                },
-              }
-            : {}),
-        },
-        include: { items: true, vendor: true, payments: { orderBy: { paidAt: 'desc' } } },
-      });
+          include: { items: true, vendor: true, payments: { orderBy: { paidAt: 'desc' } } },
+        });
 
-      await this.stockService.syncPurchaseStockForInvoice({
-        organizationId: data.organizationId,
-        purchaseId: purchase.id,
-        invoiceNumber: purchase.invoiceNumber,
-        purchaseDate,
-        items: computed.items,
-        prismaTx: tx as any,
-      });
-      await this.syncPurchaseTreasury(tx, purchase.id, data.organizationId, !replacePayments);
+        await this.stockService.syncPurchaseStockForInvoice({
+          organizationId: data.organizationId,
+          purchaseId: purchase.id,
+          invoiceNumber: purchase.invoiceNumber,
+          purchaseDate,
+          items: computed.items,
+          prismaTx: tx as any,
+        });
+        await this.syncPurchaseTreasury(tx, purchase.id, data.organizationId, !replacePayments);
 
-      if (hasAttachmentPatch) {
-        await this.maybeDeleteOldAttachment(existing.attachmentKey, purchase.attachmentKey);
-      }
+        if (hasAttachmentPatch) {
+          oldAttachmentKey = existing.attachmentKey;
+          nextAttachmentKey = purchase.attachmentKey;
+        }
 
-      return purchase;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        return purchase;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+    if (hasAttachmentPatch) {
+      await this.maybeDeleteOldAttachment(oldAttachmentKey, nextAttachmentKey);
+    }
+    return result;
   }
 
   private async updateAttachmentOnly(id: string, data: PurchaseBillInput) {
@@ -743,30 +758,23 @@ export class PurchasesService {
         accountId?: string;
       }>;
 
-    return payments
-      .map((p) => {
-        const amount = Math.round((Number(p.amount) + Number.EPSILON) * 100) / 100;
-        if (!Number.isFinite(amount) || amount <= 0) return null;
-        if (!p.mode) {
-          throw new BadRequestException('Payment mode is required');
-        }
-        return {
-          mode: p.mode,
-          amount,
-          paidAt: p.paidAt ? new Date(p.paidAt) : fallbackDate,
-          reference: p.reference,
-          notes: p.notes,
-          accountId: p.accountId,
-        };
-      })
-      .filter(Boolean) as Array<{
-      mode: PaymentMethod;
-      amount: number;
-      paidAt: Date;
-      reference?: string;
-      notes?: string;
-      accountId?: string;
-    }>;
+    return payments.map((p) => {
+      const amount = Math.round((Number(p.amount) + Number.EPSILON) * 100) / 100;
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new BadRequestException('Payment amount must be greater than 0');
+      }
+      if (!p.mode) {
+        throw new BadRequestException('Payment mode is required');
+      }
+      return {
+        mode: p.mode,
+        amount,
+        paidAt: p.paidAt ? new Date(p.paidAt) : fallbackDate,
+        reference: p.reference,
+        notes: p.notes,
+        accountId: p.accountId,
+      };
+    });
   }
 
   private sumPayments(payments: Array<{ amount: number }>) {

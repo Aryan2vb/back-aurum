@@ -1,7 +1,7 @@
 /**
  * One-off: remove stock ledger rows whose referenceId no longer exists
  * (e.g. purchase deleted under old reverse-on-delete behavior).
- * Run: npx ts-node scripts/purge-orphan-stock-ledger.ts [--dry-run]
+ * Run: npx ts-node scripts/purge-orphan-stock-ledger.ts [--apply]
  */
 import { PrismaClient } from '@prisma/client';
 import { StockService } from '../src/stock/stock.service';
@@ -9,7 +9,7 @@ import { StockService } from '../src/stock/stock.service';
 async function main() {
   const prisma = new PrismaClient();
   const stockService = new StockService(prisma as any);
-  const dryRun = process.argv.includes('--dry-run');
+  const dryRun = !process.argv.includes('--apply');
 
   const refs = await prisma.stockLedger.findMany({
     where: { referenceId: { not: null } },

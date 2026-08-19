@@ -23,6 +23,13 @@ import { buildManualMovements, isTreasuryPayment } from './ledger-rules';
 
 type Db = Prisma.TransactionClient | PrismaService;
 
+function endOfRange(value?: string): Date | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) parsed.setUTCHours(23, 59, 59, 999);
+  return parsed;
+}
+
 const BACKFILL_CHUNK = 25;
 const BACKFILL_TX = { maxWait: 10_000, timeout: 60_000 };
 
@@ -555,7 +562,7 @@ export class FinanceService {
           ? {
               occurredAt: {
                 ...(filters.from ? { gte: new Date(filters.from) } : {}),
-                ...(filters.to ? { lte: new Date(filters.to) } : {}),
+                ...(filters.to ? { lte: endOfRange(filters.to) } : {}),
               },
             }
           : {}),
@@ -991,6 +998,22 @@ export class FinanceService {
     }
 
     const movementIds = assignments.map((a) => a.movementId);
+    const preflight = await this.prisma.financialMovement.findMany({
+      where: { id: { in: movementIds }, organizationId },
+      include: { transaction: { select: { reversedAt: true } } },
+    });
+    if (preflight.length !== movementIds.length) {
+      throw new NotFoundException('Financial movement not found');
+    }
+    for (const movement of preflight) {
+      if (movement.accountId) {
+        throw new BadRequestException('Movement already has an account assigned');
+      }
+      if (movement.transaction.reversedAt) {
+        throw new BadRequestException('Cannot assign a reversed transaction');
+      }
+    }
+
     let updated = 0;
     for (let i = 0; i < movementIds.length; i += BACKFILL_CHUNK) {
       const chunkIds = movementIds.slice(i, i + BACKFILL_CHUNK);

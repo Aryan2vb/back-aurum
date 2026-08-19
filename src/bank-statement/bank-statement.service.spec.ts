@@ -22,7 +22,7 @@ describe('BankStatementService reconcile cleanup', () => {
       },
       ...overrides,
     };
-    return { service: new BankStatementService(prisma as any, {} as any, {} as any), prisma };
+    return { service: new BankStatementService(prisma as any, { reverseTransaction: jest.fn() } as any, {} as any), prisma };
   };
 
   it('unlinks matched statement credits', async () => {
@@ -253,6 +253,7 @@ describe('BankStatementService treasury match', () => {
     const prisma = {
       bankStatementLine: {
         findFirst: jest.fn().mockResolvedValue(line),
+        findFirstOrThrow: jest.fn().mockResolvedValue(line),
         findMany: jest.fn().mockResolvedValue([line]),
         aggregate: jest.fn().mockResolvedValue({ _sum: { credit: 0 } }),
         update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...line, ...data })),
@@ -309,8 +310,12 @@ describe('BankStatementService treasury match', () => {
       }),
       user,
     );
-    expect(prisma.bankStatementLine.update).toHaveBeenCalledWith({
-      where: { id: 'line-1' },
+    expect(prisma.bankStatementLine.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'line-1',
+        organizationId: 'org-1',
+        status: BankStatementLineStatus.UNMATCHED,
+      },
       data: {
         status: BankStatementLineStatus.MATCHED,
         financialTransactionId: 'tx-new',
@@ -330,7 +335,8 @@ describe('BankStatementService treasury match', () => {
     const prisma = {
       bankStatementLine: {
         findFirst: jest.fn().mockResolvedValue(debitLine),
-        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...debitLine, ...data })),
+        findFirstOrThrow: jest.fn().mockResolvedValue(debitLine),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
     };
@@ -354,8 +360,12 @@ describe('BankStatementService treasury match', () => {
       user,
     );
 
-    expect(prisma.bankStatementLine.update).toHaveBeenCalledWith({
-      where: { id: 'line-1' },
+    expect(prisma.bankStatementLine.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'line-1',
+        organizationId: 'org-1',
+        status: BankStatementLineStatus.UNMATCHED,
+      },
       data: {
         status: BankStatementLineStatus.MATCHED,
         financialTransactionId: 'tx-new',
@@ -375,7 +385,8 @@ describe('BankStatementService treasury match', () => {
     const prisma = {
       bankStatementLine: {
         findFirst: jest.fn().mockResolvedValue(debitLine),
-        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ ...debitLine, ...data })),
+        findFirstOrThrow: jest.fn().mockResolvedValue(debitLine),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
     };

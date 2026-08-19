@@ -13,7 +13,12 @@ import { StockService } from './stock.service';
 import { MetalType, OrganizationRole } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
-import { CreatePurityDto, OpeningBalanceDto, StockDateRangeQueryDto, UpdatePurityDto } from './dto/stock.dto';
+import {
+  CreatePurityDto,
+  OpeningBalanceDto,
+  StockDateRangeQueryDto,
+  UpdatePurityDto,
+} from './dto/stock.dto';
 
 @Controller('stock')
 export class StockController {

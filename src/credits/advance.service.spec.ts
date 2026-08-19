@@ -57,9 +57,15 @@ function buildPrisma(overrides: Partial<Record<string, any>> = {}) {
   } as any;
 }
 
-function buildService(prismaOverrides: any = {}) {
+const stubFinance = () =>
+  ({
+    resolvePaymentAccount: jest.fn().mockResolvedValue(null),
+    syncAutomaticPayment: jest.fn(),
+  }) as any;
+
+function buildService(prismaOverrides: any = {}, financeService: any = stubFinance()) {
   const prisma = buildPrisma(prismaOverrides);
-  const service = new AdvanceService(prisma);
+  const service = new AdvanceService(prisma, { ...stubFinance(), ...financeService });
   return { service, prisma };
 }
 
@@ -174,7 +180,7 @@ describe('AdvanceService.receiveAdvance', () => {
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
 
     await expect(service.receiveAdvance(ARYAN, dto, user())).rejects.toThrow(NotFoundException);
   });
@@ -222,7 +228,7 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
     const result = await service.applyAdvanceToInvoice(INVOICE_ID, 40000, user());
 
     expect(result.invoiceStatus).toBe('PARTIAL');
@@ -254,7 +260,7 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
     const result = await service.applyAdvanceToInvoice(INVOICE_ID, 40000, user());
 
     expect(result.invoiceStatus).toBe('PAID');
@@ -267,7 +273,7 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
       invoice: { findFirst: jest.fn().mockResolvedValue(invoice) },
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
 
     await expect(service.applyAdvanceToInvoice(INVOICE_ID, 50000, user())).rejects.toThrow(
       BadRequestException,
@@ -292,7 +298,7 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
 
     await expect(service.applyAdvanceToInvoice(INVOICE_ID, 40000, user())).rejects.toThrow(
       BadRequestException,
@@ -332,7 +338,7 @@ describe('AdvanceService.applyAdvanceToInvoice', () => {
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
     await service.applyAdvanceToInvoice(INVOICE_ID, 40000, user());
 
     expect(tx.udharEntry.update).toHaveBeenCalledWith(
@@ -377,7 +383,7 @@ describe('AdvanceService.transferAdvance', () => {
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
     const result = await service.transferAdvance(ARYAN, dto, user());
 
     // TRANSFER_OUT created first
@@ -438,14 +444,14 @@ describe('AdvanceService.transferAdvance', () => {
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
 
     await expect(service.transferAdvance(ARYAN, dto, user())).rejects.toThrow(BadRequestException);
   });
 
   it('throws when transferring to the same customer', async () => {
     const prisma = {} as any;
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
 
     await expect(
       service.transferAdvance(ARYAN, { ...dto, toCustomerId: ARYAN }, user()),
@@ -459,7 +465,7 @@ describe('AdvanceService.transferAdvance', () => {
       },
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
 
     await expect(service.transferAdvance(ARYAN, dto, user())).rejects.toThrow(NotFoundException);
   });
@@ -495,7 +501,7 @@ describe('AdvanceService.refundAdvance', () => {
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
     const result = await service.refundAdvance(ARYAN, dto, user());
 
     expect(tx.ledgerEntry.create).toHaveBeenCalledWith(
@@ -526,7 +532,7 @@ describe('AdvanceService.refundAdvance', () => {
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
-    const service = new AdvanceService(prisma);
+    const service = new AdvanceService(prisma, stubFinance());
 
     await expect(service.refundAdvance(ARYAN, dto, user())).rejects.toThrow(BadRequestException);
   });
@@ -566,7 +572,7 @@ describe('Aryan scenario — advance balance formula', () => {
       },
     } as any;
 
-    const aryanService = new AdvanceService(aryanPrisma);
+    const aryanService = new AdvanceService(aryanPrisma, stubFinance());
     const aryanBalance = await aryanService.getCustomerAdvanceBalance(ARYAN, ORG);
     expect(aryanBalance.availableAdvance.toNumber()).toBe(25000);
 
@@ -581,7 +587,7 @@ describe('Aryan scenario — advance balance formula', () => {
       },
     } as any;
 
-    const mrsAryanService = new AdvanceService(mrsAryanPrisma);
+    const mrsAryanService = new AdvanceService(mrsAryanPrisma, stubFinance());
     const mrsBalance = await mrsAryanService.getCustomerAdvanceBalance(MRS_ARYAN, ORG);
     expect(mrsBalance.availableAdvance.toNumber()).toBe(25000);
   });

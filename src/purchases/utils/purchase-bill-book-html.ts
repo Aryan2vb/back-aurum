@@ -38,7 +38,10 @@ export function getPurchaseBillBookTitle({
   selectedCount,
   search,
 }: PurchaseBillBookTitleInput): string {
-  if (selectedCount !== undefined) return `Purchase Bill Book - ${selectedCount} Bills`;
+  if (selectedCount !== undefined) {
+    const label = selectedCount === 1 ? 'Bill' : 'Bills';
+    return `Purchase Bill Book - ${selectedCount} ${label}`;
+  }
   if (search?.trim()) return `Purchase Bill Book - "${search.trim()}"`;
   return 'Purchase Bill Book - All Purchases';
 }
@@ -180,7 +183,7 @@ export function buildPurchaseBillBookHtml({ title, pages }: PurchaseBillBookHtml
 </head>
 <body>
   <button class="print-btn" onclick="window.print()">Save as PDF / Print</button>
-  <div class="bill-count">${pages.length} Bills</div>
+  <div class="bill-count">${pages.length} ${pages.length === 1 ? 'Bill' : 'Bills'}</div>
   ${pageSections}
 </body>
 </html>`;

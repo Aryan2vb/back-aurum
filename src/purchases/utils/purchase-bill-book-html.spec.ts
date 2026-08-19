@@ -3,7 +3,7 @@ import { buildPurchaseBillBookHtml, getPurchaseBillBookTitle } from './purchase-
 describe('buildPurchaseBillBookHtml', () => {
   it('renders a placeholder page when attachment is missing', () => {
     const html = buildPurchaseBillBookHtml({
-      title: 'Purchase Bill Book - 1 Bills',
+      title: 'Purchase Bill Book - 1 Bill',
       pages: [
         {
           billNo: 'P-100',
@@ -14,8 +14,8 @@ describe('buildPurchaseBillBookHtml', () => {
       ],
     });
 
-    expect(html).toContain('<title>Purchase Bill Book - 1 Bills</title>');
-    expect(html).toContain('1 Bills');
+    expect(html).toContain('<title>Purchase Bill Book - 1 Bill</title>');
+    expect(html).toContain('1 Bill');
     expect(html).toContain('Supplier invoice attachment missing');
     expect(html).toContain('P-100');
     expect(html).toContain('Gold Supplier');
@@ -53,7 +53,7 @@ describe('buildPurchaseBillBookHtml', () => {
 
   it('rejects non-http(s) attachment URLs', () => {
     const html = buildPurchaseBillBookHtml({
-      title: 'Purchase Bill Book - 1 Bills',
+      title: 'Purchase Bill Book - 1 Bill',
       pages: [
         {
           billNo: 'XSS-1',
@@ -71,7 +71,7 @@ describe('buildPurchaseBillBookHtml', () => {
 
   it('does not treat “.pdf” in a query string as a PDF attachment', () => {
     const html = buildPurchaseBillBookHtml({
-      title: 'Purchase Bill Book - 1 Bills',
+      title: 'Purchase Bill Book - 1 Bill',
       pages: [
         {
           billNo: 'Q-1',
@@ -89,6 +89,7 @@ describe('buildPurchaseBillBookHtml', () => {
 
 describe('getPurchaseBillBookTitle', () => {
   it('names selected and searched Bill Books', () => {
+    expect(getPurchaseBillBookTitle({ selectedCount: 1 })).toBe('Purchase Bill Book - 1 Bill');
     expect(getPurchaseBillBookTitle({ selectedCount: 5 })).toBe('Purchase Bill Book - 5 Bills');
     expect(getPurchaseBillBookTitle({ search: 'gold' })).toBe('Purchase Bill Book - "gold"');
     expect(getPurchaseBillBookTitle({})).toBe('Purchase Bill Book - All Purchases');

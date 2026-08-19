@@ -73,6 +73,45 @@ describe('parseHdfcDelimited', () => {
     expect(again).toBe(a.fingerprint);
     expect(a.fingerprint).toHaveLength(64);
   });
+
+  it('parses headerless four-column rows by amount positions', () => {
+    const rows = parseHdfcDelimited(
+      '03/07/26,UPI-DOMINOS PIZZA,03/07/26,225.76,0.00,0000125696538778,3457.47',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      debit: 225.76,
+      credit: 0,
+      refNumber: '125696538778',
+      closingBalance: 3457.47,
+    });
+  });
+
+  it('parses headerless three-column rows without treating ref as closing balance', () => {
+    const rows = parseHdfcDelimited(
+      '03/07/26,UPI-DOMINOS PIZZA,03/07/26,225.76,0.00,0000125696538778',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      debit: 225.76,
+      credit: 0,
+      refNumber: '125696538778',
+      closingBalance: null,
+    });
+  });
+
+  it('keeps comma-split reference numbers together on headerless rows', () => {
+    const rows = parseHdfcDelimited(
+      '06/07/26,NEFT CR-UTIB0001920-CASHFREE,06/07/26,0.00,1.00,AXISCN,1397974004,432.71',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      debit: 0,
+      credit: 1,
+      refNumber: 'AXISCN,1397974004',
+      closingBalance: 432.71,
+    });
+  });
 });
 
 describe('hdfc helpers', () => {

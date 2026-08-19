@@ -85,6 +85,20 @@ export class StockService {
         },
       });
 
+      const latest = await db.stockLedger.findFirst({
+        where: {
+          organizationId,
+          metalType,
+          purity,
+          NOT: { id: ledgerEntry.id },
+        },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      });
+      const entryDate = date || new Date();
+      if (latest && entryDate.getTime() < latest.date.getTime()) {
+        await this.recalcRunningBalances(organizationId, metalType, purity, db);
+      }
+
       return { balance: newQuantity, ledgerEntry };
     };
 
@@ -142,7 +156,7 @@ export class StockService {
         });
         const openingDate = date
           ? new Date(date)
-          : existingOB?.date ?? earliestOther?.date ?? new Date();
+          : (existingOB?.date ?? earliestOther?.date ?? new Date());
         if (earliestOther && openingDate.getTime() > earliestOther.date.getTime()) {
           throw new BadRequestException(
             'Opening balance must be on or before the first stock transaction for this metal and purity',
@@ -174,7 +188,7 @@ export class StockService {
           return updatedOB;
         }
 
-        return this.recordStockTransaction({
+        const created = await this.recordStockTransaction({
           organizationId,
           metalType,
           purity: normalizedPurity,
@@ -185,6 +199,8 @@ export class StockService {
           notes: 'Initial Opening Balance',
           prismaTx: tx,
         });
+        await this.recalcRunningBalances(organizationId, metalType, normalizedPurity, tx);
+        return created;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );

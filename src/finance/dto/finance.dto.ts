@@ -10,6 +10,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { FinancialAccountStatus, FinancialTransactionType } from '@prisma/client';
@@ -103,15 +105,26 @@ export class CreateManualTransactionDto {
   type: (typeof MANUAL_TRANSACTION_TYPES)[number];
 
   @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
   @Type(() => Number)
   amount: number;
 
-  @IsOptional()
+  @ValidateIf(
+    (dto) =>
+      dto.type === FinancialTransactionType.CASH_BANK_TRANSFER ||
+      dto.type === FinancialTransactionType.BANK_BANK_TRANSFER,
+  )
   @IsString()
+  @IsNotEmpty()
   fromAccountId?: string;
 
-  @IsOptional()
+  @ValidateIf(
+    (dto) =>
+      dto.type === FinancialTransactionType.CASH_BANK_TRANSFER ||
+      dto.type === FinancialTransactionType.BANK_BANK_TRANSFER,
+  )
   @IsString()
+  @IsNotEmpty()
   toAccountId?: string;
 
   @IsOptional()

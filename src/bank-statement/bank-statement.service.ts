@@ -50,7 +50,7 @@ async function runSerializable<T>(
 
 /** Statement narration → bank ledger particulars; prefix keeps kind identifiable in reconcile. */
 function createMatchDescription(
-  kind: 'LOAN' | 'CASH_DEPOSIT' | 'ADVANCE' | 'MONEY_OUT',
+  kind: 'LOAN' | 'CASH_DEPOSIT' | 'CASH_WITHDRAWAL' | 'ADVANCE' | 'MONEY_OUT',
   narration: string,
 ): string {
   const text = narration.trim();
@@ -68,6 +68,11 @@ function createMatchDescription(
     if (!text) return 'Money Out';
     if (/^money out\b/i.test(text)) return text;
     return text;
+  }
+  if (kind === 'CASH_WITHDRAWAL') {
+    if (!text) return 'Cash withdrawal';
+    if (/^cash withdrawal\b/i.test(text)) return text;
+    return `Cash withdrawal — ${text}`;
   }
   return text || 'Cash deposit';
 }
@@ -161,8 +166,8 @@ export class BankStatementService {
     return {
       import: result,
       parsed: parsed.length,
-      imported: fresh.length,
-      skipped: parsed.length - fresh.length,
+      imported: result.newCount,
+      skipped: result.skippedCount,
       credits: creditCount,
       debits: debitCount,
     };
@@ -180,10 +185,10 @@ export class BankStatementService {
     const [invoicePayments, treasuryIn, advanceReceipts, purchasePayments, treasuryOut] =
       await Promise.all([
         this.loadUnlinkedBankishPayments(organizationId, accountId, paidAtFrom),
-        this.loadUnlinkedTreasuryCredits(organizationId, accountId),
-        this.loadUnlinkedAdvanceReceipts(organizationId, accountId),
+        this.loadUnlinkedTreasuryCredits(organizationId, accountId, paidAtFrom),
+        this.loadUnlinkedAdvanceReceipts(organizationId, accountId, paidAtFrom),
         this.loadUnlinkedPurchasePayments(organizationId, accountId, paidAtFrom),
-        this.loadUnlinkedTreasuryDebits(organizationId, accountId),
+        this.loadUnlinkedTreasuryDebits(organizationId, accountId, paidAtFrom),
       ]);
     const paymentsIn = [...invoicePayments, ...treasuryIn, ...advanceReceipts];
     const paymentsOut = [...purchasePayments, ...treasuryOut];
@@ -206,10 +211,10 @@ export class BankStatementService {
     const [invoicePayments, treasuryIn, advanceReceipts, purchasePayments, treasuryOut] =
       await Promise.all([
         this.loadUnlinkedBankishPayments(organizationId, accountId, paidAtFrom),
-        this.loadUnlinkedTreasuryCredits(organizationId, accountId),
-        this.loadUnlinkedAdvanceReceipts(organizationId, accountId),
+        this.loadUnlinkedTreasuryCredits(organizationId, accountId, paidAtFrom),
+        this.loadUnlinkedAdvanceReceipts(organizationId, accountId, paidAtFrom),
         this.loadUnlinkedPurchasePayments(organizationId, accountId, paidAtFrom),
-        this.loadUnlinkedTreasuryDebits(organizationId, accountId),
+        this.loadUnlinkedTreasuryDebits(organizationId, accountId, paidAtFrom),
       ]);
     const paymentsIn = [...invoicePayments, ...treasuryIn, ...advanceReceipts];
     const paymentsOut = [...purchasePayments, ...treasuryOut];
@@ -229,10 +234,10 @@ export class BankStatementService {
     const [invoicePayments, treasuryIn, advanceReceipts, purchasePayments, treasuryOut] =
       await Promise.all([
         this.loadUnlinkedBankishPayments(organizationId, accountId, paidAtFrom),
-        this.loadUnlinkedTreasuryCredits(organizationId, accountId),
-        this.loadUnlinkedAdvanceReceipts(organizationId, accountId),
+        this.loadUnlinkedTreasuryCredits(organizationId, accountId, paidAtFrom),
+        this.loadUnlinkedAdvanceReceipts(organizationId, accountId, paidAtFrom),
         this.loadUnlinkedPurchasePayments(organizationId, accountId, paidAtFrom),
-        this.loadUnlinkedTreasuryDebits(organizationId, accountId),
+        this.loadUnlinkedTreasuryDebits(organizationId, accountId, paidAtFrom),
       ]);
     return {
       payments: this.serializeUnlinkedPayments([
@@ -490,6 +495,9 @@ export class BankStatementService {
     const line = await this.requireLine(lineId, user.organizationId);
     if (line.status !== BankStatementLineStatus.MATCHED) {
       throw new BadRequestException('Only matched lines can be unlinked');
+    }
+    if (line.financialTransactionId) {
+      await this.financeService.reverseTransaction(line.financialTransactionId, user);
     }
     return this.prisma.bankStatementLine.update({
       where: { id: line.id },
@@ -788,13 +796,21 @@ export class BankStatementService {
         customerName = received.customerName;
       }
 
-      const updated = await tx.bankStatementLine.update({
-        where: { id: line.id },
+      const matched = await tx.bankStatementLine.updateMany({
+        where: {
+          id: line.id,
+          organizationId: user.organizationId,
+          status: BankStatementLineStatus.UNMATCHED,
+        },
         data: {
           status: BankStatementLineStatus.MATCHED,
           financialTransactionId: transaction.id,
         },
       });
+      if (matched.count !== 1) {
+        throw new BadRequestException('Only unmatched statement lines can be linked');
+      }
+      const updated = await tx.bankStatementLine.findFirstOrThrow({ where: { id: line.id } });
       return { transaction, line: updated, customerName };
     });
 
@@ -1111,22 +1127,16 @@ export class BankStatementService {
   private statementDirection(
     lines: Awaited<ReturnType<BankStatementService['requireLine']>>[],
   ): 'credit' | 'debit' {
-    const directions = new Set(
-      lines
-        .map((line) => {
-          const credit = Number(line.credit) > 0;
-          const debit = Number(line.debit) > 0;
-          if (credit && debit) return null;
-          if (credit) return 'credit';
-          if (debit) return 'debit';
-          return null;
-        })
-        .filter(Boolean),
-    );
-    if (directions.size !== 1) {
+    const directions = lines.map((line) => {
+      const credit = Number(line.credit) > 0;
+      const debit = Number(line.debit) > 0;
+      if (credit === debit) return null;
+      return credit ? ('credit' as const) : ('debit' as const);
+    });
+    if (directions.some((direction) => direction == null) || new Set(directions).size !== 1) {
       throw new BadRequestException('Selected lines must all be credits or all be debits');
     }
-    return [...directions][0] as 'credit' | 'debit';
+    return directions[0]!;
   }
 
   private async createCashDepositFromLine(
@@ -1194,7 +1204,7 @@ export class BankStatementService {
         toAccountId: cash.id,
         amount: debit,
         occurredAt: line.txnDate,
-        description: createMatchDescription('CASH_DEPOSIT', line.narration),
+        description: createMatchDescription('CASH_WITHDRAWAL', line.narration),
         reference: line.refNumber || undefined,
       },
       user,
@@ -1394,6 +1404,7 @@ export class BankStatementService {
   private async loadUnlinkedTreasuryCredits(
     organizationId: string,
     accountId?: string,
+    paidAtFrom?: Date,
   ): Promise<PaymentCandidate[]> {
     const grouped = await this.prisma.bankStatementLine.groupBy({
       by: ['financialTransactionId'],
@@ -1418,6 +1429,7 @@ export class BankStatementService {
         type: {
           in: [FinancialTransactionType.ADJUSTMENT, FinancialTransactionType.CASH_BANK_TRANSFER],
         },
+        ...(paidAtFrom ? { occurredAt: { gte: paidAtFrom } } : {}),
         movements: {
           some: {
             amount: { gt: 0 },
@@ -1429,6 +1441,7 @@ export class BankStatementService {
         movements: { include: { account: { select: { type: true } } } },
       },
       orderBy: { occurredAt: 'desc' },
+      take: CANDIDATE_TAKE,
     });
 
     return rows
@@ -1470,6 +1483,7 @@ export class BankStatementService {
   private async loadUnlinkedAdvanceReceipts(
     organizationId: string,
     accountId?: string,
+    paidAtFrom?: Date,
   ): Promise<PaymentCandidate[]> {
     const grouped = await this.prisma.bankStatementLine.groupBy({
       by: ['financialTransactionId'],
@@ -1492,6 +1506,7 @@ export class BankStatementService {
         organizationId,
         reversedAt: null,
         type: FinancialTransactionType.ADVANCE_RECEIPT,
+        ...(paidAtFrom ? { occurredAt: { gte: paidAtFrom } } : {}),
         movements: {
           some: {
             amount: { gt: 0 },
@@ -1503,6 +1518,7 @@ export class BankStatementService {
         movements: { include: { account: { select: { type: true } } } },
       },
       orderBy: { occurredAt: 'desc' },
+      take: CANDIDATE_TAKE,
     });
 
     const ledgerIds = rows.map((row) => row.sourceId);
@@ -1616,6 +1632,7 @@ export class BankStatementService {
   private async loadUnlinkedTreasuryDebits(
     organizationId: string,
     accountId?: string,
+    paidAtFrom?: Date,
   ): Promise<PaymentCandidate[]> {
     const grouped = await this.prisma.bankStatementLine.groupBy({
       by: ['financialTransactionId'],
@@ -1640,6 +1657,7 @@ export class BankStatementService {
         type: {
           in: [FinancialTransactionType.ADJUSTMENT, FinancialTransactionType.CASH_BANK_TRANSFER],
         },
+        ...(paidAtFrom ? { occurredAt: { gte: paidAtFrom } } : {}),
         movements: {
           some: {
             amount: { lt: 0 },
@@ -1651,6 +1669,7 @@ export class BankStatementService {
         movements: { include: { account: { select: { type: true } } } },
       },
       orderBy: { occurredAt: 'desc' },
+      take: CANDIDATE_TAKE,
     });
 
     return rows

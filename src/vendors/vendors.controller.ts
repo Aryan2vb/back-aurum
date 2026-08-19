@@ -3,6 +3,7 @@ import { VendorsService } from './vendors.service';
 import { OrganizationRole } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
+import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
 
 @Controller('vendors')
 export class VendorsController {
@@ -10,19 +11,7 @@ export class VendorsController {
 
   @Post()
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
-  async createVendor(
-    @CurrentUser() user: CurrentUserData,
-    @Body()
-    data: {
-      name: string;
-      phone?: string;
-      email?: string;
-      gstin?: string;
-      address?: string;
-      stateCode?: string;
-      stateName?: string;
-    },
-  ) {
+  async createVendor(@CurrentUser() user: CurrentUserData, @Body() data: CreateVendorDto) {
     return this.vendorsService.createVendor({
       ...data,
       organizationId: user.organizationId,
@@ -45,16 +34,7 @@ export class VendorsController {
   async updateVendor(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserData,
-    @Body()
-    data: {
-      name?: string;
-      phone?: string;
-      email?: string;
-      gstin?: string;
-      address?: string;
-      stateCode?: string;
-      stateName?: string;
-    },
+    @Body() data: UpdateVendorDto,
   ) {
     return this.vendorsService.updateVendor(id, user.organizationId, data);
   }

@@ -101,6 +101,7 @@ model OrganizationMember {
   organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId])
   @@unique([userId, organizationId])
   @@index([organizationId])
   @@index([userId])
@@ -357,9 +358,10 @@ model LedgerEntry {
   createdById            String?
   accountId              String?
   createdBy              User?          @relation("LedgerCreatedBy", fields: [createdById], references: [id])
-  customer               Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer               Customer       @relation(fields: [customerId], references: [id])
   organization           Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   udharEntry             UdharEntry?
+  invoicePayments        InvoicePayment[]
   financialAccount       FinancialAccount? @relation(fields: [accountId], references: [id])
 
   @@index([organizationId])
@@ -389,7 +391,7 @@ model UdharEntry {
   deletedAt         DateTime?
   nextReminderDate  DateTime?
   reminderFrequency ReminderFrequency?
-  customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer          Customer           @relation(fields: [customerId], references: [id])
   organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invoice           Invoice?           @relation(fields: [invoiceId], references: [id])
   ledgerEntry       LedgerEntry        @relation(fields: [ledgerEntryId], references: [id], onDelete: Cascade)
@@ -573,9 +575,11 @@ model InvoicePayment {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   accountId      String?
+  ledgerEntryId  String?       @unique
   invoice        Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   financialAccount FinancialAccount? @relation(fields: [accountId], references: [id])
+  ledgerEntry    LedgerEntry?  @relation(fields: [ledgerEntryId], references: [id], onDelete: SetNull)
   bankStatementLines BankStatementLine[]
 
   @@index([invoiceId])

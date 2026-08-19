@@ -16,7 +16,7 @@ const financeServiceMock = () =>
   ({
     syncAutomaticPayment: jest.fn().mockResolvedValue(null),
     reverseMissingSources: jest.fn().mockResolvedValue(undefined),
-    reverseSource: jest.fn().mockResolvedValue(null),
+    resolvePaymentAccount: jest.fn().mockResolvedValue(null),
   }) as any;
 
 describe('InvoicesService payment dates', () => {

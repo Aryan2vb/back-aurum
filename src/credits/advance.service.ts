@@ -26,7 +26,7 @@ export class AdvanceService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly financeService: FinanceService = new FinanceService(prisma),
+    private readonly financeService: FinanceService,
   ) {}
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -297,7 +297,7 @@ export class AdvanceService {
           amount: applyAmount,
           paidAt: paymentDate,
           notes: notes ?? 'Advance payment',
-          reference: ledger.id, // link back to the ledger entry for traceability
+          ledgerEntryId: ledger.id,
         },
       });
 

@@ -79,6 +79,62 @@ export function inferPaymentMethodFromNarration(
   return 'BANK_TRANSFER';
 }
 
+function isHdfcAmountField(raw: string): boolean {
+  const cleaned = String(raw || '')
+    .replace(/,/g, '')
+    .trim();
+  return /^-?\d+\.\d{1,2}$/.test(cleaned);
+}
+
+/** Headerless rows: find debit/credit by amount positions so comma-split refs stay in refNumber. */
+function parseHdfcHeaderlessRow(parts: string[]): {
+  debit: number;
+  credit: number;
+  refNumber: string | null;
+  closingBalance: number | null;
+  valueDate: Date | null;
+  narration: string;
+} | null {
+  let amountIdx = 1;
+  while (
+    amountIdx < parts.length - 1 &&
+    !(isHdfcAmountField(parts[amountIdx]) && isHdfcAmountField(parts[amountIdx + 1]))
+  ) {
+    amountIdx += 1;
+  }
+  if (amountIdx >= parts.length - 1) return null;
+
+  const debit = parseHdfcAmount(parts[amountIdx]);
+  const credit = parseHdfcAmount(parts[amountIdx + 1]);
+  const rest = parts.slice(amountIdx + 2);
+  let closingBalance: number | null = null;
+  let refParts = rest;
+  if (rest.length && isHdfcAmountField(rest[rest.length - 1])) {
+    closingBalance = parseHdfcAmount(rest[rest.length - 1]);
+    refParts = rest.slice(0, -1);
+  }
+
+  const middle = parts.slice(1, amountIdx);
+  let valueDate: Date | null = null;
+  let narrationParts = middle;
+  if (middle.length) {
+    const maybeValueDate = parseHdfcDate(middle[middle.length - 1]);
+    if (maybeValueDate) {
+      valueDate = maybeValueDate;
+      narrationParts = middle.slice(0, -1);
+    }
+  }
+
+  return {
+    debit,
+    credit,
+    refNumber: normalizeHdfcRef(refParts.join(',')),
+    closingBalance,
+    valueDate,
+    narration: narrationParts.join(', '),
+  };
+}
+
 /**
  * HDFC netbanking "Delimited" export:
  * Date, Narration, Value Dat, Debit Amount, Credit Amount, Chq/Ref Number, Closing Balance
@@ -108,32 +164,40 @@ export function parseHdfcDelimited(text: string): HdfcStatementRow[] {
     const txnDate = parseHdfcDate(parts[0]);
     if (!txnDate) continue;
 
-    const tailCountHint =
-      hasClosingBalance === undefined ? (parts.length > 6 ? 4 : 3) : hasClosingBalance ? 4 : 3;
-    let tailCount = tailCountHint;
-    if (hasClosingBalance === undefined && tailCount === 4) {
-      const candidate = parts.slice(-4);
-      if (!AMOUNT_RE.test(String(candidate[0] || '').replace(/,/g, '').trim())
-        || !AMOUNT_RE.test(String(candidate[1] || '').replace(/,/g, '').trim())) {
-        tailCount = 3;
-      }
-    }
-    const tail = parts.slice(-tailCount);
-    const middle = parts.slice(1, parts.length - tailCount);
-    const debit = parseHdfcAmount(tail[0]);
-    const credit = parseHdfcAmount(tail[1]);
-    const refNumber = normalizeHdfcRef(tail[2] || '');
-    const closingBalance = tailCount === 4 ? parseHdfcAmount(tail[3]) : null;
+    let debit: number;
+    let credit: number;
+    let refNumber: string | null;
+    let closingBalance: number | null;
     let valueDate: Date | null = null;
-    let narrationParts = middle;
-    if (middle.length) {
-      const maybeValueDate = parseHdfcDate(middle[middle.length - 1]);
-      if (maybeValueDate) {
-        valueDate = maybeValueDate;
-        narrationParts = middle.slice(0, -1);
+    let narration: string;
+
+    if (hasClosingBalance === undefined) {
+      const parsedRow = parseHdfcHeaderlessRow(parts);
+      if (!parsedRow) continue;
+      debit = parsedRow.debit;
+      credit = parsedRow.credit;
+      refNumber = parsedRow.refNumber;
+      closingBalance = parsedRow.closingBalance;
+      valueDate = parsedRow.valueDate;
+      narration = parsedRow.narration;
+    } else {
+      const tailCount = hasClosingBalance ? 4 : 3;
+      const tail = parts.slice(-tailCount);
+      const middle = parts.slice(1, parts.length - tailCount);
+      debit = parseHdfcAmount(tail[0]);
+      credit = parseHdfcAmount(tail[1]);
+      refNumber = normalizeHdfcRef(tail[2] || '');
+      closingBalance = tailCount === 4 ? parseHdfcAmount(tail[3]) : null;
+      let narrationParts = middle;
+      if (middle.length) {
+        const maybeValueDate = parseHdfcDate(middle[middle.length - 1]);
+        if (maybeValueDate) {
+          valueDate = maybeValueDate;
+          narrationParts = middle.slice(0, -1);
+        }
       }
+      narration = narrationParts.join(', ');
     }
-    const narration = narrationParts.join(', ');
 
     if (debit <= 0 && credit <= 0) continue;
 

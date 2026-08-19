@@ -46,7 +46,7 @@ export class AccessPolicyService {
 
     const timezone = org?.timezone || 'UTC';
     const policy = org?.accessPolicy;
-    const moduleAccess = normalizeModuleAccess(policy?.moduleAccess);
+    const moduleAccess = normalizeModuleAccess(policy?.moduleAccess ?? {});
     const accessWindowEnabled = policy?.accessWindowEnabled ?? false;
     const accessWindowStart = policy?.accessWindowStart ?? '09:00';
     const accessWindowEnd = policy?.accessWindowEnd ?? '20:00';

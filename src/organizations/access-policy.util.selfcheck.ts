@@ -24,8 +24,14 @@ assert(!isWithinAccessWindow(atUtc(20), 'UTC', '09:00', '20:00', true), '20:00 e
 assert(isWithinAccessWindow(atUtc(8), 'UTC', '09:00', '20:00', false), 'disabled always ok');
 assert(isWithinAccessWindow(atUtc(23), 'UTC', '22:00', '06:00', true), 'overnight late');
 assert(isWithinAccessWindow(atUtc(5), 'UTC', '22:00', '06:00', true), 'overnight early');
-assert(!isWithinAccessWindow(atUtc(10), 'UTC', '9:00', '20:00', true), 'unparsable start fails closed');
-assert(!isWithinAccessWindow(atUtc(10), 'UTC', '09:00', '25:00', true), 'unparsable end fails closed');
+assert(
+  !isWithinAccessWindow(atUtc(10), 'UTC', '9:00', '20:00', true),
+  'unparsable start fails closed',
+);
+assert(
+  !isWithinAccessWindow(atUtc(10), 'UTC', '09:00', '25:00', true),
+  'unparsable end fails closed',
+);
 
 assert(moduleForPath('/stock/balances') === 'stock', 'stock path');
 assert(moduleForPath('customers/abc/advance') === 'advance', 'advance path');
