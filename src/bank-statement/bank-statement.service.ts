@@ -28,6 +28,10 @@ import {
 
 type MatchKind = 'INVOICE_PAYMENT' | 'FINANCIAL_TRANSACTION' | 'PURCHASE_PAYMENT';
 
+const STATEMENT_CREATED = {
+  sourceParentType: 'BANK_STATEMENT_LINE',
+} as const;
+
 const CANDIDATE_TAKE = 500;
 
 async function runSerializable<T>(
@@ -412,7 +416,9 @@ export class BankStatementService {
 
     return lines.map((line) => {
       const payment = line.purchasePaymentId ? paymentById.get(line.purchasePaymentId) : undefined;
-      const transaction = line.financialTransactionId ? transactionById.get(line.financialTransactionId) : undefined;
+      const transaction = line.financialTransactionId
+        ? transactionById.get(line.financialTransactionId)
+        : undefined;
 
       // Purchase payments already have a dedicated model; treasury debits are represented by FinancialTransaction.
       if (payment) {
@@ -497,7 +503,19 @@ export class BankStatementService {
       throw new BadRequestException('Only matched lines can be unlinked');
     }
     if (line.financialTransactionId) {
-      await this.financeService.reverseTransaction(line.financialTransactionId, user);
+      const createdHere = await this.prisma.financialTransaction.findFirst({
+        where: {
+          id: line.financialTransactionId,
+          organizationId: user.organizationId,
+          sourceParentType: STATEMENT_CREATED.sourceParentType,
+          sourceParentId: line.id,
+          reversedAt: null,
+        },
+        select: { id: true },
+      });
+      if (createdHere) {
+        await this.financeService.reverseTransaction(createdHere.id, user);
+      }
     }
     return this.prisma.bankStatementLine.update({
       where: { id: line.id },
@@ -533,17 +551,19 @@ export class BankStatementService {
     }
 
     const deleted = await this.prisma.bankStatementLine.deleteMany({
-      where: { organizationId: user.organizationId, id: { in: uniqueIds } },
+      where: {
+        organizationId: user.organizationId,
+        id: { in: uniqueIds },
+        status: { not: BankStatementLineStatus.MATCHED },
+      },
     });
+    if (deleted.count !== uniqueIds.length) {
+      throw new BadRequestException('Unlink matched lines before deleting');
+    }
     return { count: deleted.count, deleted: lines[0] };
   }
 
-  async confirmMatch(
-    lineId: string,
-    paymentId: string,
-    user: CurrentUserData,
-    kind?: MatchKind,
-  ) {
+  async confirmMatch(lineId: string, paymentId: string, user: CurrentUserData, kind?: MatchKind) {
     return this.confirmMatchMany([lineId], paymentId, user, kind);
   }
 
@@ -642,16 +662,22 @@ export class BankStatementService {
     }
 
     const updated = await runSerializable(this.prisma, async (tx) => {
+      // Re-read inside the transaction: the booked amount / account can change under us.
+      const booked = await tx.invoicePayment.findFirst({
+        where: { id: paymentId, organizationId: user.organizationId },
+      });
+      if (!booked) throw new NotFoundException('Payment not found');
+
       const linkedAgg = await tx.bankStatementLine.aggregate({
         where: {
           organizationId: user.organizationId,
-          invoicePaymentId: payment.id,
+          invoicePaymentId: booked.id,
           status: BankStatementLineStatus.MATCHED,
         },
         _sum: { credit: true },
       });
       const alreadyLinked = Number(linkedAgg._sum.credit || 0);
-      const remaining = Number(payment.amount) - alreadyLinked;
+      const remaining = Number(booked.amount) - alreadyLinked;
       if (creditSum > remaining + AMOUNT_TOLERANCE) {
         throw new BadRequestException(
           `Selected credits (₹${creditSum.toFixed(2)}) exceed remaining payment capacity (₹${remaining.toFixed(2)})`,
@@ -666,8 +692,8 @@ export class BankStatementService {
         },
         data: {
           status: BankStatementLineStatus.MATCHED,
-          matchedInvoiceId: payment.invoiceId,
-          invoicePaymentId: payment.id,
+          matchedInvoiceId: booked.invoiceId,
+          invoicePaymentId: booked.id,
         },
       });
       if (matched.count !== uniqueIds.length) {
@@ -678,10 +704,10 @@ export class BankStatementService {
       });
       const byId = new Map(updatedRows.map((row) => [row.id, row]));
       const rows = uniqueIds.map((id) => byId.get(id)).filter(Boolean);
-      const accountId = payment.accountId || lines[0].accountId;
-      if (!payment.accountId) {
+      const accountId = booked.accountId || lines[0].accountId;
+      if (!booked.accountId) {
         await tx.invoicePayment.update({
-          where: { id: payment.id },
+          where: { id: booked.id },
           data: { accountId },
         });
       }
@@ -689,18 +715,18 @@ export class BankStatementService {
       await this.financeService.syncAutomaticPayment(tx, {
         organizationId: user.organizationId,
         sourceType: 'INVOICE_PAYMENT',
-        sourceId: payment.id,
+        sourceId: booked.id,
         sourceParentType: 'INVOICE',
-        sourceParentId: payment.invoiceId,
+        sourceParentId: booked.invoiceId,
         transactionType: FinancialTransactionType.SALE_RECEIPT,
-        paymentMethod: payment.mode,
+        paymentMethod: booked.mode,
         accountId,
-        amount: payment.amount,
-        occurredAt: payment.paidAt,
-        description: payment.notes ?? 'Invoice payment',
+        amount: booked.amount,
+        occurredAt: booked.paidAt,
+        description: booked.notes ?? 'Invoice payment',
         createdById: user.userId,
       });
-      return { rows, alreadyLinked };
+      return { rows, alreadyLinked, amount: Number(booked.amount) };
     });
 
     const linkedAfter = updated.alreadyLinked + creditSum;
@@ -710,11 +736,11 @@ export class BankStatementService {
         id: payment.id,
         invoiceId: payment.invoiceId,
         invoiceNumber: payment.invoice.invoiceNumber,
-        amount: Number(payment.amount),
+        amount: updated.amount,
         mode: payment.mode,
         linkedCredits: linkedAfter,
-        remaining: Math.max(0, Number(payment.amount) - linkedAfter),
-        complete: Number(payment.amount) - linkedAfter <= AMOUNT_TOLERANCE,
+        remaining: Math.max(0, updated.amount - linkedAfter),
+        complete: updated.amount - linkedAfter <= AMOUNT_TOLERANCE,
       },
     };
   }
@@ -729,7 +755,8 @@ export class BankStatementService {
     const debit = Number(line.debit);
     const direction: 'credit' | 'debit' =
       credit > 0 ? 'credit' : debit > 0 ? 'debit' : (null as any);
-    if (!direction) throw new BadRequestException('Statement line must have either credit or debit amount');
+    if (!direction)
+      throw new BadRequestException('Statement line must have either credit or debit amount');
     if (direction === 'credit' && debit > 0) {
       // Defensive: statement parser should never produce both credit & debit in the same row.
       throw new BadRequestException('Statement line cannot have both credit and debit amounts');
@@ -762,14 +789,28 @@ export class BankStatementService {
               line.narration,
             ),
             reference: line.refNumber || undefined,
+            sourceParentType: STATEMENT_CREATED.sourceParentType,
+            sourceParentId: line.id,
           },
           user,
         );
       } else if (dto.kind === 'CASH_DEPOSIT') {
         if (direction === 'credit') {
-          transaction = await this.createCashDepositFromLine(tx, line, credit, dto.fromAccountId, user);
+          transaction = await this.createCashDepositFromLine(
+            tx,
+            line,
+            credit,
+            dto.fromAccountId,
+            user,
+          );
         } else {
-          transaction = await this.createCashWithdrawalFromLine(tx, line, debit, dto.fromAccountId, user);
+          transaction = await this.createCashWithdrawalFromLine(
+            tx,
+            line,
+            debit,
+            dto.fromAccountId,
+            user,
+          );
         }
       } else {
         const received = await this.advanceService.receiveAdvanceIn(
@@ -792,7 +833,13 @@ export class BankStatementService {
           where: { id: received.transactionId, organizationId: user.organizationId },
         });
         if (!posted) throw new BadRequestException('Could not post advance to the bank book');
-        transaction = posted;
+        transaction = await tx.financialTransaction.update({
+          where: { id: posted.id },
+          data: {
+            sourceParentType: STATEMENT_CREATED.sourceParentType,
+            sourceParentId: line.id,
+          },
+        });
         customerName = received.customerName;
       }
 
@@ -1141,7 +1188,13 @@ export class BankStatementService {
 
   private async createCashDepositFromLine(
     tx: Parameters<FinanceService['createManualTransactionIn']>[0],
-    line: { accountId: string; txnDate: Date; refNumber: string | null; narration: string },
+    line: {
+      id: string;
+      accountId: string;
+      txnDate: Date;
+      refNumber: string | null;
+      narration: string;
+    },
     credit: number,
     fromAccountId: string | undefined,
     user: CurrentUserData,
@@ -1170,6 +1223,8 @@ export class BankStatementService {
         occurredAt: line.txnDate,
         description: createMatchDescription('CASH_DEPOSIT', line.narration),
         reference: line.refNumber || undefined,
+        sourceParentType: STATEMENT_CREATED.sourceParentType,
+        sourceParentId: line.id,
       },
       user,
     );
@@ -1177,7 +1232,13 @@ export class BankStatementService {
 
   private async createCashWithdrawalFromLine(
     tx: Parameters<FinanceService['createManualTransactionIn']>[0],
-    line: { accountId: string; txnDate: Date; refNumber: string | null; narration: string },
+    line: {
+      id: string;
+      accountId: string;
+      txnDate: Date;
+      refNumber: string | null;
+      narration: string;
+    },
     debit: number,
     toAccountId: string | undefined,
     user: CurrentUserData,
@@ -1206,6 +1267,8 @@ export class BankStatementService {
         occurredAt: line.txnDate,
         description: createMatchDescription('CASH_WITHDRAWAL', line.narration),
         reference: line.refNumber || undefined,
+        sourceParentType: STATEMENT_CREATED.sourceParentType,
+        sourceParentId: line.id,
       },
       user,
     );

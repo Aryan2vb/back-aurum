@@ -606,11 +606,14 @@ export class PurchasesService {
     });
     if (!existing) throw new NotFoundException('Purchase not found');
 
-    await this.prisma.$transaction(async (tx) => {
-      await this.stockService.purgeTransactionsByReference(organizationId, id, tx);
-      await this.financeService.reverseMissingSources(tx, organizationId, 'PURCHASE', id, []);
-      await tx.purchaseInvoice.delete({ where: { id } });
-    });
+    await this.prisma.$transaction(
+      async (tx) => {
+        await this.stockService.purgeTransactionsByReference(organizationId, id, tx);
+        await this.financeService.reverseMissingSources(tx, organizationId, 'PURCHASE', id, []);
+        await tx.purchaseInvoice.delete({ where: { id } });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
 
     if (existing.attachmentKey) {
       try {
@@ -644,74 +647,71 @@ export class PurchasesService {
 
     const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
 
-    return this.prisma.$transaction(
-      async (tx) => {
-        const lockedIds = await tx.$queryRaw<Array<{ id: string }>>`
+    return this.prisma.$transaction(async (tx) => {
+      const lockedIds = await tx.$queryRaw<Array<{ id: string }>>`
           SELECT id FROM "PurchaseInvoice"
           WHERE id = ${id} AND "organizationId" = ${organizationId}
           FOR UPDATE
         `;
-        if (!lockedIds.length) throw new NotFoundException('Purchase not found');
-        const purchase = await tx.purchaseInvoice.findFirst({
-          where: { id, organizationId },
-        });
-        if (!purchase) throw new NotFoundException('Purchase not found');
-        if (purchase.status === PurchaseStatus.CANCELLED) {
-          throw new BadRequestException('Cannot record payment on a cancelled purchase');
-        }
-        if (purchase.status === PurchaseStatus.PAID) {
-          throw new BadRequestException('Purchase is already fully paid');
-        }
+      if (!lockedIds.length) throw new NotFoundException('Purchase not found');
+      const purchase = await tx.purchaseInvoice.findFirst({
+        where: { id, organizationId },
+      });
+      if (!purchase) throw new NotFoundException('Purchase not found');
+      if (purchase.status === PurchaseStatus.CANCELLED) {
+        throw new BadRequestException('Cannot record payment on a cancelled purchase');
+      }
+      if (purchase.status === PurchaseStatus.PAID) {
+        throw new BadRequestException('Purchase is already fully paid');
+      }
 
-        const method = dto.paymentMethod ?? PaymentMethod.CASH;
-        const account = await this.financeService.resolvePaymentAccount(
-          tx,
+      const method = dto.paymentMethod ?? PaymentMethod.CASH;
+      const account = await this.financeService.resolvePaymentAccount(
+        tx,
+        organizationId,
+        method,
+        dto.accountId,
+      );
+      await this.assertSufficientTreasuryFunds(tx, organizationId, [
+        { amount: paymentAmount.toNumber(), accountId: account?.id },
+      ]);
+      await tx.purchasePayment.create({
+        data: {
+          purchaseInvoiceId: id,
           organizationId,
-          method,
-          dto.accountId,
+          mode: method,
+          accountId: account?.id,
+          amount: paymentAmount,
+          reference: dto.reference,
+          notes: dto.notes,
+          paidAt,
+        },
+      });
+
+      const paidAgg = await tx.purchasePayment.aggregate({
+        where: { purchaseInvoiceId: id, organizationId },
+        _sum: { amount: true },
+      });
+      const paidAmount = new Decimal(paidAgg._sum.amount ?? 0);
+      const grandTotal = new Decimal(purchase.grandTotal ?? purchase.totalAmount ?? 0);
+      if (paidAmount.greaterThan(grandTotal)) {
+        throw new BadRequestException(
+          `Payment of ${dto.amount} would exceed remaining balance of ${grandTotal.minus(purchase.paidAmount).toNumber()}`,
         );
-        await this.assertSufficientTreasuryFunds(tx, organizationId, [
-          { amount: paymentAmount.toNumber(), accountId: account?.id },
-        ]);
-        await tx.purchasePayment.create({
-          data: {
-            purchaseInvoiceId: id,
-            organizationId,
-            mode: method,
-            accountId: account?.id,
-            amount: paymentAmount,
-            reference: dto.reference,
-            notes: dto.notes,
-            paidAt,
-          },
-        });
+      }
+      const status = this.deriveStatus(paidAmount.toNumber(), grandTotal.toNumber());
+      await this.syncPurchaseTreasury(tx, id, organizationId);
 
-        const paidAgg = await tx.purchasePayment.aggregate({
-          where: { purchaseInvoiceId: id, organizationId },
-          _sum: { amount: true },
-        });
-        const paidAmount = new Decimal(paidAgg._sum.amount ?? 0);
-        const grandTotal = new Decimal(purchase.grandTotal ?? purchase.totalAmount ?? 0);
-        if (paidAmount.greaterThan(grandTotal)) {
-          throw new BadRequestException(
-            `Payment of ${dto.amount} would exceed remaining balance of ${grandTotal.minus(purchase.paidAmount).toNumber()}`,
-          );
-        }
-        const status = this.deriveStatus(paidAmount.toNumber(), grandTotal.toNumber());
-        await this.syncPurchaseTreasury(tx, id, organizationId);
-
-        return tx.purchaseInvoice.update({
-          where: { id },
-          data: { paidAmount, status },
-          include: {
-            vendor: true,
-            items: true,
-            payments: { orderBy: { paidAt: 'desc' } },
-          },
-        });
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+      return tx.purchaseInvoice.update({
+        where: { id },
+        data: { paidAmount, status },
+        include: {
+          vendor: true,
+          items: true,
+          payments: { orderBy: { paidAt: 'desc' } },
+        },
+      });
+    });
   }
 
   private async resolveVendor(tx: any, data: PurchaseBillInput) {

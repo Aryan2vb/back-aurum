@@ -22,7 +22,14 @@ describe('BankStatementService reconcile cleanup', () => {
       },
       ...overrides,
     };
-    return { service: new BankStatementService(prisma as any, { reverseTransaction: jest.fn() } as any, {} as any), prisma };
+    return {
+      service: new BankStatementService(
+        prisma as any,
+        { reverseTransaction: jest.fn() } as any,
+        {} as any,
+      ),
+      prisma,
+    };
   };
 
   it('unlinks matched statement credits', async () => {
@@ -40,6 +47,57 @@ describe('BankStatementService reconcile cleanup', () => {
     });
   });
 
+  it('does not reverse a treasury entry that was only matched, not created from the line', async () => {
+    const matchedTreasury = {
+      ...line,
+      invoicePaymentId: null,
+      matchedInvoiceId: null,
+      financialTransactionId: 'tx-existing',
+    };
+    const reverseTransaction = jest.fn();
+    const prisma = {
+      bankStatementLine: {
+        findFirst: jest.fn().mockResolvedValue(matchedTreasury),
+        update: jest.fn().mockResolvedValue(matchedTreasury),
+      },
+      financialTransaction: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const service = new BankStatementService(
+      prisma as any,
+      { reverseTransaction } as any,
+      {} as any,
+    );
+    await service.unmatch('line-1', { organizationId: 'org-1' } as any);
+    expect(reverseTransaction).not.toHaveBeenCalled();
+  });
+
+  it('reverses a treasury entry created from the statement line', async () => {
+    const created = {
+      ...line,
+      invoicePaymentId: null,
+      matchedInvoiceId: null,
+      financialTransactionId: 'tx-created',
+    };
+    const reverseTransaction = jest.fn();
+    const prisma = {
+      bankStatementLine: {
+        findFirst: jest.fn().mockResolvedValue(created),
+        update: jest.fn().mockResolvedValue(created),
+      },
+      financialTransaction: { findFirst: jest.fn().mockResolvedValue({ id: 'tx-created' }) },
+    };
+    const service = new BankStatementService(
+      prisma as any,
+      { reverseTransaction } as any,
+      {} as any,
+    );
+    await service.unmatch('line-1', { organizationId: 'org-1', userId: 'u1' } as any);
+    expect(reverseTransaction).toHaveBeenCalledWith(
+      'tx-created',
+      expect.objectContaining({ organizationId: 'org-1' }),
+    );
+  });
+
   it('rejects deleting matched lines without unlinking first', async () => {
     const { service } = makeService();
     await expect(
@@ -53,7 +111,11 @@ describe('BankStatementService reconcile cleanup', () => {
     prisma.bankStatementLine.findMany.mockResolvedValue([unmatched]);
     await service.deleteLine('line-1', { organizationId: 'org-1' } as any);
     expect(prisma.bankStatementLine.deleteMany).toHaveBeenCalledWith({
-      where: { organizationId: 'org-1', id: { in: ['line-1'] } },
+      where: {
+        organizationId: 'org-1',
+        id: { in: ['line-1'] },
+        status: { not: BankStatementLineStatus.MATCHED },
+      },
     });
   });
 
@@ -199,10 +261,16 @@ describe('BankStatementService.listInbox', () => {
       bankStatementLine: {
         findMany: jest
           .fn()
-          .mockImplementation(async ({ where }: { where: { status?: string; debit?: unknown; credit?: unknown } }) => {
-            if (where.status === BankStatementLineStatus.UNMATCHED) return [];
-            return [];
-          }),
+          .mockImplementation(
+            async ({
+              where,
+            }: {
+              where: { status?: string; debit?: unknown; credit?: unknown };
+            }) => {
+              if (where.status === BankStatementLineStatus.UNMATCHED) return [];
+              return [];
+            },
+          ),
         groupBy: jest.fn().mockResolvedValue([]),
       },
       invoicePayment: {
@@ -434,7 +502,8 @@ describe('BankStatementService treasury match', () => {
     const prisma = makePrisma({});
     prisma.financialTransaction = {
       findFirst: jest.fn().mockResolvedValue({ id: 'tx-adv' }),
-    };
+      update: jest.fn().mockResolvedValue({ id: 'tx-adv' }),
+    } as any;
     const advanceService = {
       receiveAdvanceIn: jest.fn().mockResolvedValue({
         transactionId: 'tx-adv',

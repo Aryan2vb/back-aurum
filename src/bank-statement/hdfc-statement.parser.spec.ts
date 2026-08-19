@@ -74,6 +74,20 @@ describe('parseHdfcDelimited', () => {
     expect(a.fingerprint).toHaveLength(64);
   });
 
+  it('keeps repeated identical transactions distinct without moving the first fingerprint', () => {
+    const row = '20/07/26,UPI-FOO-PAY,20/07/26,0.00,100.00,REF123,500.00';
+    const [single] =
+      parseHdfcDelimited(`Date,Narration,Value Dat,Debit Amount,Credit Amount,Chq/Ref Number,Closing Balance
+${row}`);
+    const rows =
+      parseHdfcDelimited(`Date,Narration,Value Dat,Debit Amount,Credit Amount,Chq/Ref Number,Closing Balance
+${row}
+${row}`);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].fingerprint).toBe(single.fingerprint);
+    expect(rows[1].fingerprint).not.toBe(rows[0].fingerprint);
+  });
+
   it('parses headerless four-column rows by amount positions', () => {
     const rows = parseHdfcDelimited(
       '03/07/26,UPI-DOMINOS PIZZA,03/07/26,225.76,0.00,0000125696538778,3457.47',

@@ -19,12 +19,30 @@ const isCashOrBank = (account: AccountRef | undefined): account is AccountRef =>
     (account.type === FinancialAccountType.CASH || account.type === FinancialAccountType.BANK),
   );
 
-function buildPairedTransfer(from?: AccountRef, to?: AccountRef, amount = 0): MovementDraft[] {
+function buildPairedTransfer(
+  type: FinancialTransactionType,
+  from?: AccountRef,
+  to?: AccountRef,
+  amount = 0,
+): MovementDraft[] {
   if (!isCashOrBank(from) || !isCashOrBank(to)) {
     throw new BadRequestException('Transfers require cash or bank accounts');
   }
   if (from.id === to.id) {
     throw new BadRequestException('Transfer accounts must be different');
+  }
+  if (amount <= 0) {
+    throw new BadRequestException('Transfer amount must be positive');
+  }
+  const bankLegs = [from, to].filter(
+    (account) => account.type === FinancialAccountType.BANK,
+  ).length;
+  // Cash↔bank runs both ways (deposit and withdrawal), so only the pair of types is fixed.
+  if (type === FinancialTransactionType.CASH_BANK_TRANSFER && bankLegs !== 1) {
+    throw new BadRequestException('Cash ↔ bank transfers need one cash and one bank account');
+  }
+  if (type === FinancialTransactionType.BANK_BANK_TRANSFER && bankLegs !== 2) {
+    throw new BadRequestException('Bank → bank transfers need two bank accounts');
   }
   const positive = Math.abs(amount);
   return [
@@ -45,7 +63,7 @@ export function buildManualMovements(
   switch (type) {
     case FinancialTransactionType.CASH_BANK_TRANSFER:
     case FinancialTransactionType.BANK_BANK_TRANSFER:
-      return buildPairedTransfer(accounts.from, accounts.to, amount);
+      return buildPairedTransfer(type, accounts.from, accounts.to, amount);
     case FinancialTransactionType.ADJUSTMENT: {
       if (!isCashOrBank(accounts.account)) {
         throw new BadRequestException('accountId must be a cash or bank account');

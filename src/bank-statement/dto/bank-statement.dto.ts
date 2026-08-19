@@ -1,6 +1,20 @@
-import { ArrayMinSize, IsArray, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 
-export const BANK_MATCH_KINDS = ['INVOICE_PAYMENT', 'FINANCIAL_TRANSACTION', 'PURCHASE_PAYMENT'] as const;
+const MAX_BULK_LINES = 500;
+
+export const BANK_MATCH_KINDS = [
+  'INVOICE_PAYMENT',
+  'FINANCIAL_TRANSACTION',
+  'PURCHASE_PAYMENT',
+] as const;
 export const BANK_CREATE_KINDS = ['LOAN', 'CASH_DEPOSIT', 'ADVANCE', 'MONEY_OUT'] as const;
 
 export class ConfirmBankStatementMatchDto {
@@ -22,6 +36,7 @@ export class ConfirmBankStatementMatchBulkDto {
 
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_BULK_LINES)
   @IsUUID('4', { each: true })
   lineIds: string[];
 }
@@ -43,6 +58,7 @@ export class CreateAndMatchBankStatementDto {
 export class DeleteBankStatementLinesBulkDto {
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_BULK_LINES)
   @IsUUID('4', { each: true })
   lineIds: string[];
 }

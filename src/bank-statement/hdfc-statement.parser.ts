@@ -50,13 +50,21 @@ export function normalizeHdfcRef(raw: string): string | null {
   return stripped || null;
 }
 
-export function fingerprintHdfcRow(row: {
-  txnDate: Date;
-  narration: string;
-  debit: number;
-  credit: number;
-  refNumber: string | null;
-}): string {
+/**
+ * `occurrence` separates genuinely repeated transactions (same day, amount, ref and
+ * narration) so the 2nd copy is not swallowed as a duplicate. The 1st occurrence keeps
+ * the plain payload hash, so fingerprints of already-imported lines stay stable.
+ */
+export function fingerprintHdfcRow(
+  row: {
+    txnDate: Date;
+    narration: string;
+    debit: number;
+    credit: number;
+    refNumber: string | null;
+  },
+  occurrence = 1,
+): string {
   const dateKey = row.txnDate.toISOString().slice(0, 10);
   const payload = [
     dateKey,
@@ -65,7 +73,8 @@ export function fingerprintHdfcRow(row: {
     row.refNumber || '',
     row.narration.trim().replace(/\s+/g, ' '),
   ].join('|');
-  return createHash('sha256').update(payload).digest('hex');
+  const keyed = occurrence > 1 ? `${payload}|#${occurrence}` : payload;
+  return createHash('sha256').update(keyed).digest('hex');
 }
 
 export function inferPaymentMethodFromNarration(
@@ -157,6 +166,7 @@ export function parseHdfcDelimited(text: string): HdfcStatementRow[] {
   const dataLines = headerIdx >= 0 ? lines.slice(headerIdx + 1) : lines;
 
   const rows: HdfcStatementRow[] = [];
+  const occurrences = new Map<string, number>();
   for (const line of dataLines) {
     const parts = line.split(',').map((part) => part.trim());
     if (parts.length < 6) continue;
@@ -211,7 +221,10 @@ export function parseHdfcDelimited(text: string): HdfcStatementRow[] {
       closingBalance: closingBalance === 0 && parts.length <= 6 ? null : closingBalance,
       fingerprint: '',
     };
-    row.fingerprint = fingerprintHdfcRow(row);
+    const base = fingerprintHdfcRow(row);
+    const occurrence = (occurrences.get(base) ?? 0) + 1;
+    occurrences.set(base, occurrence);
+    row.fingerprint = occurrence === 1 ? base : fingerprintHdfcRow(row, occurrence);
     rows.push(row);
   }
 

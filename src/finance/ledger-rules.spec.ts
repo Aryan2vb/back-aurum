@@ -57,6 +57,30 @@ describe('finance ledger rules', () => {
     ).toThrow(BadRequestException);
   });
 
+  it('rejects a transfer whose account pair does not match the transfer type', () => {
+    expect(() =>
+      buildManualMovements(FinancialTransactionType.BANK_BANK_TRANSFER, 10, {
+        from: account('cash', FinancialAccountType.CASH),
+        to: account('bank', FinancialAccountType.BANK),
+      }),
+    ).toThrow(/two bank accounts/i);
+    expect(() =>
+      buildManualMovements(FinancialTransactionType.CASH_BANK_TRANSFER, 10, {
+        from: account('hdfc', FinancialAccountType.BANK),
+        to: account('sbi', FinancialAccountType.BANK),
+      }),
+    ).toThrow(/one cash and one bank/i);
+  });
+
+  it('rejects non-positive transfer amounts but keeps negative adjustments', () => {
+    expect(() =>
+      buildManualMovements(FinancialTransactionType.CASH_BANK_TRANSFER, -100, {
+        from: account('cash', FinancialAccountType.CASH),
+        to: account('bank', FinancialAccountType.BANK),
+      }),
+    ).toThrow(/positive/i);
+  });
+
   it('records money in and money out as signed adjustments', () => {
     expect(
       buildManualMovements(FinancialTransactionType.ADJUSTMENT, 12.5, {

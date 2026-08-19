@@ -113,9 +113,7 @@ export class AdvanceService {
   // ─────────────────────────────────────────────────────────────────────────
 
   async receiveAdvance(customerId: string, dto: ReceiveAdvanceDto, user: CurrentUserData) {
-    return this.prisma.$transaction(async (tx) =>
-      this.receiveAdvanceIn(tx, customerId, dto, user),
-    );
+    return this.prisma.$transaction(async (tx) => this.receiveAdvanceIn(tx, customerId, dto, user));
   }
 
   /** Same as receiveAdvance but participates in a caller-owned transaction (e.g. bank reconcile). */

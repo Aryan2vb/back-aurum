@@ -88,7 +88,7 @@ describe('StockService.initializeOpeningBalance', () => {
       date: new Date('2026-04-01T00:00:00.000Z'),
     };
     const stockLedger = {
-      findFirst: jest.fn().mockResolvedValue(existingOB),
+      findFirst: jest.fn().mockResolvedValueOnce(existingOB).mockResolvedValueOnce(null),
       update: jest.fn().mockResolvedValue({ id: 'ob-1' }),
       findMany: jest.fn().mockResolvedValue([
         {
@@ -135,7 +135,8 @@ describe('StockService.initializeOpeningBalance', () => {
       rate: 5000,
     };
     const stockLedger = {
-      findFirst: jest.fn().mockResolvedValue(existingOB),
+      // 1st call: the existing opening balance, 2nd: earliest other movement (none).
+      findFirst: jest.fn().mockResolvedValueOnce(existingOB).mockResolvedValueOnce(null),
       update: jest.fn().mockResolvedValue({ id: 'ob-1' }),
     };
     const tx = { stockLedger, stockBalance: {} };

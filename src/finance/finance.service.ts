@@ -32,6 +32,7 @@ function endOfRange(value?: string): Date | undefined {
 
 const BACKFILL_CHUNK = 25;
 const BACKFILL_TX = { maxWait: 10_000, timeout: 60_000 };
+const CASH_ACCOUNT_NAME = 'Cash';
 
 export type AutomaticPaymentInput = {
   organizationId: string;
@@ -87,23 +88,26 @@ export class FinanceService {
       });
     }
 
-    try {
-      return await db.financialAccount.create({
-        data: {
-          organizationId,
-          name: 'Cash',
-          type: FinancialAccountType.CASH,
-          isDefault: true,
-        },
-      });
-    } catch (error: any) {
-      if (error?.code !== 'P2002') throw error;
-      const raced = await db.financialAccount.findFirst({
-        where: { organizationId, type: FinancialAccountType.CASH, isDefault: true },
-      });
-      if (!raced) throw error;
-      return raced;
+    // A P2002 inside an interactive transaction aborts it, so upsert on the
+    // organizationId+name unique key instead of catching the conflict.
+    const named = await db.financialAccount.findFirst({
+      where: { organizationId, name: CASH_ACCOUNT_NAME },
+    });
+    if (named && named.type !== FinancialAccountType.CASH) {
+      throw new BadRequestException(
+        `Rename the existing "${CASH_ACCOUNT_NAME}" account so cash payments can be tracked`,
+      );
     }
+    return db.financialAccount.upsert({
+      where: { organizationId_name: { organizationId, name: CASH_ACCOUNT_NAME } },
+      create: {
+        organizationId,
+        name: CASH_ACCOUNT_NAME,
+        type: FinancialAccountType.CASH,
+        isDefault: true,
+      },
+      update: { isDefault: true, status: FinancialAccountStatus.ACTIVE },
+    });
   }
 
   async resolvePaymentAccount(
@@ -507,7 +511,11 @@ export class FinanceService {
 
   async createManualTransactionIn(
     db: Db,
-    dto: Omit<CreateManualTransactionDto, 'occurredAt'> & { occurredAt?: string | Date },
+    dto: Omit<CreateManualTransactionDto, 'occurredAt'> & {
+      occurredAt?: string | Date;
+      sourceParentType?: string;
+      sourceParentId?: string;
+    },
     user: CurrentUserData,
   ) {
     const ids = [...new Set([dto.fromAccountId, dto.toAccountId, dto.accountId].filter(Boolean))];
@@ -533,6 +541,8 @@ export class FinanceService {
         type: dto.type,
         sourceType: 'MANUAL',
         sourceId: crypto.randomUUID(),
+        sourceParentType: dto.sourceParentType,
+        sourceParentId: dto.sourceParentId,
         description: dto.description,
         reference: dto.reference,
         occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date(),
@@ -748,24 +758,31 @@ export class FinanceService {
     transaction: { sourceType: string; sourceId: string },
     accountId: string,
   ) {
-    if (transaction.sourceType === 'INVOICE_PAYMENT') {
-      await db.invoicePayment.updateMany({
-        where: { id: transaction.sourceId, organizationId, accountId: null },
-        data: { accountId },
-      });
-    } else if (transaction.sourceType === 'PURCHASE_PAYMENT') {
-      await db.purchasePayment.updateMany({
-        where: { id: transaction.sourceId, organizationId, accountId: null },
-        data: { accountId },
-      });
-    } else if (
-      transaction.sourceType === 'ADVANCE_LEDGER' ||
-      transaction.sourceType === 'UDHAR_PAYMENT'
-    ) {
-      await db.ledgerEntry.updateMany({
-        where: { id: transaction.sourceId, organizationId, accountId: null },
-        data: { accountId },
-      });
+    await this.stampSourceAccounts(
+      db,
+      organizationId,
+      transaction.sourceType,
+      [transaction.sourceId],
+      accountId,
+    );
+  }
+
+  private async stampSourceAccounts(
+    db: Db,
+    organizationId: string,
+    sourceType: string,
+    sourceIds: string[],
+    accountId: string,
+  ) {
+    if (!sourceIds.length) return;
+    const where = { id: { in: sourceIds }, organizationId, accountId: null };
+    const data = { accountId };
+    if (sourceType === 'INVOICE_PAYMENT') {
+      await db.invoicePayment.updateMany({ where, data });
+    } else if (sourceType === 'PURCHASE_PAYMENT') {
+      await db.purchasePayment.updateMany({ where, data });
+    } else if (sourceType === 'ADVANCE_LEDGER' || sourceType === 'UDHAR_PAYMENT') {
+      await db.ledgerEntry.updateMany({ where, data });
     }
   }
 
@@ -943,26 +960,43 @@ export class FinanceService {
       );
     });
 
-    if (!dryRun) {
-      const assigned = await this.prisma.financialMovement.findMany({
-        where: {
-          organizationId,
-          accountId: { not: null },
-          transaction: {
-            reversedAt: null,
-            sourceType: {
-              in: ['INVOICE_PAYMENT', 'PURCHASE_PAYMENT', 'ADVANCE_LEDGER', 'UDHAR_PAYMENT'],
-            },
+    const assigned = await this.prisma.financialMovement.findMany({
+      where: {
+        organizationId,
+        accountId: { not: null },
+        transaction: {
+          reversedAt: null,
+          sourceType: {
+            in: ['INVOICE_PAYMENT', 'PURCHASE_PAYMENT', 'ADVANCE_LEDGER', 'UDHAR_PAYMENT'],
           },
         },
-        select: {
-          accountId: true,
-          transaction: { select: { sourceType: true, sourceId: true } },
-        },
-      });
-      for (const row of assigned) {
-        if (!row.accountId) continue;
-        await this.stampSourceAccount(this.prisma, organizationId, row.transaction, row.accountId);
+      },
+      select: {
+        accountId: true,
+        transaction: { select: { sourceType: true, sourceId: true } },
+      },
+    });
+    // One updateMany per (sourceType, account) chunk instead of one per movement.
+    const bySourceAndAccount = new Map<string, string[]>();
+    for (const row of assigned) {
+      if (!row.accountId) continue;
+      const key = `${row.transaction.sourceType}|${row.accountId}`;
+      const ids = bySourceAndAccount.get(key);
+      if (ids) ids.push(row.transaction.sourceId);
+      else bySourceAndAccount.set(key, [row.transaction.sourceId]);
+    }
+    for (const [key, sourceIds] of bySourceAndAccount) {
+      const separator = key.indexOf('|');
+      const sourceType = key.slice(0, separator);
+      const accountId = key.slice(separator + 1);
+      for (let i = 0; i < sourceIds.length; i += BACKFILL_CHUNK) {
+        await this.stampSourceAccounts(
+          this.prisma,
+          organizationId,
+          sourceType,
+          sourceIds.slice(i, i + BACKFILL_CHUNK),
+          accountId,
+        );
       }
     }
 

@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UploadedFile,
@@ -23,6 +24,8 @@ import {
 } from './dto/bank-statement.dto';
 
 const WRITE_ROLES = [OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF];
+
+const OptionalUuid = new ParseUUIDPipe({ optional: true });
 
 const READ_ROLES = [
   OrganizationRole.OWNER,
@@ -50,7 +53,7 @@ export class BankStatementController {
     }),
   )
   upload(
-    @Param('accountId') accountId: string,
+    @Param('accountId', ParseUUIDPipe) accountId: string,
     @UploadedFile() file: { buffer?: Buffer; originalname?: string } | undefined,
     @CurrentUser() user: CurrentUserData,
   ) {
@@ -63,13 +66,19 @@ export class BankStatementController {
 
   @Get('inbox')
   @Roles(...READ_ROLES)
-  listInbox(@CurrentUser() user: CurrentUserData, @Query('accountId') accountId?: string) {
+  listInbox(
+    @CurrentUser() user: CurrentUserData,
+    @Query('accountId', OptionalUuid) accountId?: string,
+  ) {
     return this.bankStatements.listInbox(user.organizationId, accountId);
   }
 
   @Get('unmatched')
   @Roles(...READ_ROLES)
-  listUnmatched(@CurrentUser() user: CurrentUserData, @Query('accountId') accountId?: string) {
+  listUnmatched(
+    @CurrentUser() user: CurrentUserData,
+    @Query('accountId', OptionalUuid) accountId?: string,
+  ) {
     return this.bankStatements.listUnmatched(user.organizationId, accountId);
   }
 
@@ -77,32 +86,35 @@ export class BankStatementController {
   @Roles(...READ_ROLES)
   listUnmatchedPayments(
     @CurrentUser() user: CurrentUserData,
-    @Query('accountId') accountId?: string,
+    @Query('accountId', OptionalUuid) accountId?: string,
   ) {
     return this.bankStatements.listUnmatchedPayments(user.organizationId, accountId);
   }
 
   @Get('matched')
   @Roles(...READ_ROLES)
-  listMatched(@CurrentUser() user: CurrentUserData, @Query('accountId') accountId?: string) {
+  listMatched(
+    @CurrentUser() user: CurrentUserData,
+    @Query('accountId', OptionalUuid) accountId?: string,
+  ) {
     return this.bankStatements.listMatched(user.organizationId, accountId);
   }
 
   @Post('lines/:id/ignore')
   @Roles(...WRITE_ROLES)
-  ignore(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+  ignore(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: CurrentUserData) {
     return this.bankStatements.ignore(id, user);
   }
 
   @Post('lines/:id/unmatch')
   @Roles(...WRITE_ROLES)
-  unmatch(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+  unmatch(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: CurrentUserData) {
     return this.bankStatements.unmatch(id, user);
   }
 
   @Delete('lines/:id')
   @Roles(...WRITE_ROLES)
-  deleteLine(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
+  deleteLine(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: CurrentUserData) {
     return this.bankStatements.deleteLine(id, user);
   }
 
@@ -118,7 +130,7 @@ export class BankStatementController {
   @Post('lines/:id/match')
   @Roles(...WRITE_ROLES)
   confirmMatch(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ConfirmBankStatementMatchDto,
     @CurrentUser() user: CurrentUserData,
   ) {
@@ -137,7 +149,7 @@ export class BankStatementController {
   @Post('lines/:id/create-and-match')
   @Roles(...WRITE_ROLES)
   createAndMatch(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateAndMatchBankStatementDto,
     @CurrentUser() user: CurrentUserData,
   ) {

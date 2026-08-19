@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockTransactionType, MetalType, Prisma } from '@prisma/client';
 
@@ -9,6 +9,8 @@ const DEFAULT_PURITIES: Record<'GOLD' | 'SILVER', string[]> = {
 
 @Injectable()
 export class StockService {
+  private readonly logger = new Logger(StockService.name);
+
   constructor(private prisma: PrismaService) {}
 
   /**
@@ -61,12 +63,10 @@ export class StockService {
       const newQuantity = Number(currentBalance.quantity);
 
       if (newQuantity < 0) {
-        console.warn(
-          `[StockService] Negative stock warning for ${purity} ${metalType}. New balance: ${newQuantity}`,
-        );
+        this.logger.warn(`Negative stock for ${purity} ${metalType}. New balance: ${newQuantity}`);
       }
 
-      const totalValue = rate ? rate * (quantityIn || quantityOut) : null;
+      const totalValue = rate == null ? null : rate * (quantityIn || quantityOut);
 
       const ledgerEntry = await db.stockLedger.create({
         data: {
@@ -221,7 +221,7 @@ export class StockService {
         organizationId,
         metalType: { in: [MetalType.GOLD, MetalType.SILVER] },
       },
-      orderBy: { date: 'asc' },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
     });
 
     // We will compute the chronological moving average valuation from the very beginning (t=0).

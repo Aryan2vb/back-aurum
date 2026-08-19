@@ -106,7 +106,10 @@ const buildPageBody = (page: PurchaseBillBookPage): string => {
     </div>`;
   }
 
-  return placeholderBody('Supplier invoice attachment missing');
+  return `<div class="bill-page-placeholder">
+    <p class="placeholder-title">${escapeHtml('Attachment preview not supported')}</p>
+    <p><a href="${safeUrl}" target="_blank" rel="noopener">${safeName}</a></p>
+  </div>`;
 };
 
 export function buildPurchaseBillBookHtml({ title, pages }: PurchaseBillBookHtmlInput): string {

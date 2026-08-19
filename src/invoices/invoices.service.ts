@@ -655,29 +655,27 @@ export class InvoicesService {
         });
       }
 
-      const paymentCreates = dto.payments?.length
-        ? await Promise.all(
-            dto.payments.map(async (p) => {
-              const mode = (p.mode as PaymentMethod) ?? PaymentMethod.CASH;
-              const account = await this.financeService.resolvePaymentAccount(
-                tx,
-                organizationId,
-                mode,
-                p.accountId,
-                true,
-              );
-              return {
-                organizationId,
-                mode,
-                amount: new Decimal(p.amount),
-                reference: p.reference,
-                notes: p.notes,
-                accountId: account?.id ?? p.accountId,
-                paidAt: this._parsePaymentPaidAt(p.paidAt, invoiceDate),
-              };
-            }),
-          )
-        : [];
+      // Sequential: resolvePaymentAccount writes on the same transaction client.
+      const paymentCreates: Prisma.InvoicePaymentUncheckedCreateWithoutInvoiceInput[] = [];
+      for (const p of dto.payments ?? []) {
+        const mode = (p.mode as PaymentMethod) ?? PaymentMethod.CASH;
+        const account = await this.financeService.resolvePaymentAccount(
+          tx,
+          organizationId,
+          mode,
+          p.accountId,
+          true,
+        );
+        paymentCreates.push({
+          organizationId,
+          mode,
+          amount: new Decimal(p.amount),
+          reference: p.reference,
+          notes: p.notes,
+          accountId: account?.id ?? null,
+          paidAt: this._parsePaymentPaidAt(p.paidAt, invoiceDate),
+        });
+      }
 
       // 1. Create Invoice
       const invoice = await tx.invoice.create({
@@ -1049,7 +1047,7 @@ export class InvoicesService {
           amount: paymentAmount,
           reference: dto.reference,
           notes: dto.notes,
-          accountId: account?.id ?? dto.accountId,
+          accountId: account?.id ?? null,
         },
       });
 

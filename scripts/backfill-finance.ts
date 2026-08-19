@@ -1,8 +1,8 @@
-import { PrismaClient } from '@prisma/client';
 import { FinanceService } from '../src/finance/finance.service';
+import { PrismaService } from '../src/prisma/prisma.service';
 
-const prisma = new PrismaClient();
-const finance = new FinanceService(prisma as any);
+const prisma = new PrismaService();
+const finance = new FinanceService(prisma);
 const dryRun = process.argv.includes('--dry-run');
 
 async function main() {

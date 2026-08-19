@@ -85,10 +85,7 @@ export class FinanceController {
 
   @Get('transactions')
   @Roles(...ALL_ROLES)
-  listTransactions(
-    @CurrentUser() user: CurrentUserData,
-    @Query() query: FinanceDateRangeQueryDto,
-  ) {
+  listTransactions(@CurrentUser() user: CurrentUserData, @Query() query: FinanceDateRangeQueryDto) {
     return this.finance.listTransactions(user.organizationId, {
       accountId: query.accountId,
       from: query.from,

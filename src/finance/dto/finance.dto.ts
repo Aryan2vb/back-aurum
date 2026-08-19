@@ -10,7 +10,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  Min,
+  NotEquals,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
@@ -104,8 +104,9 @@ export class CreateManualTransactionDto {
   @IsIn(MANUAL_TRANSACTION_TYPES)
   type: (typeof MANUAL_TRANSACTION_TYPES)[number];
 
+  /** ADJUSTMENT may be negative (cash shortage); transfers must be positive — see buildManualMovements. */
   @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0.01)
+  @NotEquals(0)
   @Type(() => Number)
   amount: number;
 

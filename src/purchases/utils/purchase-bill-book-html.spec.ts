@@ -82,7 +82,8 @@ describe('buildPurchaseBillBookHtml', () => {
       ],
     });
 
-    expect(html).toContain('Supplier invoice attachment missing');
+    expect(html).toContain('Attachment preview not supported');
+    expect(html).toContain('href="https://cdn.example.com/invoice.html?ref=.pdfscan"');
     expect(html).not.toContain('type="application/pdf"');
   });
 });
