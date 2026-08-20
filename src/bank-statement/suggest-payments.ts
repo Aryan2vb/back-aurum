@@ -59,7 +59,19 @@ type StatementLineMatch = {
   accountId: string;
 };
 
-export const AMOUNT_TOLERANCE = 1;
+/** Max the bank line may fall short of booked remaining. Extra has no cap. */
+export const AMOUNT_TOLERANCE = 10;
+
+/** Line covers target: extra OK, shortfall ≤ ₹10. */
+export const coversAmount = (lineAmount: number, target: number) =>
+  Number(lineAmount) + AMOUNT_TOLERANCE >= Number(target);
+
+/** Covers target without going over — exact / completes, not extra. */
+export const nearAmount = (lineAmount: number, target: number) => {
+  const line = Number(lineAmount);
+  const dest = Number(target);
+  return line <= dest && coversAmount(line, dest);
+};
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Shortest reference that is specific enough to score a match on. */
 const MIN_REF_MATCH_LENGTH = 4;
@@ -127,11 +139,11 @@ export const suggestPaymentsForLine = (
       if (!sameCalendarDay(payment.paidAt, line.txnDate)) return null;
 
       const remaining = Number(payment.remaining ?? payment.amount);
-      if (lineAmount > remaining + AMOUNT_TOLERANCE) return null;
+      if (remaining <= 0) return null;
 
       let score = 0;
-      const exactPayment = Math.abs(Number(payment.amount) - lineAmount) <= AMOUNT_TOLERANCE;
-      const exactRemaining = Math.abs(remaining - lineAmount) <= AMOUNT_TOLERANCE;
+      const exactPayment = nearAmount(lineAmount, Number(payment.amount));
+      const exactRemaining = nearAmount(lineAmount, remaining);
 
       if (exactPayment) score += 100;
       else if (exactRemaining) score += 90;
@@ -241,7 +253,7 @@ export const invoiceBankReconcileStatus = (
     (sum, payment) => sum + (linkedByPaymentId.get(payment.id) || 0),
     0,
   );
-  if (due - linked <= AMOUNT_TOLERANCE) return 'full';
+  if (coversAmount(linked, due)) return 'full';
   if (linked <= AMOUNT_TOLERANCE) return 'none';
   return 'partial';
 };
@@ -255,5 +267,5 @@ export const paymentsMatchingCreditSum = (
   payments.filter((payment) => {
     if (!sameCalendarDay(payment.paidAt, txnDate)) return false;
     const remaining = Number(payment.remaining ?? payment.amount);
-    return Math.abs(remaining - creditSum) <= AMOUNT_TOLERANCE;
+    return coversAmount(creditSum, remaining);
   });

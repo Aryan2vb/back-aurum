@@ -582,8 +582,9 @@ export class BankStatementService {
 
   /**
    * Link one or more statement lines to one booked payment or cashbook entry.
-   * Credits or debits may be splits as long as sum ≤ remaining capacity (±₹1)
-   * and each line is the same calendar day as the booked payment.
+   * Credits or debits may be splits, or extra over remaining (no upper cap).
+   * Shortfall of at most ₹10 still counts as complete.
+   * Each line must be the same calendar day as the booked payment.
    */
   async confirmMatchMany(
     lineIds: string[],
@@ -694,12 +695,6 @@ export class BankStatementService {
         _sum: { credit: true },
       });
       const alreadyLinked = Number(linkedAgg._sum.credit || 0);
-      const remaining = Number(booked.amount) - alreadyLinked;
-      if (creditSum > remaining + AMOUNT_TOLERANCE) {
-        throw new BadRequestException(
-          `Selected credits (₹${creditSum.toFixed(2)}) exceed remaining payment capacity (₹${remaining.toFixed(2)})`,
-        );
-      }
 
       const matched = await tx.bankStatementLine.updateMany({
         where: {
@@ -1032,12 +1027,6 @@ export class BankStatementService {
         });
         alreadyLinked = Number(linkedAgg._sum.debit || 0);
       }
-      const remaining = bookedAmount - alreadyLinked;
-      if (lineSum > remaining + AMOUNT_TOLERANCE) {
-        throw new BadRequestException(
-          `Selected lines (₹${lineSum.toFixed(2)}) exceed remaining entry capacity (₹${remaining.toFixed(2)})`,
-        );
-      }
 
       const matched = await tx.bankStatementLine.updateMany({
         where: {
@@ -1149,12 +1138,6 @@ export class BankStatementService {
         _sum: { debit: true },
       });
       const alreadyLinked = Number(linkedAgg._sum.debit || 0);
-      const remaining = Number(booked.amount) - alreadyLinked;
-      if (debitSum > remaining + AMOUNT_TOLERANCE) {
-        throw new BadRequestException(
-          `Selected debits (₹${debitSum.toFixed(2)}) exceed remaining payment capacity (₹${remaining.toFixed(2)})`,
-        );
-      }
 
       const matched = await tx.bankStatementLine.updateMany({
         where: {

@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, ParseEnumPipe, Patch, Post, Query } from '@nestjs/common';
-import { FinancialAccountType, OrganizationRole } from '@prisma/client';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { OrganizationRole } from '@prisma/client';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import {
@@ -7,6 +7,7 @@ import {
   BulkAssignMovementsDto,
   CreateFinancialAccountDto,
   CreateManualTransactionDto,
+  FinanceBookQueryDto,
   FinanceDateRangeQueryDto,
   UpdateFinancialAccountDto,
 } from './dto/finance.dto';
@@ -50,12 +51,8 @@ export class FinanceController {
 
   @Get('books')
   @Roles(...ALL_ROLES)
-  getBook(
-    @CurrentUser() user: CurrentUserData,
-    @Query('type', new ParseEnumPipe(FinancialAccountType)) type: FinancialAccountType,
-    @Query() query: FinanceDateRangeQueryDto,
-  ) {
-    return this.finance.getBook(user.organizationId, type, {
+  getBook(@CurrentUser() user: CurrentUserData, @Query() query: FinanceBookQueryDto) {
+    return this.finance.getBook(user.organizationId, query.type, {
       dateFrom: query.dateFrom,
       dateTo: query.dateTo,
     });

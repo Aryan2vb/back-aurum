@@ -82,19 +82,28 @@ describe('suggestPaymentsForCredit', () => {
     expect(suggestions[0]?.remaining).toBe(50000);
   });
 
-  it('rejects credits larger than remaining capacity', () => {
+  it('suggests a smaller remaining payment when the credit is extra', () => {
     const suggestions = suggestPaymentsForCredit(line, [
       { ...base, id: 'pay-partial', amount: 50000, remaining: 5000 },
     ]);
-    expect(suggestions).toHaveLength(0);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]?.paymentId).toBe('pay-partial');
   });
 
-  it('rejects amount mismatches beyond ₹1 for exact-size payments', () => {
+  it('treats a ₹10 shortfall as covering remaining', () => {
     const suggestions = suggestPaymentsForCredit(line, [
-      { ...base, id: 'pay-off', amount: 9500, remaining: 9500 },
+      { ...base, id: 'pay-off', amount: 10010, remaining: 10010 },
     ]);
-    // 10k credit vs 9.5k remaining → no fit
-    expect(suggestions).toHaveLength(0);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]?.split).toBe(false);
+  });
+
+  it('still suggests a split when the credit is more than ₹10 short', () => {
+    const suggestions = suggestPaymentsForCredit(line, [
+      { ...base, id: 'pay-off', amount: 10011, remaining: 10011 },
+    ]);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]?.split).toBe(true);
   });
 });
 
@@ -115,6 +124,24 @@ describe('paymentsMatchingCreditSum', () => {
     };
     const matches = paymentsMatchingCreditSum(50000, [payment], '2026-07-20');
     expect(matches).toHaveLength(1);
+  });
+
+  it('matches when selected credits exceed remaining (extra allowed)', () => {
+    const payment = {
+      id: 'pay-50',
+      amount: 50000,
+      remaining: 50000,
+      mode: 'UPI',
+      reference: null,
+      paidAt: '2026-07-20',
+      accountId: 'bank-1',
+      invoiceId: 'inv-1',
+      invoiceNumber: 'INV-1',
+      invoiceStatus: 'PAID',
+      customerName: 'Aryan',
+    };
+    expect(paymentsMatchingCreditSum(50100, [payment], '2026-07-20')).toHaveLength(1);
+    expect(paymentsMatchingCreditSum(49989, [payment], '2026-07-20')).toHaveLength(0);
   });
 });
 
@@ -164,12 +191,24 @@ describe('invoiceBankReconcileStatus', () => {
     ).toBe('partial');
   });
 
-  it('marks fully matched at remaining ≤ ₹1', () => {
+  it('marks fully matched at remaining ≤ ₹10, including extra linked', () => {
     expect(
       invoiceBankReconcileStatus(
         [{ id: 'u', amount: 10000, mode: 'UPI' }],
-        linked([['u', 9999.5]]),
+        linked([['u', 9990]]),
       ),
     ).toBe('full');
+    expect(
+      invoiceBankReconcileStatus(
+        [{ id: 'u', amount: 10000, mode: 'UPI' }],
+        linked([['u', 10050]]),
+      ),
+    ).toBe('full');
+    expect(
+      invoiceBankReconcileStatus(
+        [{ id: 'u', amount: 10000, mode: 'UPI' }],
+        linked([['u', 9989]]),
+      ),
+    ).toBe('partial');
   });
 });

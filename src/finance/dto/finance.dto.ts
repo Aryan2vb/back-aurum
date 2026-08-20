@@ -5,6 +5,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsIn,
   IsNotEmpty,
   IsNumber,
@@ -16,7 +17,11 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { FinancialAccountStatus, FinancialTransactionType } from '@prisma/client';
+import {
+  FinancialAccountStatus,
+  FinancialAccountType,
+  FinancialTransactionType,
+} from '@prisma/client';
 
 export class CreateFinancialAccountDto {
   @IsString()
@@ -197,4 +202,9 @@ export class FinanceDateRangeQueryDto {
   @Max(1000)
   @Type(() => Number)
   limit?: number;
+}
+
+export class FinanceBookQueryDto extends FinanceDateRangeQueryDto {
+  @IsEnum(FinancialAccountType)
+  type: FinancialAccountType;
 }

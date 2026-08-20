@@ -244,18 +244,21 @@ describe('BankStatementService.confirmMatchMany', () => {
     expect(prisma.bankStatementLine.updateMany).not.toHaveBeenCalled();
   });
 
-  it('rejects when selected credits exceed remaining capacity beyond ₹1', async () => {
-    const { prisma } = makeMatchPrisma(
-      [unmatchedLine('line-1', 10000), unmatchedLine('line-2', 20000)],
-      { amount: 50000 },
-    );
+  it('allows selected credits that exceed remaining capacity', async () => {
+    const lines = [unmatchedLine('line-1', 10000), unmatchedLine('line-2', 20000)];
+    const { prisma } = makeMatchPrisma(lines, { amount: 50000 });
     prisma.bankStatementLine.aggregate.mockResolvedValue({ _sum: { credit: 40000 } });
-    const service = new BankStatementService(prisma as any, {} as any, {} as any);
-    await expect(service.confirmMatchMany(['line-1', 'line-2'], 'pay-1', user)).rejects.toThrow(
-      /exceed remaining payment capacity/i,
-    );
-    expect(prisma.$transaction).toHaveBeenCalled();
-    expect(prisma.bankStatementLine.updateMany).not.toHaveBeenCalled();
+    const financeService = {
+      syncAutomaticPayment: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new BankStatementService(prisma as any, financeService as any, {} as any);
+    const result = await service.confirmMatchMany(['line-1', 'line-2'], 'pay-1', user);
+    expect(prisma.bankStatementLine.updateMany).toHaveBeenCalled();
+    expect(result.payment).toMatchObject({
+      linkedCredits: 70000,
+      remaining: 0,
+      complete: true,
+    });
   });
 
   it('upserts Treasury once with the full booked payment amount for split credits', async () => {
