@@ -216,6 +216,8 @@ export class UploadService {
       'image/jpeg': 'jpg',
       'image/webp': 'webp',
       'application/pdf': 'pdf',
+      'image/heic': 'heic',
+      'image/heif': 'heif',
     };
     return map[contentType] ?? 'bin';
   }

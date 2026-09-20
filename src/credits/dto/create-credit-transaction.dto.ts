@@ -1,14 +1,6 @@
 import { IsNumber, IsOptional, IsDateString, IsEnum, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-
-export enum PaymentMethod {
-  CASH = 'CASH',
-  UPI = 'UPI',
-  BANK_TRANSFER = 'BANK_TRANSFER',
-  CHEQUE = 'CHEQUE',
-  CARD = 'CARD',
-  OTHER = 'OTHER',
-}
+import { PaymentMethod } from '@prisma/client';
 
 export class CreateCreditTransactionDto {
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -35,4 +27,8 @@ export class CreateCreditTransactionDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  accountId?: string;
 }

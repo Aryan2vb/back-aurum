@@ -7,11 +7,8 @@ import {
   Logger,
   BadRequestException,
   Post,
-  UseGuards,
 } from '@nestjs/common';
 import { OrganizationRole } from '@prisma/client';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { UploadService } from './upload.service';
@@ -19,7 +16,6 @@ import { PresignUploadDto, DeleteUploadDto } from './dto/presign-upload.dto';
 import { ASSET_CONFIG } from './asset-type.enum';
 
 @Controller('uploads')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class UploadController {
   private readonly logger = new Logger(UploadController.name);
 

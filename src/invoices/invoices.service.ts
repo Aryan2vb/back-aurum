@@ -10,7 +10,9 @@ import { RecordPaymentDto } from './dto/record-payment.dto';
 import { SendInvoiceDto } from './dto/send-invoice.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
 import {
+  BankStatementLineStatus,
   CreditStatus,
+  FinancialTransactionType,
   InvoiceStatus,
   LedgerType,
   Prisma,
@@ -27,10 +29,14 @@ import { generateModernInvoiceHtml } from './utils/generate-modern-html';
 import { PdfService } from './utils/pdf.service';
 import { InvoiceData } from './utils/invoice-types';
 import { InvoiceCalculationService } from './utils/invoice-calculation.service';
+import { StockService } from '../stock/stock.service';
+import { FinanceService } from '../finance/finance.service';
 import { CreateBillBookDto } from './dto/create-bill-book.dto';
 import { buildBillBookHtml, getBillBookTitle } from './utils/bill-book-html';
+import { invoiceBankReconcileStatus } from '../bank-statement/suggest-payments';
 
 const BILL_BOOK_QUERY_BATCH_SIZE = 100;
+const INVOICE_TX = { maxWait: 10_000, timeout: 60_000 };
 
 @Injectable()
 export class InvoicesService {
@@ -41,6 +47,8 @@ export class InvoicesService {
     private readonly creditsService: CreditsService,
     private readonly pdfService: PdfService,
     private readonly calcService: InvoiceCalculationService,
+    private readonly stockService: StockService,
+    private readonly financeService: FinanceService,
   ) {}
 
   private _parsePaymentPaidAt(value: string | undefined, invoiceDate: Date): Date {
@@ -576,8 +584,19 @@ export class InvoicesService {
         });
       }
 
+      await this.stockService.syncSaleStockForInvoice({
+        organizationId,
+        invoiceId: updatedInvoice.id,
+        invoiceNumber: updatedInvoice.invoiceNumber!,
+        saleDate: invoiceDate,
+        items: draft.items,
+        prismaTx: tx,
+      });
+
+      await this.syncInvoiceTreasury(tx, updatedInvoice.id, organizationId, userId);
+
       return updatedInvoice;
-    });
+    }, INVOICE_TX);
   }
 
   private async _persistInvoice(dto: CreateInvoiceDto, user: CurrentUserData, isDraft: boolean) {
@@ -637,6 +656,28 @@ export class InvoicesService {
         });
       }
 
+      // Sequential: resolvePaymentAccount writes on the same transaction client.
+      const paymentCreates: Prisma.InvoicePaymentUncheckedCreateWithoutInvoiceInput[] = [];
+      for (const p of dto.payments ?? []) {
+        const mode = (p.mode as PaymentMethod) ?? PaymentMethod.CASH;
+        const account = await this.financeService.resolvePaymentAccount(
+          tx,
+          organizationId,
+          mode,
+          p.accountId,
+          true,
+        );
+        paymentCreates.push({
+          organizationId,
+          mode,
+          amount: new Decimal(p.amount),
+          reference: p.reference,
+          notes: p.notes,
+          accountId: account?.id ?? null,
+          paidAt: this._parsePaymentPaidAt(p.paidAt, invoiceDate),
+        });
+      }
+
       // 1. Create Invoice
       const invoice = await tx.invoice.create({
         data: {
@@ -673,18 +714,7 @@ export class InvoicesService {
           createdById: userId,
           invoiceNumber,
           sequence: sequenceVal,
-          payments: dto.payments?.length
-            ? {
-                create: dto.payments.map((p) => ({
-                  organizationId,
-                  mode: p.mode,
-                  amount: new Decimal(p.amount),
-                  reference: p.reference,
-                  notes: p.notes,
-                  paidAt: this._parsePaymentPaidAt(p.paidAt, invoiceDate),
-                })),
-              }
-            : undefined,
+          payments: paymentCreates.length ? { create: paymentCreates } : undefined,
           items: {
             create: lineItems.map((item) => ({
               organizationId,
@@ -732,8 +762,20 @@ export class InvoicesService {
         });
       }
 
+      if (!isDraft) {
+        await this.stockService.syncSaleStockForInvoice({
+          organizationId,
+          invoiceId: invoice.id,
+          invoiceNumber: invoiceNumber!,
+          saleDate: invoiceDate,
+          items: lineItems,
+          prismaTx: tx,
+        });
+        await this.syncInvoiceTreasury(tx, invoice.id, organizationId, userId);
+      }
+
       return invoice;
-    });
+    }, INVOICE_TX);
   }
 
   async findAll(query: QueryInvoicesDto, organizationId: string) {
@@ -816,7 +858,7 @@ export class InvoicesService {
               customerId: true,
               customer: { select: { id: true, fullName: true, customerCode: true } },
               _count: { select: { items: true } },
-              payments: { select: { amount: true, mode: true } },
+              payments: { select: { id: true, amount: true, mode: true } },
             },
           }),
     };
@@ -826,12 +868,18 @@ export class InvoicesService {
       this.prisma.invoice.count({ where }),
     ]);
 
+    const paymentIds = invoices.flatMap((inv: any) =>
+      (inv.payments || []).map((payment: { id: string }) => payment.id),
+    );
+    const linkedByPaymentId = await this.linkedBankCreditByPaymentId(organizationId, paymentIds);
+
     return {
-      data: invoices.map((inv) => ({
+      data: invoices.map((inv: any) => ({
         ...inv,
         remainingBalance: new Decimal(inv.totalAmount)
           .minus(new Decimal(inv.paidAmount))
           .toNumber(),
+        bankReconcile: invoiceBankReconcileStatus(inv.payments || [], linkedByPaymentId),
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -864,6 +912,44 @@ export class InvoicesService {
 
     if (!invoice) throw new NotFoundException('Invoice not found');
 
+    const paymentIds = invoice.payments.map((payment) => payment.id);
+    const bankMatches = paymentIds.length
+      ? await this.prisma.bankStatementLine.findMany({
+          where: {
+            organizationId,
+            status: BankStatementLineStatus.MATCHED,
+            invoicePaymentId: { in: paymentIds },
+          },
+          select: {
+            invoicePaymentId: true,
+            txnDate: true,
+            refNumber: true,
+            narration: true,
+            credit: true,
+          },
+        })
+      : [];
+    const matchByPaymentId = new Map<
+      string,
+      {
+        txnDate: Date;
+        refNumber: string | null;
+        narration: string;
+        credit: number;
+      }[]
+    >();
+    for (const row of bankMatches) {
+      if (!row.invoicePaymentId) continue;
+      const list = matchByPaymentId.get(row.invoicePaymentId) || [];
+      list.push({
+        txnDate: row.txnDate,
+        refNumber: row.refNumber,
+        narration: row.narration,
+        credit: Number(row.credit),
+      });
+      matchByPaymentId.set(row.invoicePaymentId, list);
+    }
+
     // Sum all advance amounts applied directly to this invoice
     const advanceApplications = await this.prisma.ledgerEntry.aggregate({
       where: {
@@ -879,8 +965,30 @@ export class InvoicesService {
       .minus(new Decimal(invoice.paidAmount))
       .toDecimalPlaces(2);
 
+    const linkedByPaymentId = new Map<string, number>();
+    for (const [paymentId, lines] of matchByPaymentId) {
+      linkedByPaymentId.set(
+        paymentId,
+        lines.reduce((sum, line) => sum + Number(line.credit || 0), 0),
+      );
+    }
+
     return {
       ...invoice,
+      bankReconcile: invoiceBankReconcileStatus(invoice.payments, linkedByPaymentId),
+      payments: invoice.payments.map((payment) => {
+        const lines = matchByPaymentId.get(payment.id) || [];
+        return {
+          ...payment,
+          bankMatched: lines.length > 0,
+          bankMatches: lines,
+          bankMatch: lines[0] || null,
+          bankReconcile: invoiceBankReconcileStatus(
+            [{ id: payment.id, amount: payment.amount, mode: payment.mode }],
+            linkedByPaymentId,
+          ),
+        };
+      }),
       remainingBalance: remainingPayable.toNumber(),
       advanceAdjustedAmount: advanceAdjustedAmount.toNumber(),
       remainingPayable: remainingPayable.toNumber(),
@@ -916,6 +1024,14 @@ export class InvoicesService {
     const newInvoiceStatus = isFullyPaid ? InvoiceStatus.PAID : InvoiceStatus.PARTIAL;
 
     return this.prisma.$transaction(async (tx) => {
+      const mode = dto.paymentMethod ?? PaymentMethod.CASH;
+      const account = await this.financeService.resolvePaymentAccount(
+        tx,
+        user.organizationId,
+        mode,
+        dto.accountId,
+        true,
+      );
       const updatedInvoice = await tx.invoice.update({
         where: { id, organizationId: user.organizationId },
         data: {
@@ -932,7 +1048,7 @@ export class InvoicesService {
           amount: paymentAmount,
           reference: dto.reference,
           notes: dto.notes,
-          // paidAt defaults to now() in schema — override only if caller provides a date
+          accountId: account?.id ?? null,
         },
       });
 
@@ -979,6 +1095,8 @@ export class InvoicesService {
         this.logger.log(`Udhar ${udhar.id} updated via invoice payment, new paid: ${newUdharPaid}`);
       }
 
+      await this.syncInvoiceTreasury(tx, id, user.organizationId, user.userId);
+
       this.logger.log(
         `Invoice ${invoice.invoiceNumber} payment: ${dto.amount}, new status: ${newInvoiceStatus}`,
       );
@@ -988,7 +1106,7 @@ export class InvoicesService {
         paidAmount: newPaidAmount,
         remainingBalance: new Decimal(invoice.totalAmount).minus(newPaidAmount).toNumber(),
       };
-    });
+    }, INVOICE_TX);
   }
 
   async generatePdf(id: string, organizationId: string): Promise<Buffer> {
@@ -1424,8 +1542,21 @@ export class InvoicesService {
         });
       }
 
+      await this.stockService.purgeTransactionsByReference(organizationId, id, tx);
+      await this.financeService.reverseMissingSources(tx, organizationId, 'INVOICE', id, []);
+
+      const payments = await tx.invoicePayment.findMany({
+        where: { invoiceId: id, organizationId },
+        select: { id: true },
+      });
+      await this.unmatchBankLinesForPayments(
+        tx,
+        organizationId,
+        payments.map((p) => p.id),
+      );
+
       return updated;
-    });
+    }, INVOICE_TX);
   }
 
   async softDelete(id: string, organizationId: string) {
@@ -1434,10 +1565,24 @@ export class InvoicesService {
     });
     if (!inv) throw new NotFoundException('Invoice not found');
 
-    return this.prisma.invoice.update({
-      where: { id, organizationId },
-      data: { deletedAt: new Date() },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const payments = await tx.invoicePayment.findMany({
+        where: { invoiceId: id, organizationId },
+        select: { id: true },
+      });
+      await this.unmatchBankLinesForPayments(
+        tx,
+        organizationId,
+        payments.map((p) => p.id),
+      );
+      await this.stockService.purgeTransactionsByReference(organizationId, id, tx);
+      await this.financeService.reverseMissingSources(tx, organizationId, 'INVOICE', id, []);
+
+      return tx.invoice.update({
+        where: { id, organizationId },
+        data: { deletedAt: new Date() },
+      });
+    }, INVOICE_TX);
   }
 
   async update(id: string, dto: UpdateInvoiceDto, user: CurrentUserData) {
@@ -1492,6 +1637,11 @@ export class InvoicesService {
         status = financials.paidAmount.gt(0) ? InvoiceStatus.PARTIAL : InvoiceStatus.UNPAID;
       }
     }
+
+    const settings = await this.prisma.orgInvoiceSettings.findUnique({
+      where: { organizationId },
+    });
+    if (!settings) throw new BadRequestException('Invoice settings not found');
 
     return this.prisma.$transaction(async (tx) => {
       const existingItems = existing.items;
@@ -1551,8 +1701,13 @@ export class InvoicesService {
       if (dto.payments !== undefined) {
         const existingPaymentsToPreserve = [...existing.payments];
 
-        // Delete all existing payments
+        // Delete all existing payments — clear bank matches first (loose string FK)
         if (existing.payments.length > 0) {
+          await this.unmatchBankLinesForPayments(
+            tx,
+            organizationId,
+            existing.payments.map((p) => p.id),
+          );
           await tx.invoicePayment.deleteMany({
             where: {
               invoiceId: id,
@@ -1561,28 +1716,34 @@ export class InvoicesService {
           });
         }
 
-        // Create new payments
+        // Create new payments — resolve accounts one at a time (concurrent
+        // resolution can create duplicate default-cash rows).
         if (dto.payments.length > 0) {
-          await tx.invoicePayment.createMany({
-            data: dto.payments.map((p) => ({
+          const paymentRows = [];
+          for (const p of dto.payments) {
+            const account = await this.financeService.resolvePaymentAccount(
+              tx,
+              organizationId,
+              p.mode as PaymentMethod,
+              p.accountId,
+              true,
+            );
+            paymentRows.push({
               invoiceId: id,
               organizationId,
               mode: p.mode,
               amount: new Decimal(p.amount),
               reference: p.reference,
               notes: p.notes,
+              accountId: account?.id ?? null,
               paidAt: this._consumeMatchingExistingPayment(p, existingPaymentsToPreserve)
                 ? new Date(`${p.paidAt}T00:00:00.000Z`)
                 : this._parsePaymentPaidAt(p.paidAt, financials.invoiceDate),
-            })),
-          });
+            });
+          }
+          await tx.invoicePayment.createMany({ data: paymentRows });
         }
       }
-
-      const settings = await tx.orgInvoiceSettings.findUnique({
-        where: { organizationId },
-      });
-      if (!settings) throw new BadRequestException('Invoice settings not found');
 
       let invoiceNumber = existing.invoiceNumber;
       let sequenceVal = existing.sequence;
@@ -1639,6 +1800,7 @@ export class InvoicesService {
           dispatchDocNo: dummyDto.dispatchDocNo,
           destination: dummyDto.destination,
           termsOfDelivery: dummyDto.termsOfDelivery,
+          templateType: dummyDto.templateType,
           invoiceDate: financials.invoiceDate,
           financialYear: financials.financialYear,
           notes: financials.notes,
@@ -1664,10 +1826,21 @@ export class InvoicesService {
           userId: user.userId,
           notes: financials.notes,
         });
+
+        await this.stockService.syncSaleStockForInvoice({
+          organizationId,
+          invoiceId: id,
+          invoiceNumber: invoiceNumber!,
+          saleDate: financials.invoiceDate,
+          items: updated.items,
+          prismaTx: tx,
+        });
+
+        await this.syncInvoiceTreasury(tx, id, organizationId, user.userId);
       }
 
       return updated;
-    });
+    }, INVOICE_TX);
   }
 
   private _mapFinancialItemToDb(item: any, invoiceId: string, organizationId: string) {
@@ -2201,6 +2374,86 @@ export class InvoicesService {
       return generateInvoiceHtml(invoiceData);
     }
   }
+
+  private async linkedBankCreditByPaymentId(organizationId: string, paymentIds: string[]) {
+    const ids = [...new Set(paymentIds.filter(Boolean))];
+    if (!ids.length) return new Map<string, number>();
+    const grouped = await this.prisma.bankStatementLine.groupBy({
+      by: ['invoicePaymentId'],
+      where: {
+        organizationId,
+        status: BankStatementLineStatus.MATCHED,
+        invoicePaymentId: { in: ids },
+      },
+      _sum: { credit: true },
+    });
+    const linked = new Map<string, number>();
+    for (const row of grouped) {
+      if (!row.invoicePaymentId) continue;
+      linked.set(row.invoicePaymentId, Number(row._sum.credit || 0));
+    }
+    return linked;
+  }
+
+  private async syncInvoiceTreasury(
+    tx: Prisma.TransactionClient,
+    invoiceId: string,
+    organizationId: string,
+    userId?: string,
+    allowUnassignedNonCash = true,
+  ) {
+    const payments = await tx.invoicePayment.findMany({
+      where: { invoiceId, organizationId },
+    });
+    for (const payment of payments) {
+      await this.financeService.syncAutomaticPayment(
+        tx,
+        {
+          organizationId,
+          sourceType: 'INVOICE_PAYMENT',
+          sourceId: payment.id,
+          sourceParentType: 'INVOICE',
+          sourceParentId: invoiceId,
+          transactionType: FinancialTransactionType.SALE_RECEIPT,
+          paymentMethod: payment.mode,
+          accountId: payment.accountId,
+          amount: payment.amount,
+          occurredAt: payment.paidAt,
+          description: payment.notes ?? 'Invoice payment',
+          createdById: userId,
+        },
+        allowUnassignedNonCash,
+      );
+    }
+    await this.financeService.reverseMissingSources(
+      tx,
+      organizationId,
+      'INVOICE',
+      invoiceId,
+      payments.map((payment) => payment.id),
+    );
+  }
+
+  private async unmatchBankLinesForPayments(
+    tx: Prisma.TransactionClient,
+    organizationId: string,
+    paymentIds: string[],
+  ) {
+    if (!paymentIds.length) return;
+    await tx.bankStatementLine.updateMany({
+      where: {
+        organizationId,
+        invoicePaymentId: { in: paymentIds },
+        status: BankStatementLineStatus.MATCHED,
+      },
+      data: {
+        status: BankStatementLineStatus.UNMATCHED,
+        invoicePaymentId: null,
+        matchedInvoiceId: null,
+      },
+    });
+  }
+
   private async _syncInvoiceFinancialsWithLedger(
     tx: Prisma.TransactionClient,
     data: {

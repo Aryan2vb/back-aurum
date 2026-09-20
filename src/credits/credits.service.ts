@@ -6,14 +6,24 @@ import { CreateCreditTransactionDto } from './dto/create-credit-transaction.dto'
 import { UpdateCreditTransactionDto } from './dto/update-credit-transaction.dto';
 import { QueryCreditsDto } from './dto/query-credits.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
-import { CreditStatus, LedgerType } from '@prisma/client';
+import {
+  CreditStatus,
+  FinancialTransactionType,
+  LedgerType,
+  PaymentMethod,
+  BankStatementLineStatus,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
+import { FinanceService } from '../finance/finance.service';
 
 @Injectable()
 export class CreditsService {
   private readonly logger = new Logger(CreditsService.name);
 
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private financeService: FinanceService,
+  ) {
     this.logger.log('CreditsService initialized in Pure Ledger mode');
   }
 
@@ -291,12 +301,25 @@ export class CreditsService {
     const diff = newAmount.sub(payment.amount);
 
     return this.prisma.$transaction(async (tx) => {
+      const preserveHistoricalAssignment =
+        dto.paymentMethod === undefined && dto.accountId === undefined;
+      const method =
+        (dto.paymentMethod as PaymentMethod) ?? payment.paymentMethod ?? PaymentMethod.OTHER;
+      const account = await this.financeService.resolvePaymentAccount(
+        tx,
+        user.organizationId,
+        method,
+        dto.accountId ?? payment.accountId,
+        preserveHistoricalAssignment,
+      );
       const updated = await tx.ledgerEntry.update({
         where: { id: transactionId, organizationId: user.organizationId },
         data: {
           amount: newAmount,
           description: dto.notes || payment.description,
           createdAt: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
+          paymentMethod: method,
+          accountId: preserveHistoricalAssignment ? payment.accountId : (account?.id ?? null),
         },
       });
 
@@ -352,7 +375,67 @@ export class CreditsService {
               status: newStatus as any,
             },
           });
+          const invoicePayment = await tx.invoicePayment.findFirst({
+            where: {
+              invoiceId: invoice.id,
+              organizationId: user.organizationId,
+              ledgerEntryId: payment.id,
+            },
+          });
+          if (invoicePayment) {
+            const syncedPayment = await tx.invoicePayment.update({
+              where: { id: invoicePayment.id },
+              data: {
+                amount: newAmount,
+                mode: method,
+                accountId: preserveHistoricalAssignment
+                  ? invoicePayment.accountId
+                  : (account?.id ?? null),
+                paidAt: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
+                notes: dto.notes,
+              },
+            });
+            await this.financeService.syncAutomaticPayment(
+              tx,
+              {
+                organizationId: user.organizationId,
+                sourceType: 'INVOICE_PAYMENT',
+                sourceId: syncedPayment.id,
+                sourceParentType: 'INVOICE',
+                sourceParentId: invoice.id,
+                transactionType: FinancialTransactionType.SALE_RECEIPT,
+                paymentMethod: syncedPayment.mode,
+                accountId: syncedPayment.accountId,
+                amount: syncedPayment.amount,
+                occurredAt: syncedPayment.paidAt,
+                description: syncedPayment.notes,
+                createdById: user.userId,
+              },
+              preserveHistoricalAssignment,
+            );
+          } else {
+            await this.financeService.syncAutomaticPayment(
+              tx,
+              {
+                organizationId: user.organizationId,
+                sourceType: 'UDHAR_PAYMENT',
+                sourceId: payment.id,
+                sourceParentType: 'UDHAR',
+                sourceParentId: udharId,
+                transactionType: FinancialTransactionType.UDHAR_COLLECTION,
+                paymentMethod: method,
+                accountId: account?.id,
+                amount: newAmount,
+                occurredAt: dto.transactionDate ? new Date(dto.transactionDate) : payment.createdAt,
+                description: dto.notes,
+                createdById: user.userId,
+              },
+              preserveHistoricalAssignment,
+            );
+          }
         }
+      } else {
+        await this.syncUdharPayment(tx, updated, udharId, user, preserveHistoricalAssignment);
       }
 
       return updated;
@@ -386,9 +469,21 @@ export class CreditsService {
         );
       }
 
+      // Read the link before the delete: InvoicePayment.ledgerEntryId is SetNull,
+      // so after deleting the ledger entry the payment can no longer be found.
+      const invoicePayment = await tx.invoicePayment.findFirst({
+        where: { organizationId: user.organizationId, ledgerEntryId: transactionId },
+      });
+
       await tx.ledgerEntry.delete({
         where: { id: transactionId, organizationId: user.organizationId },
       });
+      await this.financeService.reverseSource(
+        tx,
+        user.organizationId,
+        'UDHAR_PAYMENT',
+        transactionId,
+      );
 
       const newStatus = newPaid.greaterThanOrEqualTo(udhar.amount)
         ? CreditStatus.PAID
@@ -435,6 +530,26 @@ export class CreditsService {
               status: newStatus as any,
             },
           });
+          if (invoicePayment) {
+            await this.financeService.reverseSource(
+              tx,
+              user.organizationId,
+              'INVOICE_PAYMENT',
+              invoicePayment.id,
+            );
+            await tx.bankStatementLine.updateMany({
+              where: {
+                organizationId: user.organizationId,
+                invoicePaymentId: invoicePayment.id,
+              },
+              data: {
+                status: BankStatementLineStatus.UNMATCHED,
+                invoicePaymentId: null,
+                matchedInvoiceId: null,
+              },
+            });
+            await tx.invoicePayment.delete({ where: { id: invoicePayment.id } });
+          }
         }
       }
     });
@@ -543,6 +658,13 @@ export class CreditsService {
     const totalPaid = udhar.paidAmount.add(amount);
 
     return this.prisma.$transaction(async (tx) => {
+      const method = (dto.paymentMethod as PaymentMethod) ?? PaymentMethod.OTHER;
+      const account = await this.financeService.resolvePaymentAccount(
+        tx,
+        user.organizationId,
+        method,
+        dto.accountId,
+      );
       await tx.udharEntry.update({
         where: { id: udharId, organizationId: user.organizationId },
         data: {
@@ -560,6 +682,9 @@ export class CreditsService {
           description: dto.notes || 'Payment',
           entityId: udharId,
           createdById: user.userId,
+          paymentMethod: method,
+          accountId: account?.id,
+          createdAt: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
         },
       });
 
@@ -589,22 +714,42 @@ export class CreditsService {
           });
 
           // Also create an InvoicePayment record for consistency
-          await tx.invoicePayment.create({
+          const invoicePayment = await tx.invoicePayment.create({
             data: {
               invoiceId: invoice.id,
               organizationId: user.organizationId,
-              mode: dto.paymentMethod || 'OTHER',
+              mode: method,
+              accountId: account?.id,
               amount,
+              ledgerEntryId: ledgerEntry.id,
               reference: dto.referenceNumber,
               notes: dto.notes,
+              paidAt: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
             },
+          });
+          await this.financeService.syncAutomaticPayment(tx, {
+            organizationId: user.organizationId,
+            sourceType: 'INVOICE_PAYMENT',
+            sourceId: invoicePayment.id,
+            sourceParentType: 'INVOICE',
+            sourceParentId: invoice.id,
+            transactionType: FinancialTransactionType.SALE_RECEIPT,
+            paymentMethod: invoicePayment.mode,
+            accountId: invoicePayment.accountId,
+            amount: invoicePayment.amount,
+            occurredAt: invoicePayment.paidAt,
+            description: invoicePayment.notes,
+            createdById: user.userId,
           });
           this.logger.log(`Invoice ${invoice.id} synced successfully`);
         } else {
           this.logger.warn(`Invoice ${udhar.invoiceId} not found or deleted`);
+          // Still a real collection — book it to the bank book as an udhar payment.
+          await this.syncUdharPayment(tx, ledgerEntry, udharId, user);
         }
       } else {
         this.logger.log(`No invoice linked to udhar ${udharId}`);
+        await this.syncUdharPayment(tx, ledgerEntry, udharId, user);
       }
 
       return ledgerEntry;
@@ -616,6 +761,40 @@ export class CreditsService {
       where: { organizationId, entityId: udharId, type: LedgerType.PAYMENT, deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  private async syncUdharPayment(
+    tx: any,
+    payment: {
+      id: string;
+      amount: Decimal;
+      paymentMethod: PaymentMethod | null;
+      accountId: string | null;
+      createdAt: Date;
+      description: string | null;
+    },
+    udharId: string,
+    user: CurrentUserData,
+    allowUnassignedNonCash = false,
+  ) {
+    await this.financeService.syncAutomaticPayment(
+      tx,
+      {
+        organizationId: user.organizationId,
+        sourceType: 'UDHAR_PAYMENT',
+        sourceId: payment.id,
+        sourceParentType: 'UDHAR',
+        sourceParentId: udharId,
+        transactionType: FinancialTransactionType.UDHAR_COLLECTION,
+        paymentMethod: payment.paymentMethod ?? PaymentMethod.OTHER,
+        accountId: payment.accountId,
+        amount: payment.amount,
+        occurredAt: payment.createdAt,
+        description: payment.description,
+        createdById: user.userId,
+      },
+      allowUnassignedNonCash,
+    );
   }
 
   private calculateNextReminderDate(fromDate: Date, frequency: string): Date {

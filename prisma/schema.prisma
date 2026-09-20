@@ -51,13 +51,44 @@ model Organization {
   locations          Location[]
   metaTrackings      MetaTracking[]
   invoiceSettings    OrgInvoiceSettings?
+  accessPolicy       OrgAccessPolicy?
   invitations        OrganizationInvitation[]
   members            OrganizationMember[]
   sessions           Session[]
   socialContexts     SocialContext[]
+  vendors            Vendor[]
+  stockBalances      StockBalance[]
+  stockLedgers       StockLedger[]
+  metalPurities      OrgMetalPurity[]
+  purchaseInvoices   PurchaseInvoice[]
+  purchaseInvoiceItems PurchaseInvoiceItem[]
+  purchasePayments   PurchasePayment[]
+  financialAccounts FinancialAccount[]
+  financialTransactions FinancialTransaction[]
+  financialMovements FinancialMovement[]
+  bankStatementImports BankStatementImport[]
+  bankStatementLines   BankStatementLine[]
+  udharEntries           UdharEntry[]
 
   @@index([status])
   @@index([deletedAt])
+}
+
+/// Owner-defined login/API window + which modules ADMIN/STAFF/VIEWER may open.
+/// OWNER is always exempt from the window and always has every module.
+model OrgAccessPolicy {
+  organizationId      String       @id
+  /// When true, non-OWNER members may only login/call APIs between start–end (org timezone).
+  accessWindowEnabled Boolean      @default(false)
+  /// HH:mm in organization.timezone (inclusive start).
+  accessWindowStart   String       @default("09:00")
+  /// HH:mm in organization.timezone (exclusive end). Supports overnight (e.g. 22:00→06:00).
+  accessWindowEnd     String       @default("20:00")
+  /// module -> roles allowed (ADMIN|STAFF|VIEWER). Missing module = all three allowed.
+  moduleAccess        Json         @default("{}")
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model OrganizationMember {
@@ -70,6 +101,7 @@ model OrganizationMember {
   organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId])
   @@unique([userId, organizationId])
   @@index([organizationId])
   @@index([userId])
@@ -304,30 +336,33 @@ model AuditLog {
 }
 
 model LedgerEntry {
-  id             String       @id @default(uuid())
-  organizationId String
-  customerId     String
-  amount         Decimal      @db.Decimal(12, 2)
-  type           LedgerType
-  description    String?
+  id                     String         @id @default(uuid())
+  organizationId         String
+  customerId             String
+  amount                 Decimal        @db.Decimal(12, 2)
+  type                   LedgerType
+  description            String?
   /// ID of the related entity (Invoice ID, UdharEntry ID, AdvanceEntry ID, etc.)
-  entityId       String?
+  entityId               String?
   /// For ADVANCE_TRANSFER_OUT/IN pairs — points to the counterpart LedgerEntry id.
   /// For ADVANCE_APPLIED — points to the UdharEntry being offset.
   /// For ADVANCE_REFUND  — points to the source ADVANCE_RECEIVED LedgerEntry id.
   referenceLedgerEntryId String?
   /// Direct invoice FK for ADVANCE_APPLIED entries — enables fast advance lookup per invoice.
-  invoiceId      String?
+  invoiceId              String?
   /// Payment method stored on ADVANCE_RECEIVED / ADVANCE_REFUND entries.
-  paymentMethod  PaymentMethod?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  deletedAt      DateTime?
-  createdById    String?
-  createdBy      User?        @relation("LedgerCreatedBy", fields: [createdById], references: [id])
-  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  udharEntry     UdharEntry?
+  paymentMethod          PaymentMethod?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  deletedAt              DateTime?
+  createdById            String?
+  accountId              String?
+  createdBy              User?          @relation("LedgerCreatedBy", fields: [createdById], references: [id])
+  customer               Customer       @relation(fields: [customerId], references: [id])
+  organization           Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  udharEntry             UdharEntry?
+  invoicePayments        InvoicePayment[]
+  financialAccount       FinancialAccount? @relation(fields: [accountId], references: [id])
 
   @@index([organizationId])
   @@index([customerId])
@@ -336,6 +371,7 @@ model LedgerEntry {
   @@index([createdAt])
   @@index([organizationId, customerId, type])
   @@index([invoiceId])
+  @@index([accountId])
 }
 
 model UdharEntry {
@@ -355,7 +391,8 @@ model UdharEntry {
   deletedAt         DateTime?
   nextReminderDate  DateTime?
   reminderFrequency ReminderFrequency?
-  customer          Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer          Customer           @relation(fields: [customerId], references: [id])
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invoice           Invoice?           @relation(fields: [invoiceId], references: [id])
   ledgerEntry       LedgerEntry        @relation(fields: [ledgerEntryId], references: [id], onDelete: Cascade)
 
@@ -460,6 +497,7 @@ model Invoice {
   items                   InvoiceItem[]
   payments                InvoicePayment[]
   udharEntries            UdharEntry[]
+  bankStatementMatches    BankStatementLine[]
 
   @@unique([organizationId, invoiceNumber])
   @@unique([organizationId, financialYear, sequence])
@@ -536,14 +574,20 @@ model InvoicePayment {
   notes          String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+  accountId      String?
+  ledgerEntryId  String?       @unique
   invoice        Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  financialAccount FinancialAccount? @relation(fields: [accountId], references: [id])
+  ledgerEntry    LedgerEntry?  @relation(fields: [ledgerEntryId], references: [id], onDelete: SetNull)
+  bankStatementLines BankStatementLine[]
 
   @@index([invoiceId])
   @@index([organizationId])
   @@index([organizationId, mode])
   @@index([organizationId, paidAt])
   @@index([organizationId, mode, paidAt])
+  @@index([accountId])
 }
 
 model SystemConfig {
@@ -695,4 +739,349 @@ enum LedgerType {
   ADVANCE_TRANSFER_IN
   /// Advance balance returned to the customer in cash / UPI / etc.
   ADVANCE_REFUND
+}
+
+enum StockTransactionType {
+  OPENING_BALANCE
+  PURCHASE
+  SALE
+  ADJUSTMENT
+}
+
+model Vendor {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  phone          String?
+  email          String?
+  gstin          String?
+  address        String?
+  stateCode      String?
+  stateName      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  purchases    PurchaseInvoice[]
+
+  @@index([organizationId])
+}
+
+model OrgMetalPurity {
+  id             String    @id @default(uuid())
+  organizationId String
+  metalType      MetalType
+  label          String
+  sortOrder      Int       @default(0)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, metalType, label])
+  @@index([organizationId, metalType, isActive])
+}
+
+model StockBalance {
+  id             String    @id @default(uuid())
+  organizationId String
+  metalType      MetalType
+  purity         String
+  quantity       Decimal   @default(0) @db.Decimal(10, 3)
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, metalType, purity])
+  @@index([organizationId])
+}
+
+model StockLedger {
+  id              String               @id @default(uuid())
+  organizationId  String
+  date            DateTime             @default(now())
+  metalType       MetalType
+  purity          String
+  transactionType StockTransactionType
+  quantityIn      Decimal              @default(0) @db.Decimal(10, 3)
+  quantityOut     Decimal              @default(0) @db.Decimal(10, 3)
+  runningBalance  Decimal              @db.Decimal(10, 3)
+  rate            Decimal?             @db.Decimal(12, 4)
+  totalValue      Decimal?             @db.Decimal(14, 4)
+  referenceId     String?
+  notes           String?
+
+  createdAt    DateTime     @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, metalType, purity])
+  @@index([organizationId, date])
+}
+
+model PurchaseInvoice {
+  id             String    @id @default(uuid())
+  organizationId String
+  vendorId       String?
+  invoiceNumber  String?
+  billSeries     String?
+  vendorName       String?
+  vendorGstin      String?
+  vendorStateCode  String?
+  vendorStateName  String?
+  purchaseDate   DateTime  @default(now())
+  dueDate        DateTime?
+  metalType      MetalType
+  purity         String
+  totalWeight    Decimal   @db.Decimal(10, 3)
+  rate           Decimal?  @db.Decimal(12, 4)
+  totalAmount    Decimal?  @db.Decimal(14, 2)
+  taxableAmount  Decimal?  @db.Decimal(14, 2)
+  taxType        TaxType   @default(CGST_SGST)
+  cgstRate       Decimal   @default(1.5) @db.Decimal(5, 2)
+  sgstRate       Decimal   @default(1.5) @db.Decimal(5, 2)
+  igstRate       Decimal   @default(0) @db.Decimal(5, 2)
+  cgstAmount     Decimal   @default(0) @db.Decimal(12, 2)
+  sgstAmount     Decimal   @default(0) @db.Decimal(12, 2)
+  igstAmount     Decimal   @default(0) @db.Decimal(12, 2)
+  grandTotal     Decimal?  @db.Decimal(14, 2)
+  paidAmount     Decimal   @default(0) @db.Decimal(14, 2)
+  status         PurchaseStatus @default(UNPAID)
+  addGst         Boolean   @default(false)
+  gstInclusive   Boolean   @default(false)
+  totalGoldWeight Decimal  @default(0) @db.Decimal(10, 3)
+  totalSilverWeight Decimal @default(0) @db.Decimal(10, 3)
+  totalMetalAmount Decimal  @default(0) @db.Decimal(14, 2)
+  totalHallmarkingCharges Decimal @default(0) @db.Decimal(12, 2)
+  totalOtherCharges Decimal @default(0) @db.Decimal(12, 2)
+  adjustment     Decimal   @default(0) @db.Decimal(12, 2)
+  notes          String?
+  /// Optional scrap bill / supplier invoice (PDF or photo) stored in R2
+  attachmentUrl  String?
+  attachmentKey  String?
+  attachmentName String?
+  attachmentMime String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  vendor       Vendor?      @relation(fields: [vendorId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        PurchaseInvoiceItem[]
+  payments     PurchasePayment[]
+
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId])
+  @@index([organizationId, status])
+}
+
+model PurchaseInvoiceItem {
+  id                String    @id @default(uuid())
+  purchaseInvoiceId String
+  organizationId    String
+  slNo              Int
+  itemName          String?
+  metalType         MetalType
+  purity            String
+  grossWeight       Decimal   @db.Decimal(10, 3)
+  netWeight         Decimal   @db.Decimal(10, 3)
+  rate              Decimal?  @db.Decimal(12, 4)
+  hallmarkingCharge Decimal   @default(0) @db.Decimal(8, 2)
+  otherCharges      Decimal   @default(0) @db.Decimal(12, 2)
+  totalAmount       Decimal   @db.Decimal(14, 2)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  purchaseInvoice PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseInvoiceId])
+  @@index([organizationId])
+  @@index([organizationId, metalType, purity])
+}
+
+model PurchasePayment {
+  id                 String        @id @default(uuid())
+  purchaseInvoiceId  String
+  organizationId     String
+  mode               PaymentMethod
+  amount             Decimal       @db.Decimal(12, 2)
+  reference          String?
+  paidAt             DateTime      @default(now())
+  notes              String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  accountId          String?
+
+  purchaseInvoice PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  financialAccount FinancialAccount? @relation(fields: [accountId], references: [id])
+  bankStatementLines BankStatementLine[]
+
+  @@index([purchaseInvoiceId])
+  @@index([organizationId])
+  @@index([organizationId, mode])
+  @@index([organizationId, paidAt])
+  @@index([accountId])
+}
+
+model FinancialAccount {
+  id             String                 @id @default(uuid())
+  organizationId String
+  name           String
+  type           FinancialAccountType
+  status         FinancialAccountStatus @default(ACTIVE)
+  isDefault      Boolean                @default(false)
+  bankName       String?
+  accountNumber  String?
+  ifsc           String?
+  notes          String?
+  createdById    String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  movements      FinancialMovement[]
+  invoicePayments InvoicePayment[]
+  ledgerEntries  LedgerEntry[]
+  purchasePayments PurchasePayment[]
+  bankStatementImports BankStatementImport[]
+  bankStatementLines   BankStatementLine[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, type, status])
+  @@index([organizationId, isDefault])
+}
+
+model BankStatementImport {
+  id             String              @id @default(uuid())
+  organizationId String
+  accountId      String
+  filename       String
+  importedAt     DateTime            @default(now())
+  rowCount       Int                 @default(0)
+  creditCount    Int                 @default(0)
+  debitCount     Int                 @default(0)
+  newCount       Int                 @default(0)
+  skippedCount   Int                 @default(0)
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account        FinancialAccount    @relation(fields: [accountId], references: [id])
+  lines          BankStatementLine[]
+
+  @@index([organizationId, importedAt])
+  @@index([accountId])
+}
+
+model BankStatementLine {
+  id               String                  @id @default(uuid())
+  organizationId   String
+  importId         String
+  accountId        String
+  txnDate          DateTime
+  valueDate        DateTime?
+  narration        String
+  debit            Decimal                 @db.Decimal(14, 2)
+  credit           Decimal                 @db.Decimal(14, 2)
+  refNumber        String?
+  closingBalance   Decimal?                @db.Decimal(14, 2)
+  fingerprint      String
+  status           BankStatementLineStatus @default(UNMATCHED)
+  matchedInvoiceId        String?
+  invoicePaymentId        String?
+  purchasePaymentId       String?
+  financialTransactionId  String?
+  createdAt               DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  import           BankStatementImport     @relation(fields: [importId], references: [id], onDelete: Cascade)
+  account          FinancialAccount        @relation(fields: [accountId], references: [id])
+  matchedInvoice   Invoice?                @relation(fields: [matchedInvoiceId], references: [id], onDelete: SetNull)
+  invoicePayment   InvoicePayment?         @relation(fields: [invoicePaymentId], references: [id], onDelete: SetNull)
+  purchasePayment  PurchasePayment?        @relation(fields: [purchasePaymentId], references: [id], onDelete: SetNull)
+  financialTransaction FinancialTransaction? @relation(fields: [financialTransactionId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, accountId, fingerprint])
+  @@index([organizationId, status])
+  @@index([organizationId, accountId, status])
+  @@index([organizationId, invoicePaymentId])
+  @@index([organizationId, status, invoicePaymentId])
+  @@index([organizationId, purchasePaymentId])
+  @@index([organizationId, status, purchasePaymentId])
+  @@index([organizationId, financialTransactionId])
+  @@index([importId])
+}
+
+model FinancialTransaction {
+  id               String                   @id @default(uuid())
+  organizationId   String
+  type             FinancialTransactionType
+  sourceType       String
+  sourceId         String
+  sourceParentType String?
+  sourceParentId   String?
+  description      String?
+  reference        String?
+  paymentMethod    PaymentMethod?
+  occurredAt       DateTime                 @default(now())
+  createdById      String?
+  reversedAt       DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  organization     Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  movements        FinancialMovement[]
+  bankStatementLines BankStatementLine[]
+
+  @@unique([organizationId, sourceType, sourceId])
+  @@index([organizationId, occurredAt])
+  @@index([organizationId, sourceParentType, sourceParentId])
+  @@index([organizationId, reversedAt])
+}
+
+model FinancialMovement {
+  id             String               @id @default(uuid())
+  organizationId String
+  transactionId  String
+  accountId      String?
+  amount         Decimal              @db.Decimal(14, 2)
+  description    String?
+  createdAt      DateTime             @default(now())
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transaction    FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account        FinancialAccount?    @relation(fields: [accountId], references: [id])
+
+  @@index([organizationId, accountId])
+  @@index([transactionId])
+}
+
+enum PurchaseStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+enum FinancialAccountType {
+  CASH
+  BANK
+}
+
+enum FinancialAccountStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum FinancialTransactionType {
+  OPENING_BALANCE
+  SALE_RECEIPT
+  UDHAR_COLLECTION
+  ADVANCE_RECEIPT
+  ADVANCE_REFUND
+  PURCHASE_PAYMENT
+  CASH_BANK_TRANSFER
+  BANK_BANK_TRANSFER
+  ADJUSTMENT
+}
+
+enum BankStatementLineStatus {
+  UNMATCHED
+  MATCHED
+  IGNORED
 }

@@ -1,6 +1,6 @@
 import { IsNumber, IsOptional, IsDateString, IsEnum, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PaymentMethod } from './create-credit-transaction.dto';
+import { PaymentMethod } from '@prisma/client';
 
 export class UpdateCreditTransactionDto {
   @IsOptional()
@@ -28,4 +28,8 @@ export class UpdateCreditTransactionDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  accountId?: string;
 }

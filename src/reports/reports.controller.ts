@@ -1,14 +1,11 @@
-import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Param } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { ReportFiltersDto } from './dto/report-filters.dto';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { OrganizationRole } from '@prisma/client';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 
 @Controller('reports')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 

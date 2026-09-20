@@ -10,7 +10,7 @@ async function bootstrap() {
   });
 
   // Enable CORS
-  app.enableCors();
+  app.enableCors({ exposedHeaders: ['Content-Disposition'] });
   logger.log('CORS enabled');
 
   // Global validation pipe
