@@ -42,15 +42,28 @@ const item = (over: Record<string, any> = {}) => ({
   ...over,
 });
 
-/** Sum of colspans (default 1) for every row of the main items table. */
+/**
+ * Width of every row of the main items table, counting cells carried down from an
+ * earlier row by a rowspan (the merged payments cell), so a misaligned row shows up.
+ */
 const rowWidths = (html: string): number[] => {
   const table = html.match(/<table class="items-table">([\s\S]*?)<\/table>/)![1];
-  return [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map(([, row]) =>
-    [...row.matchAll(/<t[dh]([^>]*)>/g)].reduce(
-      (sum, [, attrs]) => sum + Number(/colspan="(\d+)"/.exec(attrs)?.[1] ?? 1),
-      0,
-    ),
-  );
+  const carried: { span: number; remaining: number }[] = [];
+  return [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map(([, row]) => {
+    let width = carried.reduce((sum, c) => sum + c.span, 0);
+    const added: { span: number; remaining: number }[] = [];
+    for (const [, attrs] of row.matchAll(/<t[dh]([^>]*)>/g)) {
+      const span = Number(/colspan="(\d+)"/.exec(attrs)?.[1] ?? 1);
+      const rowspan = Number(/rowspan="(\d+)"/.exec(attrs)?.[1] ?? 1);
+      width += span;
+      if (rowspan > 1) added.push({ span, remaining: rowspan - 1 });
+    }
+    carried.forEach((c) => (c.remaining -= 1));
+    for (let i = carried.length - 1; i >= 0; i--)
+      if (carried[i].remaining <= 0) carried.splice(i, 1);
+    carried.push(...added);
+    return width;
+  });
 };
 
 describe('generateInvoiceHtml (standard template) purity column', () => {
@@ -103,5 +116,80 @@ describe('generateInvoiceHtml (standard template) purity column', () => {
       }),
     );
     expect(new Set(rowWidths(html))).toEqual(new Set([8]));
+  });
+});
+
+describe('generateInvoiceHtml (standard template) payment placement', () => {
+  const payments = [
+    { mode: 'UPI', amount: 50000, paidAt: '2025-04-01T00:00:00.000Z' },
+    { mode: 'CASH', amount: 20000, paidAt: '2025-04-02T00:00:00.000Z' },
+  ];
+  const html = generateInvoiceHtml(baseData([item({ purityLabel: '22K' })], { payments }));
+  const table = html.match(/<table class="items-table">([\s\S]*?)<\/table>/)![1];
+
+  it('lists each payment on the left, inside the tax block', () => {
+    const cell = table.match(
+      /<td colspan="3" rowspan="(\d+)" class="payments-cell">([\s\S]*?)<\/td>/,
+    );
+    expect(cell).not.toBeNull();
+    expect(cell![2]).toContain('UPI');
+    expect(cell![2]).toContain('CASH');
+    // merged across every tax line: taxable value + CGST + SGST + round off
+    expect(cell![1]).toBe('4');
+  });
+
+  it('shows only the payment lines, without a "Payment Received" heading', () => {
+    expect(html).not.toContain('Payment Received');
+    const cell = table.match(
+      /<td colspan="3" rowspan="\d+" class="payments-cell">([\s\S]*?)<\/td>/,
+    )![1];
+    expect(cell.startsWith('<div>UPI')).toBe(true);
+  });
+
+  it('puts the payments cell in the same row as Taxable Value, before its label', () => {
+    const firstTaxRow = table.match(/<tr class="tax-row"[^>]*>([\s\S]*?)<\/tr>/)![1];
+    expect(firstTaxRow.indexOf('payments-cell')).toBeGreaterThan(-1);
+    expect(firstTaxRow.indexOf('payments-cell')).toBeLessThan(
+      firstTaxRow.indexOf('Taxable Value:'),
+    );
+  });
+
+  it('no longer prints full-width payment rows between Total Amount and Balance Due', () => {
+    const between = table.slice(table.indexOf('Total Amount'), table.indexOf('Balance Due'));
+    expect(between).not.toContain('UPI');
+    expect(between).not.toContain('CASH');
+    expect(between).not.toContain('colspan="8"');
+  });
+
+  it('keeps the tax labels on the right of the payments cell (colspan 4)', () => {
+    expect(table).toContain('<td colspan="4" class="text-right font-bold">Taxable Value:</td>');
+  });
+
+  it('keeps the original full-width layout when there are no payments', () => {
+    const plain = generateInvoiceHtml(baseData([item({ purityLabel: '22K' })]));
+    expect(plain).not.toContain('class="payments-cell"'); // the CSS rule is always present, the cell is not
+    expect(plain).toContain('<td colspan="7" class="text-right font-bold">Taxable Value:</td>');
+  });
+
+  it('still lists every tax line (hallmarking, IGST) and stays aligned with a hallmarking charge', () => {
+    const igst = generateInvoiceHtml(
+      baseData([item({ purityLabel: '22K' })], {
+        payments,
+        taxType: 'IGST',
+        hallmarkingCharge: 45,
+        taxes: {
+          cgstRate: 0,
+          sgstRate: 0,
+          cgstAmount: 0,
+          sgstAmount: 0,
+          igstRate: 3,
+          igstAmount: 3,
+        },
+      }),
+    );
+    expect(igst).toContain('Hallmarking Charges:');
+    expect(igst).toContain('IGST(3%)');
+    expect(igst).toMatch(/rowspan="4"/); // taxable + hallmarking + IGST + round off
+    expect(new Set(rowWidths(igst))).toEqual(new Set([8]));
   });
 });
