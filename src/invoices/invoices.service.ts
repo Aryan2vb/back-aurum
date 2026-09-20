@@ -23,6 +23,7 @@ import { getFinancialYear } from './utils/invoice-calculations';
 import { FinalizeInvoiceDto } from './dto/finalize-invoice.dto';
 import { generateInvoiceHtml } from './utils/generate-invoice-html';
 import { generateJewelleryInvoiceHtml } from './utils/generate-jewellery-html';
+import { normalizeTemplateType } from './utils/invoice-template';
 import { generateModernInvoiceHtml } from './utils/generate-modern-html';
 import { PdfService } from './utils/pdf.service';
 import { InvoiceData } from './utils/invoice-types';
@@ -666,7 +667,7 @@ export class InvoicesService {
           dispatchDocNo: dto.dispatchDocNo,
           destination: dto.destination,
           termsOfDelivery: dto.termsOfDelivery,
-          templateType: dto.templateType ?? 'jewellery',
+          templateType: normalizeTemplateType(dto.templateType) ?? 'jewellery',
           invoiceDate,
           financialYear,
           notes: financials.notes,
@@ -1234,9 +1235,10 @@ export class InvoicesService {
         })) || [],
     };
 
-    if (invoice.templateType === 'jewellery') {
+    const templateType = normalizeTemplateType(invoice.templateType);
+    if (templateType === 'jewellery') {
       return generateJewelleryInvoiceHtml(invoiceData);
-    } else if (invoice.templateType === 'modern') {
+    } else if (templateType === 'modern') {
       return generateModernInvoiceHtml(invoiceData);
     } else {
       return generateInvoiceHtml(invoiceData);
@@ -1639,6 +1641,8 @@ export class InvoicesService {
           dispatchDocNo: dummyDto.dispatchDocNo,
           destination: dummyDto.destination,
           termsOfDelivery: dummyDto.termsOfDelivery,
+          // Only touch the format when the client actually chose one
+          ...(dto.templateType ? { templateType: normalizeTemplateType(dto.templateType) } : {}),
           invoiceDate: financials.invoiceDate,
           financialYear: financials.financialYear,
           notes: financials.notes,

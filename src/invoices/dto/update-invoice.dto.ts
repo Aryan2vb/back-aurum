@@ -7,9 +7,11 @@ import {
   Min,
   IsDateString,
   IsBoolean,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateInvoiceItemDto, CreateInvoicePaymentDto } from './create-invoice.dto';
+import { INVOICE_TEMPLATE_INPUTS } from '../utils/invoice-template';
 
 export class UpdateInvoiceDto {
   @IsString()
@@ -27,7 +29,8 @@ export class UpdateInvoiceDto {
   @IsOptional()
   paidAmount?: number;
 
-  @IsString()
+  /** Print format for this invoice: "standard" | "modern" | "jewellery" ("classic"/"default" = standard). */
+  @IsIn(INVOICE_TEMPLATE_INPUTS as string[])
   @IsOptional()
   templateType?: string;
 
