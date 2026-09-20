@@ -845,6 +845,95 @@ describe('InvoicesService invoice sequence allocation', () => {
   });
 });
 
+describe('InvoicesService.update print format', () => {
+  const organizationId = 'org-1';
+
+  const build = (existingTemplate: string) => {
+    const tx = {
+      invoice: {
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'invoice-1', ...data })),
+      },
+      invoiceItem: { deleteMany: jest.fn(), createMany: jest.fn() },
+      invoicePayment: { deleteMany: jest.fn(), createMany: jest.fn() },
+      orgInvoiceSettings: { findUnique: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      invoice: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'invoice-1',
+          organizationId,
+          customerId: 'customer-1',
+          status: 'PAID',
+          paidAmount: new Decimal(103),
+          modeOfPayment: 'CASH',
+          templateType: existingTemplate,
+          invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
+          items: [],
+          payments: [],
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(tx)),
+    };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any) as any;
+    service._calculateInvoiceFinancials = jest.fn().mockResolvedValue({
+      taxType: 'CGST_SGST',
+      placeOfSupply: '07',
+      subtotal: new Decimal(100),
+      taxableAmount: new Decimal(100),
+      cgstRate: new Decimal(1.5),
+      sgstRate: new Decimal(1.5),
+      igstRate: new Decimal(0),
+      cgstAmount: new Decimal(1.5),
+      sgstAmount: new Decimal(1.5),
+      igstAmount: new Decimal(0),
+      totalHallmarkingCharges: new Decimal(0),
+      roundOff: new Decimal(0),
+      grandTotal: new Decimal(103),
+      paidAmount: new Decimal(103),
+      metalRateSource: 'MANUAL',
+      metalRateDate: new Date('2025-04-01T00:00:00.000Z'),
+      companySnapshot: { version: 1, data: {} },
+      buyerSnapshot: { version: 1, data: { name: 'B' } },
+      invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
+      financialYear: '2025-26',
+      notes: '',
+      lineItems: [],
+    });
+    service._syncInvoiceFinancialsWithLedger = jest.fn();
+    return { service, tx };
+  };
+
+  it('saves a new format chosen while editing a finalized standard invoice', async () => {
+    const { service, tx } = build('standard');
+    await service.update(
+      'invoice-1',
+      { templateType: 'jewellery' },
+      { organizationId, userId: 'u' },
+    );
+    expect(tx.invoice.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ templateType: 'jewellery' }) }),
+    );
+  });
+
+  it('stores the canonical name when the editor sends the "classic" alias', async () => {
+    const { service, tx } = build('jewellery');
+    await service.update('invoice-1', { templateType: 'classic' }, { organizationId, userId: 'u' });
+    expect(tx.invoice.update.mock.calls[0][0].data.templateType).toBe('standard');
+  });
+
+  it('leaves the stored format alone when the update does not mention one', async () => {
+    const { service, tx } = build('jewellery');
+    await service.update(
+      'invoice-1',
+      { customerId: 'customer-2' },
+      { organizationId, userId: 'u' },
+    );
+    expect(tx.invoice.update.mock.calls[0][0].data).not.toHaveProperty('templateType');
+  });
+});
+
 describe('InvoicesService bill book', () => {
   const organizationId = 'org-1';
 

@@ -10,10 +10,12 @@ import {
   IsDateString,
   IsPositive,
   IsBoolean,
+  IsIn,
   Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MetalType, MakingChargesType, PaymentMethod } from '@prisma/client';
+import { INVOICE_TEMPLATE_INPUTS } from '../utils/invoice-template';
 
 export class CreateInvoiceItemDto {
   @IsString()
@@ -151,8 +153,8 @@ export class CreateInvoiceDto {
   @Type(() => CreateInvoicePaymentDto)
   payments?: CreateInvoicePaymentDto[];
 
-  /** "standard" or "jewellery" — defaults to "jewellery" for this module. */
-  @IsString()
+  /** "standard" | "modern" | "jewellery" ("classic"/"default" = standard). Defaults to "jewellery". */
+  @IsIn(INVOICE_TEMPLATE_INPUTS as string[])
   @IsOptional()
   templateType?: string;
 
