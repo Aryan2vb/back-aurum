@@ -95,6 +95,69 @@ export function generateInvoiceHtml(data: InvoiceData): string {
   const totalCgst = hsnSummary.reduce((sum, h) => sum + h.cgstAmount, 0);
   const totalSgst = hsnSummary.reduce((sum, h) => sum + h.sgstAmount, 0);
   const totalTax = hsnSummary.reduce((sum, h) => sum + h.totalTaxAmount, 0);
+  // Totals block: tax lines sit on the right; when the invoice has payments they are
+  // listed on the left of the same block, in one merged cell beside the tax lines,
+  // instead of as full-width rows under the total.
+  const paymentLines = (data.payments ?? []).map((p: any) => formatPaymentLine(p, formatCurrency));
+  const hasPayments = paymentLines.length > 0;
+
+  const taxLines: Array<{
+    label: string;
+    value: string;
+    boldLabel?: boolean;
+    boldValue?: boolean;
+  }> = [
+    {
+      label: 'Taxable Value:',
+      value: formatCurrency(totalTaxableValue),
+      boldLabel: true,
+      boldValue: true,
+    },
+    ...(hallmarkingCharge > 0
+      ? [{ label: 'Hallmarking Charges:', value: formatCurrency(hallmarkingCharge) }]
+      : []),
+    ...(data.taxType === 'IGST'
+      ? [
+          {
+            label: `IGST(${taxes.igstRate}%)`,
+            value: formatCurrency(taxes.igstAmount || 0),
+            boldLabel: true,
+          },
+        ]
+      : [
+          {
+            label: `CGST(${taxes.cgstRate}%)`,
+            value: formatCurrency(taxes.cgstAmount || 0),
+            boldLabel: true,
+          },
+          {
+            label: `SGST(${taxes.sgstRate}%)`,
+            value: formatCurrency(taxes.sgstAmount || 0),
+            boldLabel: true,
+          },
+        ]),
+    {
+      label: 'ROUND OFF',
+      value: `${roundOff >= 0 ? '' : '(-)'}${formatCurrency(Math.abs(roundOff))}`,
+      boldLabel: true,
+    },
+  ];
+  const labelColspan = hasPayments ? 4 : 7;
+  const taxRowsHtml = taxLines
+    .map(
+      (line, i) => `<tr class="tax-row"${i === 0 ? ' style="border-top: 1px solid #000;"' : ''}>
+          ${
+            i === 0 && hasPayments
+              ? `<td colspan="3" rowspan="${taxLines.length}" class="payments-cell">${paymentLines
+                  .map((l) => `<div>${l}</div>`)
+                  .join('')}</td>`
+              : ''
+          }
+          <td colspan="${labelColspan}" class="text-right${line.boldLabel ? ' font-bold' : ''}">${line.label}</td>
+          <td class="text-right${line.boldValue ? ' font-bold' : ''}">${line.value}</td>
+        </tr>`,
+    )
+    .join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -126,11 +189,11 @@ export function generateInvoiceHtml(data: InvoiceData): string {
     .mantra-text { text-align: center; font-size: 10px; font-style: italic; padding: 2px 8px; }
     .logo-container { display: flex; justify-content: space-between; align-items: center; padding: 4px 12px; border: 1px solid #000; border-bottom: none; }
     .logo-container .main-logo img { width: 60px; height: 60px; object-fit: cover; border-radius: 50%; border: 1px solid #eee; }
-    .logo-container .bis-logo img { max-height: 32px; max-width: 80px; object-fit: contain; }
+    .logo-container .bis-logo img { max-height: 60px; max-width: 150px; object-fit: contain; }
     .signature-area-box { text-align: center; }
     .signature-img { max-height: 90px; max-width: 180px; object-fit: contain; margin-bottom: 2px; }
     .qr-footer-box { text-align: center; }
-    .qr-footer-img { max-height: 70px; max-width: 70px; object-fit: contain; }
+    .qr-footer-img { max-height: 110px; max-width: 110px; object-fit: contain; }
     .header-title { text-align: center; font-size: 14px; font-weight: bold; padding: 4px; }
     .company-section { display: grid; grid-template-columns: 1fr 1fr; }
     .company-left, .company-right { border: 1px solid #000; padding: 8px; }
@@ -142,6 +205,7 @@ export function generateInvoiceHtml(data: InvoiceData): string {
     .meta-cell:last-child { border-right: none; }
     .meta-label { font-size: 10px; color: #666; }
     .tax-row td { padding-top: 2px; padding-bottom: 2px; }
+    .items-table td.payments-cell { text-align: left; vertical-align: top; font-size: 12px; padding: 4px 8px; }
     .total-row { font-weight: bold; background: #f5f5f5; }
     .total-row td { border-top: 1px solid #000; border-bottom: 1px solid #000; }
     .footer-section { border: 1px solid #000; border-top: none; }
@@ -238,58 +302,19 @@ export function generateInvoiceHtml(data: InvoiceData): string {
             '<tr style="height:24px;"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>',
           )
           .join('')}
-        <tr class="tax-row" style="border-top: 1px solid #000;">
-          <td colspan="7" class="text-right font-bold">Taxable Value:</td>
-          <td class="text-right font-bold">${formatCurrency(totalTaxableValue)}</td>
-        </tr>
-        ${
-          hallmarkingCharge > 0
-            ? `<tr class="tax-row">
-          <td colspan="7" class="text-right">Hallmarking Charges:</td>
-          <td class="text-right">${formatCurrency(hallmarkingCharge)}</td>
-        </tr>`
-            : ''
-        }
-        ${
-          data.taxType === 'IGST'
-            ? `<tr class="tax-row">
-          <td colspan="7" class="text-right font-bold">IGST(${taxes.igstRate}%)</td>
-          <td class="text-right">${formatCurrency(taxes.igstAmount || 0)}</td>
-        </tr>`
-            : `<tr class="tax-row">
-          <td colspan="7" class="text-right font-bold">CGST(${taxes.cgstRate}%)</td>
-          <td class="text-right">${formatCurrency(taxes.cgstAmount || 0)}</td>
-        </tr>
-        <tr class="tax-row">
-          <td colspan="7" class="text-right font-bold">SGST(${taxes.sgstRate}%)</td>
-          <td class="text-right">${formatCurrency(taxes.sgstAmount || 0)}</td>
-        </tr>`
-        }
-        <tr class="tax-row">
-          <td colspan="7" class="text-right font-bold">ROUND OFF</td>
-          <td class="text-right">${roundOff >= 0 ? '' : '(-)'}${formatCurrency(Math.abs(roundOff))}</td>
-        </tr>
+        ${taxRowsHtml}
         <tr class="total-row">
           <td colspan="7" class="text-right text-lg">Total Amount</td>
           <td class="text-right font-bold text-lg">₹${formatCurrency(totalAmount)}</td>
         </tr>
         ${
-          data.payments && data.payments.length > 0
-            ? data.payments
-                .map(
-                  (p: any) => `
-        <tr class="tax-row">
-          <td colspan="8" class="text-right">${formatPaymentLine(p, formatCurrency)}</td>
-        </tr>`,
-                )
-                .join('')
-            : (data.cashReceived || 0) > 0
-              ? `
+          !hasPayments && (data.cashReceived || 0) > 0
+            ? `
         <tr class="tax-row">
           <td colspan="7" class="text-right">Paid Amount</td>
           <td class="text-right">${formatCurrency(data.cashReceived || 0)}</td>
         </tr>`
-              : ''
+            : ''
         }
         <tr class="tax-row">
           <td colspan="7" class="text-right font-bold" style="font-size: 14px;">Balance Due</td>
