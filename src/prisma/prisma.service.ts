@@ -56,7 +56,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         params.model &&
         PrismaService.TENANT_SCOPED_MODELS.has(params.model as Prisma.ModelName)
       ) {
-        if (PrismaService.ACTIONS_REQUIRING_WHERE.has(params.action) && params.action !== 'upsert') {
+        if (PrismaService.ACTIONS_REQUIRING_WHERE.has(params.action)) {
           if (!this.containsOrganizationId(params.args?.where)) {
             this.logger.warn(`Missing organizationId filter for ${params.model}.${params.action}`);
             throw new ForbiddenException(

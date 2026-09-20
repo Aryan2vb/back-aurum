@@ -415,3 +415,44 @@ describe('StockService metal purities', () => {
     expect(restored.isActive).toBe(true);
   });
 });
+
+describe('StockService.recalcBucketIfBackdatedAfterReference', () => {
+  const run = async (latestOther: { date: Date } | null, entryDate: Date) => {
+    const db = {
+      stockLedger: {
+        findFirst: jest.fn().mockResolvedValue(latestOther),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { quantityIn: 0, quantityOut: 0 } }),
+      },
+      stockBalance: { upsert: jest.fn().mockResolvedValue({}) },
+      $executeRaw: jest.fn().mockResolvedValue(0),
+    };
+    const service = new StockService({} as any);
+    await (service as any).recalcBucketIfBackdatedAfterReference(
+      'org-1',
+      'GOLD',
+      '22K',
+      'ref-1',
+      entryDate,
+      db,
+    );
+    return db;
+  };
+
+  it('also considers rows with a NULL referenceId (e.g. opening balances) as "other" rows', async () => {
+    const db = await run(null, new Date('2026-01-01'));
+    const where = db.stockLedger.findFirst.mock.calls[0][0].where;
+    // `NOT: { referenceId }` would silently drop NULL-referenceId rows in SQL
+    expect(where.NOT).toBeUndefined();
+    expect(where.OR).toEqual([{ referenceId: null }, { referenceId: { not: 'ref-1' } }]);
+  });
+
+  it('recalculates running balances when the entry is dated before the latest other row', async () => {
+    const db = await run({ date: new Date('2026-03-01') }, new Date('2026-01-01'));
+    expect(db.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not recalculate when the entry is the latest', async () => {
+    const db = await run({ date: new Date('2026-01-01') }, new Date('2026-03-01'));
+    expect(db.$executeRaw).not.toHaveBeenCalled();
+  });
+});

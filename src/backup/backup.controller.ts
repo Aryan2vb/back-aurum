@@ -23,6 +23,7 @@ import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import * as fs from 'fs';
+import * as path from 'path';
 
 @Controller('backup')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -30,45 +31,26 @@ export class BackupController {
   constructor(private readonly backupService: BackupService) {}
 
   /**
-   * Helper to verify if the requesting user is an authorized Super Admin.
-   * Checks SUPER_ADMIN_EMAILS environment variable or optional header.
+   * Super Admin status is granted only to accounts whose email is listed in
+   * SUPER_ADMIN_EMAILS. (A shared header secret used to grant this to any
+   * OWNER/ADMIN of any organization and was removed.)
    */
-  private assertSuperAdmin(user: CurrentUserData, req?: Request): void {
-    const rawList = process.env.SUPER_ADMIN_EMAILS || '';
-    const superAdmins = rawList
+  private checkIsSuperAdmin(user: CurrentUserData): boolean {
+    const superAdmins = (process.env.SUPER_ADMIN_EMAILS || '')
       .split(',')
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
 
-    const userEmail = user?.email?.toLowerCase();
-    const isEmailAllowed = userEmail && superAdmins.includes(userEmail);
+    const userEmail = user?.email?.trim().toLowerCase();
+    return !!userEmail && superAdmins.includes(userEmail);
+  }
 
-    const superAdminSecret = process.env.SUPER_ADMIN_SECRET;
-    const providedSecret = req?.headers['x-super-admin-secret'];
-    const isSecretValid = superAdminSecret && providedSecret === superAdminSecret;
-
-    if (!isEmailAllowed && !isSecretValid) {
+  private assertSuperAdmin(user: CurrentUserData): void {
+    if (!this.checkIsSuperAdmin(user)) {
       throw new ForbiddenException(
         'Super Admin access required. You do not have permission to access system-wide database backups across other organizations.',
       );
     }
-  }
-
-  private checkIsSuperAdmin(user: CurrentUserData, req?: Request): boolean {
-    const rawList = process.env.SUPER_ADMIN_EMAILS || '';
-    const superAdmins = rawList
-      .split(',')
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean);
-
-    const userEmail = user?.email?.toLowerCase();
-    const isEmailAllowed = !!userEmail && superAdmins.includes(userEmail);
-
-    const superAdminSecret = process.env.SUPER_ADMIN_SECRET;
-    const providedSecret = req?.headers['x-super-admin-secret'];
-    const isSecretValid = !!superAdminSecret && providedSecret === superAdminSecret;
-
-    return isEmailAllowed || isSecretValid;
   }
 
   /**
@@ -76,13 +58,10 @@ export class BackupController {
    */
   @Get('status')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  async getBackupStatus(
-    @CurrentUser() user: CurrentUserData,
-    @Req() req: Request,
-  ) {
+  async getBackupStatus(@CurrentUser() user: CurrentUserData) {
     return {
       canBackupOrg: true,
-      isSuperAdmin: this.checkIsSuperAdmin(user, req),
+      isSuperAdmin: this.checkIsSuperAdmin(user),
     };
   }
 
@@ -121,10 +100,10 @@ export class BackupController {
 
   /**
    * Import/Restore organization-specific data from uploaded JSON backup file.
-   * Accessible by OWNER and ADMIN of the organization.
+   * Overwrites live records, so it is restricted to the organization OWNER.
    */
   @Post('organization/import')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
+  @Roles(OrganizationRole.OWNER)
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max
@@ -181,7 +160,7 @@ export class BackupController {
     @CurrentUser() user: CurrentUserData,
     @Req() req: Request,
   ) {
-    this.assertSuperAdmin(user, req);
+    this.assertSuperAdmin(user);
 
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
@@ -194,11 +173,8 @@ export class BackupController {
    */
   @Get('admin/stored')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  async listStoredBackups(
-    @CurrentUser() user: CurrentUserData,
-    @Req() req: Request,
-  ) {
-    this.assertSuperAdmin(user, req);
+  async listStoredBackups(@CurrentUser() user: CurrentUserData) {
+    this.assertSuperAdmin(user);
     return this.backupService.listStoredBackups();
   }
 
@@ -207,11 +183,8 @@ export class BackupController {
    */
   @Get('admin/history')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  async getSystemBackupHistory(
-    @CurrentUser() user: CurrentUserData,
-    @Req() req: Request,
-  ) {
-    this.assertSuperAdmin(user, req);
+  async getSystemBackupHistory(@CurrentUser() user: CurrentUserData) {
+    this.assertSuperAdmin(user);
     return this.backupService.getBackupHistory();
   }
 
@@ -223,17 +196,17 @@ export class BackupController {
   async downloadBackupFile(
     @Param('filename') filename: string,
     @CurrentUser() user: CurrentUserData,
-    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    this.assertSuperAdmin(user, req);
+    this.assertSuperAdmin(user);
 
     const filePath = this.backupService.getBackupFilePath(filename);
+    const safeFilename = path.basename(filePath);
     const fileStream = fs.createReadStream(filePath);
 
     res.set({
-      'Content-Type': filename.endsWith('.json') ? 'application/json' : 'application/octet-stream',
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Type': safeFilename.endsWith('.json') ? 'application/json' : 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${safeFilename}"`,
     });
 
     return new StreamableFile(fileStream);

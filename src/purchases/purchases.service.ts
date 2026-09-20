@@ -144,7 +144,7 @@ export class PurchasesService {
             adjustment: computed.adjustment,
             notes: data.notes,
             attachmentUrl: data.attachmentUrl ?? undefined,
-            attachmentKey: data.attachmentKey ?? undefined,
+            attachmentKey: this.validatedAttachmentKey(data.attachmentKey, data.organizationId),
             attachmentName: data.attachmentName ?? undefined,
             attachmentMime: data.attachmentMime ?? undefined,
             items: {
@@ -227,6 +227,13 @@ export class PurchasesService {
     let nextAttachmentKey: string | null | undefined;
     const result = await this.prisma.$transaction(
       async (tx) => {
+        // Serialize concurrent edits of the same bill (double-submit): without this both
+        // would delete the old items/payments and each insert its own copy.
+        await tx.$queryRaw`
+          SELECT id FROM "PurchaseInvoice"
+          WHERE id = ${id} AND "organizationId" = ${data.organizationId}
+          FOR UPDATE
+        `;
         const existing = await tx.purchaseInvoice.findFirst({
           where: { id, organizationId: data.organizationId },
           include: { payments: true },
@@ -410,7 +417,24 @@ export class PurchasesService {
     return purchase;
   }
 
+  /**
+   * attachmentKey is client-supplied and later passed to deleteObject(); it must live
+   * under this organization's purchase folder or one tenant could delete another's files.
+   */
+  private assertAttachmentKeyInOrg(key: string | null | undefined, organizationId: string) {
+    if (!key) return;
+    if (!key.startsWith(`org/${organizationId}/purchases/`) || key.includes('..')) {
+      throw new BadRequestException('Invalid attachment key');
+    }
+  }
+
+  private validatedAttachmentKey(key: string | null | undefined, organizationId: string) {
+    this.assertAttachmentKeyInOrg(key, organizationId);
+    return key ?? undefined;
+  }
+
   private buildAttachmentUpdate(data: PurchaseBillInput) {
+    this.assertAttachmentKeyInOrg(data.attachmentKey, data.organizationId);
     const clearing =
       data.attachmentUrl === null ||
       data.attachmentKey === null ||
@@ -807,6 +831,18 @@ export class PurchasesService {
         payment.accountId,
         (requiredByAccount.get(payment.accountId) ?? new Decimal(0)).add(payment.amount),
       );
+    }
+
+    // Check-then-write must be atomic per account: lock the account rows (in a stable
+    // order to avoid deadlocks) so two concurrent purchases can't both pass the check.
+    const accountIds = [...requiredByAccount.keys()].sort();
+    if (accountIds.length && typeof tx.$queryRaw === 'function') {
+      await tx.$queryRaw`
+        SELECT id FROM "FinancialAccount"
+        WHERE "organizationId" = ${organizationId} AND id IN (${Prisma.join(accountIds)})
+        ORDER BY id
+        FOR UPDATE
+      `;
     }
 
     for (const [accountId, required] of requiredByAccount) {

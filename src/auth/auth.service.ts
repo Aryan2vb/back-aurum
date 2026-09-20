@@ -305,8 +305,10 @@ export class AuthService {
     client: Prisma.TransactionClient | PrismaService,
     email: string,
   ): Promise<void> {
-    const existing = await client.user.findUnique({
-      where: { email },
+    // Emails are matched case-insensitively elsewhere (e.g. SUPER_ADMIN_EMAILS), so
+    // "Admin@Corp.com" must not be registrable when "admin@corp.com" exists.
+    const existing = await client.user.findFirst({
+      where: { email: { equals: email.trim(), mode: 'insensitive' } },
     });
 
     if (existing) {

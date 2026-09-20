@@ -563,7 +563,8 @@ export class StockService {
         organizationId,
         metalType,
         purity,
-        NOT: { referenceId },
+        // `NOT: { referenceId }` would also exclude rows whose referenceId IS NULL
+        OR: [{ referenceId: null }, { referenceId: { not: referenceId } }],
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     });

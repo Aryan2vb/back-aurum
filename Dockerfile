@@ -19,8 +19,9 @@ RUN npm run build
 
 # ── Stage 3: production ───────────────────────────
 FROM node:20-alpine AS production
-# curl for healthcheck, openssl for Prisma query engine + migrate deploy
-RUN apk add --no-cache curl openssl
+# curl for healthcheck, openssl for Prisma query engine + migrate deploy,
+# postgresql-client for pg_dump (full database backups)
+RUN apk add --no-cache curl openssl postgresql-client
 WORKDIR /app
 ENV NODE_ENV=production
 

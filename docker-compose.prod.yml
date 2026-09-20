@@ -11,6 +11,9 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    # Keep database backups across redeploys
+    volumes:
+      - aurum_backups:/app/backups
     # Limit backend container to 800MB RAM to prevent t2.micro OS from crashing
     deploy:
       resources:
@@ -21,3 +24,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+volumes:
+  aurum_backups:

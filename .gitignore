@@ -47,3 +47,6 @@ lerna-debug.log*
 
 
 .postman/
+
+# Database backups (contain full tenant data)
+/backups
