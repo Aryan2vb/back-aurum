@@ -29,6 +29,7 @@ export class StockService {
     referenceId?: string;
     notes?: string;
     prismaTx?: Prisma.TransactionClient;
+    skipBackdateRecalc?: boolean;
   }) {
     const {
       organizationId,
@@ -41,6 +42,7 @@ export class StockService {
       date,
       referenceId,
       notes,
+      skipBackdateRecalc = false,
     } = params;
 
     const purity = this.normalizePurity(rawPurity, metalType);
@@ -85,18 +87,20 @@ export class StockService {
         },
       });
 
-      const latest = await db.stockLedger.findFirst({
-        where: {
-          organizationId,
-          metalType,
-          purity,
-          NOT: { id: ledgerEntry.id },
-        },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      });
-      const entryDate = date || new Date();
-      if (latest && entryDate.getTime() < latest.date.getTime()) {
-        await this.recalcRunningBalances(organizationId, metalType, purity, db);
+      if (!skipBackdateRecalc) {
+        const latest = await db.stockLedger.findFirst({
+          where: {
+            organizationId,
+            metalType,
+            purity,
+            NOT: { id: ledgerEntry.id },
+          },
+          orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        });
+        const entryDate = date || new Date();
+        if (latest && entryDate.getTime() < latest.date.getTime()) {
+          await this.recalcRunningBalances(organizationId, metalType, purity, db);
+        }
       }
 
       return { balance: newQuantity, ledgerEntry };
@@ -406,17 +410,23 @@ export class StockService {
     prismaTx?: Prisma.TransactionClient;
   }) {
     const { organizationId, invoiceId, invoiceNumber, saleDate, items, prismaTx } = params;
+    const db = prismaTx ?? this.prisma;
+    const entryDate = saleDate ?? new Date();
 
     await this.purgeTransactionsByReference(organizationId, invoiceId, prismaTx);
 
+    const buckets = new Map<string, { metalType: MetalType; purity: string }>();
     for (const item of items || []) {
       const purity = item.purityLabel || item.purityValue || item.purity;
       const netWeight = Number(item.netWeight || 0);
       if (!item.metalType || !purity || netWeight <= 0) continue;
 
+      const metalType = item.metalType as MetalType;
+      const normalizedPurity = this.normalizePurity(String(purity), metalType);
+
       await this.recordStockTransaction({
         organizationId,
-        metalType: item.metalType as MetalType,
+        metalType,
         purity: String(purity),
         transactionType: StockTransactionType.SALE,
         quantityOut: netWeight,
@@ -425,7 +435,20 @@ export class StockService {
         referenceId: invoiceId,
         notes: `Sale from Invoice: ${invoiceNumber}`,
         prismaTx,
+        skipBackdateRecalc: true,
       });
+      buckets.set(`${metalType}|${normalizedPurity}`, { metalType, purity: normalizedPurity });
+    }
+
+    for (const bucket of buckets.values()) {
+      await this.recalcBucketIfBackdatedAfterReference(
+        organizationId,
+        bucket.metalType,
+        bucket.purity,
+        invoiceId,
+        entryDate,
+        db,
+      );
     }
   }
 
@@ -447,17 +470,23 @@ export class StockService {
     prismaTx?: Prisma.TransactionClient;
   }) {
     const { organizationId, purchaseId, invoiceNumber, purchaseDate, items, prismaTx } = params;
+    const db = prismaTx ?? this.prisma;
+    const entryDate = purchaseDate ?? new Date();
 
     await this.purgeTransactionsByReference(organizationId, purchaseId, prismaTx);
 
+    const buckets = new Map<string, { metalType: MetalType; purity: string }>();
     for (const item of items || []) {
       const purity = item.purity;
       const netWeight = Number(item.netWeight || 0);
       if (!item.metalType || !purity || netWeight <= 0) continue;
 
+      const metalType = item.metalType as MetalType;
+      const normalizedPurity = this.normalizePurity(String(purity), metalType);
+
       await this.recordStockTransaction({
         organizationId,
-        metalType: item.metalType as MetalType,
+        metalType,
         purity: String(purity),
         transactionType: StockTransactionType.PURCHASE,
         quantityIn: netWeight,
@@ -466,7 +495,20 @@ export class StockService {
         referenceId: purchaseId,
         notes: `Purchase ${item.itemName || item.purity} from Bill: ${invoiceNumber || purchaseId}`,
         prismaTx,
+        skipBackdateRecalc: true,
       });
+      buckets.set(`${metalType}|${normalizedPurity}`, { metalType, purity: normalizedPurity });
+    }
+
+    for (const bucket of buckets.values()) {
+      await this.recalcBucketIfBackdatedAfterReference(
+        organizationId,
+        bucket.metalType,
+        bucket.purity,
+        purchaseId,
+        entryDate,
+        db,
+      );
     }
   }
 
@@ -504,6 +546,28 @@ export class StockService {
     await db.stockLedger.deleteMany({ where: { organizationId, referenceId } });
 
     for (const { metalType, purity } of buckets.values()) {
+      await this.recalcRunningBalances(organizationId, metalType, purity, db);
+    }
+  }
+
+  private async recalcBucketIfBackdatedAfterReference(
+    organizationId: string,
+    metalType: MetalType,
+    purity: string,
+    referenceId: string,
+    entryDate: Date,
+    db: Prisma.TransactionClient | PrismaService,
+  ) {
+    const latestOther = await db.stockLedger.findFirst({
+      where: {
+        organizationId,
+        metalType,
+        purity,
+        NOT: { referenceId },
+      },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+    });
+    if (latestOther && entryDate.getTime() < latestOther.date.getTime()) {
       await this.recalcRunningBalances(organizationId, metalType, purity, db);
     }
   }

@@ -561,6 +561,9 @@ describe('InvoicesService invoice sequence allocation', () => {
           payments: [],
         }),
       },
+      orgInvoiceSettings: {
+        findUnique: jest.fn().mockResolvedValue(settings),
+      },
       $transaction: jest.fn((callback) => callback(tx)),
     };
     const service = new InvoicesService(
@@ -664,6 +667,9 @@ describe('InvoicesService invoice sequence allocation', () => {
           items: [],
           payments: [],
         }),
+      },
+      orgInvoiceSettings: {
+        findUnique: jest.fn().mockResolvedValue(settings),
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };
@@ -786,6 +792,9 @@ describe('InvoicesService invoice sequence allocation', () => {
           payments: [],
         }),
       },
+      orgInvoiceSettings: {
+        findUnique: jest.fn().mockResolvedValue(settings),
+      },
       $transaction: jest.fn((callback) => callback(tx)),
     };
     const service = new InvoicesService(
@@ -869,6 +878,9 @@ describe('InvoicesService invoice sequence allocation', () => {
           items: [],
           payments: [],
         }),
+      },
+      orgInvoiceSettings: {
+        findUnique: jest.fn().mockResolvedValue(settings),
       },
       $transaction: jest.fn((callback) => callback(tx)),
     };

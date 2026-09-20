@@ -21,7 +21,8 @@ import {
 } from './utils/purchase-bill-book-html';
 
 const BILL_BOOK_QUERY_BATCH_SIZE = 100;
-const BILL_BOOK_UNFILTERED_MAX = 200;
+const BILL_BOOK_UNFILTERED_MAX = 1000;
+const PURCHASE_TX = { maxWait: 10_000, timeout: 60_000 };
 
 type PurchaseItemInput = {
   itemName?: string;
@@ -190,7 +191,7 @@ export class PurchasesService {
 
         return purchase;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      PURCHASE_TX,
     );
   }
 
@@ -378,7 +379,7 @@ export class PurchasesService {
 
         return purchase;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      PURCHASE_TX,
     );
     if (hasAttachmentPatch) {
       await this.maybeDeleteOldAttachment(oldAttachmentKey, nextAttachmentKey);
@@ -612,7 +613,7 @@ export class PurchasesService {
         await this.financeService.reverseMissingSources(tx, organizationId, 'PURCHASE', id, []);
         await tx.purchaseInvoice.delete({ where: { id } });
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      PURCHASE_TX,
     );
 
     if (existing.attachmentKey) {
@@ -711,7 +712,7 @@ export class PurchasesService {
           payments: { orderBy: { paidAt: 'desc' } },
         },
       });
-    });
+    }, PURCHASE_TX);
   }
 
   private async resolveVendor(tx: any, data: PurchaseBillInput) {

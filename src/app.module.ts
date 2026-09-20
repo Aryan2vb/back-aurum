@@ -19,6 +19,7 @@ import { VendorsModule } from './vendors/vendors.module';
 import { PurchasesModule } from './purchases/purchases.module';
 import { FinanceModule } from './finance/finance.module';
 import { BankStatementModule } from './bank-statement/bank-statement.module';
+import { BackupModule } from './backup/backup.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { BankStatementModule } from './bank-statement/bank-statement.module';
     PurchasesModule,
     FinanceModule,
     BankStatementModule,
+    BackupModule,
   ],
   controllers: [AppController],
   providers: [

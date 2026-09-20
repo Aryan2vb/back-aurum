@@ -14,7 +14,10 @@ describe('StockService.normalizePurity', () => {
 
 describe('StockService.syncSaleStockForInvoice', () => {
   it('purges prior rows then posts the new SALE weight', async () => {
-    const service = new StockService({} as any);
+    const prisma = {
+      stockLedger: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const service = new StockService(prisma as any);
     service.purgeTransactionsByReference = jest.fn().mockResolvedValue(undefined);
     service.recordStockTransaction = jest.fn().mockResolvedValue({ balance: 0 });
 
@@ -41,6 +44,7 @@ describe('StockService.syncSaleStockForInvoice', () => {
         metalType: 'GOLD',
         purity: '22K',
         referenceId: 'inv-1',
+        skipBackdateRecalc: true,
       }),
     );
   });
@@ -48,7 +52,10 @@ describe('StockService.syncSaleStockForInvoice', () => {
 
 describe('StockService.syncPurchaseStockForInvoice', () => {
   it('purges prior rows then posts the new PURCHASE weight', async () => {
-    const service = new StockService({} as any);
+    const prisma = {
+      stockLedger: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const service = new StockService(prisma as any);
     service.purgeTransactionsByReference = jest.fn().mockResolvedValue(undefined);
     service.recordStockTransaction = jest.fn().mockResolvedValue({ balance: 0 });
 
@@ -76,6 +83,7 @@ describe('StockService.syncPurchaseStockForInvoice', () => {
         metalType: 'GOLD',
         purity: '22K',
         referenceId: 'pur-1',
+        skipBackdateRecalc: true,
       }),
     );
   });

@@ -24,6 +24,9 @@ export enum AssetType {
 
   // ─── Future: customer KYC documents (should be private presigned) ───────
   CUSTOMER_DOC = 'CUSTOMER_DOC',
+
+  // ─── Purchase / Vendor Invoice documents & bills ───────────────────────
+  PURCHASE_DOC = 'PURCHASE_DOC',
 }
 
 export interface AssetConfig {
@@ -108,5 +111,19 @@ export const ASSET_CONFIG: Record<AssetType, AssetConfig> = {
     allowedMimes: ['image/png', 'image/jpeg', 'application/pdf'],
     singleton: false,
     public: false, // private — KYC documents are sensitive
+  },
+  PURCHASE_DOC: {
+    folder: 'org/{orgId}/purchases/{entityId}',
+    maxBytes: 15_000_000,
+    allowedMimes: [
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'application/pdf',
+      'image/heic',
+      'image/heif',
+    ],
+    singleton: false,
+    public: true,
   },
 };

@@ -36,6 +36,7 @@ import { buildBillBookHtml, getBillBookTitle } from './utils/bill-book-html';
 import { invoiceBankReconcileStatus } from '../bank-statement/suggest-payments';
 
 const BILL_BOOK_QUERY_BATCH_SIZE = 100;
+const INVOICE_TX = { maxWait: 10_000, timeout: 60_000 };
 
 @Injectable()
 export class InvoicesService {
@@ -595,7 +596,7 @@ export class InvoicesService {
       await this.syncInvoiceTreasury(tx, updatedInvoice.id, organizationId, userId);
 
       return updatedInvoice;
-    });
+    }, INVOICE_TX);
   }
 
   private async _persistInvoice(dto: CreateInvoiceDto, user: CurrentUserData, isDraft: boolean) {
@@ -774,7 +775,7 @@ export class InvoicesService {
       }
 
       return invoice;
-    });
+    }, INVOICE_TX);
   }
 
   async findAll(query: QueryInvoicesDto, organizationId: string) {
@@ -1105,7 +1106,7 @@ export class InvoicesService {
         paidAmount: newPaidAmount,
         remainingBalance: new Decimal(invoice.totalAmount).minus(newPaidAmount).toNumber(),
       };
-    });
+    }, INVOICE_TX);
   }
 
   async generatePdf(id: string, organizationId: string): Promise<Buffer> {
@@ -1555,7 +1556,7 @@ export class InvoicesService {
       );
 
       return updated;
-    });
+    }, INVOICE_TX);
   }
 
   async softDelete(id: string, organizationId: string) {
@@ -1581,7 +1582,7 @@ export class InvoicesService {
         where: { id, organizationId },
         data: { deletedAt: new Date() },
       });
-    });
+    }, INVOICE_TX);
   }
 
   async update(id: string, dto: UpdateInvoiceDto, user: CurrentUserData) {
@@ -1636,6 +1637,11 @@ export class InvoicesService {
         status = financials.paidAmount.gt(0) ? InvoiceStatus.PARTIAL : InvoiceStatus.UNPAID;
       }
     }
+
+    const settings = await this.prisma.orgInvoiceSettings.findUnique({
+      where: { organizationId },
+    });
+    if (!settings) throw new BadRequestException('Invoice settings not found');
 
     return this.prisma.$transaction(async (tx) => {
       const existingItems = existing.items;
@@ -1739,11 +1745,6 @@ export class InvoicesService {
         }
       }
 
-      const settings = await tx.orgInvoiceSettings.findUnique({
-        where: { organizationId },
-      });
-      if (!settings) throw new BadRequestException('Invoice settings not found');
-
       let invoiceNumber = existing.invoiceNumber;
       let sequenceVal = existing.sequence;
 
@@ -1839,7 +1840,7 @@ export class InvoicesService {
       }
 
       return updated;
-    });
+    }, INVOICE_TX);
   }
 
   private _mapFinancialItemToDb(item: any, invoiceId: string, organizationId: string) {
