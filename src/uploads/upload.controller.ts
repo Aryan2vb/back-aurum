@@ -101,13 +101,20 @@ export class UploadController {
 
     const protectedFooter = await this.prisma.invoiceFooterAsset.findFirst({
       where: { r2Key: dto.key, organizationId: user.organizationId },
-      include: { invoices: { select: { id: true }, take: 1 }, revisions: { select: { id: true }, take: 1 } },
+      include: {
+        invoices: { select: { id: true }, take: 1 },
+        revisions: { select: { id: true }, take: 1 },
+      },
     });
     if (protectedFooter && (protectedFooter.invoices.length || protectedFooter.revisions.length)) {
-      throw new BadRequestException('This footer is referenced by an invoice and cannot be deleted. Archive it instead.');
+      throw new BadRequestException(
+        'This footer is referenced by an invoice and cannot be deleted. Archive it instead.',
+      );
     }
     if (protectedFooter) {
-      throw new BadRequestException('Invoice footer assets are immutable. Archive the footer instead of deleting its R2 object.');
+      throw new BadRequestException(
+        'Invoice footer assets are immutable. Archive the footer instead of deleting its R2 object.',
+      );
     }
 
     await this.uploadService.deleteObject(dto.key);

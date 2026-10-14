@@ -262,21 +262,39 @@ export class InvoicesController {
   }
 
   @Get(':id/revisions')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
   getRevisions(@Param('id') id: string, @CurrentUser() user: CurrentUserData) {
     return this.invoicesService.listDocumentRevisions(id, user.organizationId);
   }
 
   @Get(':id/revisions/:revision/pdf')
-  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF, OrganizationRole.VIEWER)
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
   async getRevisionPdf(
     @Param('id') id: string,
     @Param('revision') revision: string,
     @CurrentUser() user: CurrentUserData,
     @Res() res: Response,
   ) {
-    const buffer = await this.invoicesService.generateRevisionPdf(id, Number(revision), user.organizationId);
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="invoice-${id}-r${revision}.pdf"`, 'Content-Length': buffer.length });
+    const buffer = await this.invoicesService.generateRevisionPdf(
+      id,
+      Number(revision),
+      user.organizationId,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="invoice-${id}-r${revision}.pdf"`,
+      'Content-Length': buffer.length,
+    });
     res.end(buffer);
   }
 

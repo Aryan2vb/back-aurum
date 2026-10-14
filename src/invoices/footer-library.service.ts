@@ -3,11 +3,18 @@ import { InvoiceFooterAssetStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../uploads/upload.service';
-import { CreateFooterAssetUploadDto, CreateFooterFolderDto, UpdateFooterAssetDto } from './dto/invoice-footer.dto';
+import {
+  CreateFooterAssetUploadDto,
+  CreateFooterFolderDto,
+  UpdateFooterAssetDto,
+} from './dto/invoice-footer.dto';
 
 @Injectable()
 export class FooterLibraryService {
-  constructor(private readonly prisma: PrismaService, private readonly uploads: UploadService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly uploads: UploadService,
+  ) {}
 
   async list(organizationId: string, folderId?: string, tag?: string) {
     await this.ensureLegacyFooter(organizationId);
@@ -22,13 +29,16 @@ export class FooterLibraryService {
       orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
     });
     const folders = await this.prisma.invoiceFooterFolder.findMany({
-      where: { organizationId }, orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+      where: { organizationId },
+      orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
     });
     return { folders, assets };
   }
 
   async createFolder(organizationId: string, dto: CreateFooterFolderDto) {
-    return this.prisma.invoiceFooterFolder.create({ data: { organizationId, name: dto.name.trim() } });
+    return this.prisma.invoiceFooterFolder.create({
+      data: { organizationId, name: dto.name.trim() },
+    });
   }
 
   async createUpload(organizationId: string, dto: CreateFooterAssetUploadDto) {
@@ -46,9 +56,14 @@ export class FooterLibraryService {
       },
     });
     try {
-      const upload = await this.uploads.presignInvoiceFooterAsset(organizationId, asset.id, dto.contentType);
+      const upload = await this.uploads.presignInvoiceFooterAsset(
+        organizationId,
+        asset.id,
+        dto.contentType,
+      );
       await this.prisma.invoiceFooterAsset.updateMany({
-        where: { id: asset.id, organizationId }, data: { r2Key: upload.key, publicUrl: upload.publicUrl },
+        where: { id: asset.id, organizationId },
+        data: { r2Key: upload.key, publicUrl: upload.publicUrl },
       });
       return { assetId: asset.id, ...upload };
     } catch (error) {
@@ -67,9 +82,15 @@ export class FooterLibraryService {
       const head = await this.uploads.getObjectMetadata(asset.r2Key);
       await this.prisma.invoiceFooterAsset.updateMany({
         where: { id: assetId, organizationId },
-        data: { status: InvoiceFooterAssetStatus.ACTIVE, byteSize: Number(head.ContentLength || 0) },
+        data: {
+          status: InvoiceFooterAssetStatus.ACTIVE,
+          byteSize: Number(head.ContentLength || 0),
+        },
       });
-      return this.prisma.invoiceFooterAsset.findFirst({ where: { id: assetId, organizationId }, include: { folder: true } });
+      return this.prisma.invoiceFooterAsset.findFirst({
+        where: { id: assetId, organizationId },
+        include: { folder: true },
+      });
     } catch {
       throw new BadRequestException('Footer file was not uploaded or is no longer available');
     }
@@ -87,15 +108,25 @@ export class FooterLibraryService {
         ...(dto.displayOrder !== undefined ? { displayOrder: dto.displayOrder } : {}),
       },
     });
-    return this.prisma.invoiceFooterAsset.findFirst({ where: { id: asset.id, organizationId }, include: { folder: true } });
+    return this.prisma.invoiceFooterAsset.findFirst({
+      where: { id: asset.id, organizationId },
+      include: { folder: true },
+    });
   }
 
   async setDefault(organizationId: string, assetId: string) {
     const asset = await this.assetForOrg(assetId, organizationId);
-    if (asset.status !== InvoiceFooterAssetStatus.ACTIVE) throw new BadRequestException('Only active footers can be default');
+    if (asset.status !== InvoiceFooterAssetStatus.ACTIVE)
+      throw new BadRequestException('Only active footers can be default');
     return this.prisma.$transaction(async (tx) => {
-      await tx.invoiceFooterAsset.updateMany({ where: { organizationId }, data: { isDefault: false } });
-      await tx.invoiceFooterAsset.updateMany({ where: { id: assetId, organizationId }, data: { isDefault: true } });
+      await tx.invoiceFooterAsset.updateMany({
+        where: { organizationId },
+        data: { isDefault: false },
+      });
+      await tx.invoiceFooterAsset.updateMany({
+        where: { id: assetId, organizationId },
+        data: { isDefault: true },
+      });
       return tx.invoiceFooterAsset.findFirst({ where: { id: assetId, organizationId } });
     });
   }
@@ -103,10 +134,18 @@ export class FooterLibraryService {
   async archive(organizationId: string, assetId: string) {
     const asset = await this.assetForOrg(assetId, organizationId);
     return this.prisma.$transaction(async (tx) => {
-      if (asset.isDefault) await tx.invoiceFooterAsset.updateMany({ where: { organizationId }, data: { isDefault: false } });
+      if (asset.isDefault)
+        await tx.invoiceFooterAsset.updateMany({
+          where: { organizationId },
+          data: { isDefault: false },
+        });
       await tx.invoiceFooterAsset.updateMany({
         where: { id: assetId, organizationId },
-        data: { status: InvoiceFooterAssetStatus.ARCHIVED, archivedAt: new Date(), isDefault: false },
+        data: {
+          status: InvoiceFooterAssetStatus.ARCHIVED,
+          archivedAt: new Date(),
+          isDefault: false,
+        },
       });
       return tx.invoiceFooterAsset.findFirst({ where: { id: assetId, organizationId } });
     });
@@ -121,7 +160,10 @@ export class FooterLibraryService {
       where: { id: assetId, organizationId },
       data: { status: InvoiceFooterAssetStatus.ACTIVE, archivedAt: null },
     });
-    return this.prisma.invoiceFooterAsset.findFirst({ where: { id: assetId, organizationId }, include: { folder: true } });
+    return this.prisma.invoiceFooterAsset.findFirst({
+      where: { id: assetId, organizationId },
+      include: { folder: true },
+    });
   }
 
   private async assetForOrg(id: string, organizationId: string) {
@@ -130,11 +172,15 @@ export class FooterLibraryService {
     return asset;
   }
   private async folderForOrg(id: string, organizationId: string) {
-    const folder = await this.prisma.invoiceFooterFolder.findFirst({ where: { id, organizationId } });
+    const folder = await this.prisma.invoiceFooterFolder.findFirst({
+      where: { id, organizationId },
+    });
     if (!folder) throw new NotFoundException('Footer folder not found');
     return folder;
   }
-  private cleanTags(tags?: string[]) { return [...new Set((tags || []).map((tag) => tag.trim()).filter(Boolean))].slice(0, 12); }
+  private cleanTags(tags?: string[]) {
+    return [...new Set((tags || []).map((tag) => tag.trim()).filter(Boolean))].slice(0, 12);
+  }
 
   /** Make the old singleton URL selectable once, without moving or deleting its R2 object. */
   private async ensureLegacyFooter(organizationId: string) {
@@ -144,18 +190,24 @@ export class FooterLibraryService {
     ]);
     if (!settings?.footerImageUrl || assetCount) return;
     let r2Key = `legacy/${organizationId}/footer`;
-    try { r2Key = new URL(settings.footerImageUrl).pathname.replace(/^\//, ''); } catch { /* retain deterministic legacy key */ }
-    await this.prisma.invoiceFooterAsset.create({
-      data: {
-        organizationId,
-        name: 'Legacy footer',
-        tags: ['legacy'],
-        r2Key,
-        publicUrl: settings.footerImageUrl,
-        contentType: 'image/*',
-        status: InvoiceFooterAssetStatus.ACTIVE,
-        isDefault: true,
-      },
-    }).catch(() => undefined);
+    try {
+      r2Key = new URL(settings.footerImageUrl).pathname.replace(/^\//, '');
+    } catch {
+      /* retain deterministic legacy key */
+    }
+    await this.prisma.invoiceFooterAsset
+      .create({
+        data: {
+          organizationId,
+          name: 'Legacy footer',
+          tags: ['legacy'],
+          r2Key,
+          publicUrl: settings.footerImageUrl,
+          contentType: 'image/*',
+          status: InvoiceFooterAssetStatus.ACTIVE,
+          isDefault: true,
+        },
+      })
+      .catch(() => undefined);
   }
 }

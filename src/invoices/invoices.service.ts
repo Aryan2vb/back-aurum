@@ -486,7 +486,9 @@ export class InvoicesService {
       where: { organizationId },
     });
     if (!settings) throw new BadRequestException('Invoice settings not found');
-    const draftCompany = ((draft.companySnapshot as any)?.data || draft.companySnapshot || {}) as any;
+    const draftCompany = ((draft.companySnapshot as any)?.data ||
+      draft.companySnapshot ||
+      {}) as any;
 
     const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
     const financialYear = getFinancialYear(invoiceDate);
@@ -924,7 +926,7 @@ export class InvoicesService {
     const isFullyPaid = newPaidAmount.greaterThanOrEqualTo(invoice.totalAmount);
     const newInvoiceStatus = isFullyPaid ? InvoiceStatus.PAID : InvoiceStatus.PARTIAL;
 
-    const updatedInvoice = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const updatedInvoice = await tx.invoice.update({
         where: { id, organizationId: user.organizationId },
         data: {
@@ -1002,13 +1004,16 @@ export class InvoicesService {
 
   async generatePdf(id: string, organizationId: string): Promise<Buffer> {
     const revision = await this.prisma.invoiceDocumentRevision.findFirst({
-      where: { invoiceId: id, organizationId }, orderBy: { revision: 'desc' },
+      where: { invoiceId: id, organizationId },
+      orderBy: { revision: 'desc' },
     });
     if (revision) {
       try {
         return await this.uploads!.getObjectBuffer(revision.pdfR2Key);
       } catch (error) {
-        this.logger.warn(`Could not read archived PDF for invoice ${id}; rendering fallback: ${String(error)}`);
+        this.logger.warn(
+          `Could not read archived PDF for invoice ${id}; rendering fallback: ${String(error)}`,
+        );
       }
     }
     const html = await this.generateHtml(id, organizationId);
@@ -1044,19 +1049,29 @@ export class InvoicesService {
         include: this._invoiceRenderInclude(),
       });
       if (!invoice || invoice.status === InvoiceStatus.DRAFT) return;
-      const revision = (await this.prisma.invoiceDocumentRevision.count({ where: { invoiceId, organizationId } })) + 1;
+      const revision =
+        (await this.prisma.invoiceDocumentRevision.count({
+          where: { invoiceId, organizationId },
+        })) + 1;
       const html = this._renderInvoiceHtml(invoice);
       const pdf = await this.pdfService.generatePdf(html);
       const pdfR2Key = `org/${organizationId}/invoices/${invoiceId}/revisions/${revision}.pdf`;
       const stored = await this.uploads!.uploadPrivatePdf(pdfR2Key, pdf);
-      const snapshot = JSON.parse(JSON.stringify({
-        invoice: {
-          id: invoice.id, invoiceNumber: invoice.invoiceNumber, status: invoice.status,
-          templateType: invoice.templateType, invoiceDate: invoice.invoiceDate,
-          companySnapshot: invoice.companySnapshot, buyerSnapshot: invoice.buyerSnapshot,
-          items: invoice.items, payments: invoice.payments,
-        },
-      }));
+      const snapshot = JSON.parse(
+        JSON.stringify({
+          invoice: {
+            id: invoice.id,
+            invoiceNumber: invoice.invoiceNumber,
+            status: invoice.status,
+            templateType: invoice.templateType,
+            invoiceDate: invoice.invoiceDate,
+            companySnapshot: invoice.companySnapshot,
+            buyerSnapshot: invoice.buyerSnapshot,
+            items: invoice.items,
+            payments: invoice.payments,
+          },
+        }),
+      );
       await this.prisma.invoiceDocumentRevision.create({
         data: {
           invoiceId,
@@ -1564,7 +1579,9 @@ export class InvoicesService {
     // Issued invoices retain their original company identity. A footer selection is the
     // only branding field that can intentionally change in a new document revision.
     if (existing.status !== InvoiceStatus.DRAFT) {
-      const previousSnapshot = ((existing.companySnapshot as any)?.data || existing.companySnapshot || {}) as any;
+      const previousSnapshot = ((existing.companySnapshot as any)?.data ||
+        existing.companySnapshot ||
+        {}) as any;
       const footerWasExplicitlyChanged = dto.footerAssetId !== undefined;
       if (!footerWasExplicitlyChanged) financials.footerAssetId = existing.footerAssetId;
       financials.companySnapshot = {
@@ -1574,7 +1591,9 @@ export class InvoicesService {
           footerImage: footerWasExplicitlyChanged
             ? financials.companySnapshot.data.footerImage
             : previousSnapshot.footerImage,
-          footerAssetId: footerWasExplicitlyChanged ? financials.footerAssetId : previousSnapshot.footerAssetId,
+          footerAssetId: footerWasExplicitlyChanged
+            ? financials.footerAssetId
+            : previousSnapshot.footerAssetId,
         },
       };
     }
@@ -1896,7 +1915,8 @@ export class InvoicesService {
       : await this.prisma.invoiceFooterAsset.findFirst({
           where: { organizationId, status: 'ACTIVE', isDefault: true },
         });
-    if (dto.footerAssetId && !footerAsset) throw new BadRequestException('Selected footer is not available');
+    if (dto.footerAssetId && !footerAsset)
+      throw new BadRequestException('Selected footer is not available');
 
     // 2. Tax classification based on settings ONLY
     const placeOfSupply = settings.stateCode || '';

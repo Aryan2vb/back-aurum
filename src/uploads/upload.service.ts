@@ -141,10 +141,16 @@ export class UploadService {
   async presignInvoiceFooterAsset(orgId: string, assetId: string, contentType: string) {
     const config = ASSET_CONFIG[AssetType.ORG_FOOTER_IMAGE];
     if (!config.allowedMimes.includes(contentType)) {
-      throw new BadRequestException(`Content type "${contentType}" is not allowed for invoice footers`);
+      throw new BadRequestException(
+        `Content type "${contentType}" is not allowed for invoice footers`,
+      );
     }
     const key = `org/${orgId}/invoice-footer-assets/${assetId}/${randomUUID()}.${this.mimeToExt(contentType)}`;
-    const command = new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType });
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: contentType,
+    });
     const presignedUrl = await getSignedUrl(this.client, command, { expiresIn: this.presignTtl });
     return { presignedUrl, key, publicUrl: `${this.publicUrl}/${key}`, expiresIn: this.presignTtl };
   }
@@ -154,12 +160,14 @@ export class UploadService {
   }
 
   async uploadPrivatePdf(key: string, body: Buffer): Promise<{ key: string; publicUrl: string }> {
-    await this.client.send(new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-      Body: body,
-      ContentType: 'application/pdf',
-    }));
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: body,
+        ContentType: 'application/pdf',
+      }),
+    );
     return { key, publicUrl: `${this.publicUrl}/${key}` };
   }
 

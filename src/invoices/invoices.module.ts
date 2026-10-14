@@ -12,7 +12,13 @@ import { FooterLibraryController } from './footer-library.controller';
 @Module({
   imports: [PrismaModule, CreditsModule],
   controllers: [InvoicesController, FooterLibraryController],
-  providers: [InvoicesService, PdfService, InvoiceCalculationService, InvoiceNegotiationService, FooterLibraryService],
+  providers: [
+    InvoicesService,
+    PdfService,
+    InvoiceCalculationService,
+    InvoiceNegotiationService,
+    FooterLibraryService,
+  ],
   exports: [InvoicesService],
 })
 export class InvoicesModule {}
