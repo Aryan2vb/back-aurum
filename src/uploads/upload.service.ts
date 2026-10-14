@@ -3,11 +3,14 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   S3Client,
   PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
@@ -132,6 +135,39 @@ export class UploadService {
       // Non-fatal — caller decides whether to throw
       throw err;
     }
+  }
+
+  /** Creates a presigned upload for an immutable invoice footer asset. */
+  async presignInvoiceFooterAsset(orgId: string, assetId: string, contentType: string) {
+    const config = ASSET_CONFIG[AssetType.ORG_FOOTER_IMAGE];
+    if (!config.allowedMimes.includes(contentType)) {
+      throw new BadRequestException(`Content type "${contentType}" is not allowed for invoice footers`);
+    }
+    const key = `org/${orgId}/invoice-footer-assets/${assetId}/${randomUUID()}.${this.mimeToExt(contentType)}`;
+    const command = new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType });
+    const presignedUrl = await getSignedUrl(this.client, command, { expiresIn: this.presignTtl });
+    return { presignedUrl, key, publicUrl: `${this.publicUrl}/${key}`, expiresIn: this.presignTtl };
+  }
+
+  async getObjectMetadata(key: string) {
+    return this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+
+  async uploadPrivatePdf(key: string, body: Buffer): Promise<{ key: string; publicUrl: string }> {
+    await this.client.send(new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Body: body,
+      ContentType: 'application/pdf',
+    }));
+    return { key, publicUrl: `${this.publicUrl}/${key}` };
+  }
+
+  async getObjectBuffer(key: string): Promise<Buffer> {
+    const result = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const body = result.Body as any;
+    if (!body) throw new NotFoundException('Stored document was not found');
+    return Buffer.from(await body.transformToByteArray());
   }
 
   /**

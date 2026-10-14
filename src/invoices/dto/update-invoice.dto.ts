@@ -18,6 +18,10 @@ export class UpdateInvoiceDto {
   @IsOptional()
   customerId?: string;
 
+  @IsString()
+  @IsOptional()
+  footerAssetId?: string;
+
   @IsArray()
   @IsOptional()
   @ValidateNested({ each: true })

@@ -17,13 +17,17 @@ import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { UploadService } from './upload.service';
 import { PresignUploadDto, DeleteUploadDto } from './dto/presign-upload.dto';
 import { ASSET_CONFIG } from './asset-type.enum';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('uploads')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UploadController {
   private readonly logger = new Logger(UploadController.name);
 
-  constructor(private readonly uploadService: UploadService) {}
+  constructor(
+    private readonly uploadService: UploadService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * POST /uploads/presign
@@ -93,6 +97,17 @@ export class UploadController {
     const expectedPrefix = `org/${user.organizationId}/`;
     if (!dto.key.startsWith(expectedPrefix)) {
       throw new BadRequestException('You do not have permission to delete this file');
+    }
+
+    const protectedFooter = await this.prisma.invoiceFooterAsset.findFirst({
+      where: { r2Key: dto.key, organizationId: user.organizationId },
+      include: { invoices: { select: { id: true }, take: 1 }, revisions: { select: { id: true }, take: 1 } },
+    });
+    if (protectedFooter && (protectedFooter.invoices.length || protectedFooter.revisions.length)) {
+      throw new BadRequestException('This footer is referenced by an invoice and cannot be deleted. Archive it instead.');
+    }
+    if (protectedFooter) {
+      throw new BadRequestException('Invoice footer assets are immutable. Archive the footer instead of deleting its R2 object.');
     }
 
     await this.uploadService.deleteObject(dto.key);

@@ -127,6 +127,11 @@ export class CreateInvoiceDto {
   @IsNotEmpty()
   customerId: string;
 
+  /** Explicit visual footer chosen from the organization's immutable footer library. */
+  @IsString()
+  @IsOptional()
+  footerAssetId?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateInvoiceItemDto)
