@@ -3,13 +3,11 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   S3Client,
   PutObjectCommand,
-  GetObjectCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
@@ -157,25 +155,6 @@ export class UploadService {
 
   async getObjectMetadata(key: string) {
     return this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
-  }
-
-  async uploadPrivatePdf(key: string, body: Buffer): Promise<{ key: string; publicUrl: string }> {
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: body,
-        ContentType: 'application/pdf',
-      }),
-    );
-    return { key, publicUrl: `${this.publicUrl}/${key}` };
-  }
-
-  async getObjectBuffer(key: string): Promise<Buffer> {
-    const result = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
-    const body = result.Body as any;
-    if (!body) throw new NotFoundException('Stored document was not found');
-    return Buffer.from(await body.transformToByteArray());
   }
 
   /**
