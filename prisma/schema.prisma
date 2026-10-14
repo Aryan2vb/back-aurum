@@ -498,7 +498,6 @@ model Invoice {
   customer                Customer         @relation(fields: [customerId], references: [id])
   organization            Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   footerAsset             InvoiceFooterAsset? @relation(fields: [footerAssetId], references: [id], onDelete: Restrict)
-  documentRevisions       InvoiceDocumentRevision[]
   items                   InvoiceItem[]
   payments                InvoicePayment[]
   udharEntries            UdharEntry[]
@@ -550,30 +549,10 @@ model InvoiceFooterAsset {
   organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   folder         InvoiceFooterFolder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
   invoices       Invoice[]
-  revisions      InvoiceDocumentRevision[]
 
   @@index([organizationId, status, isDefault])
   @@index([organizationId, folderId])
 }
-
-/// Immutable evidence of every issued version of an invoice.
-model InvoiceDocumentRevision {
-  id             String             @id @default(uuid())
-  invoiceId      String
-  organizationId String
-  revision       Int
-  footerAssetId  String?
-  snapshot       Json
-  pdfR2Key       String             @unique
-  pdfUrl         String
-  createdAt      DateTime           @default(now())
-  invoice        Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  footerAsset    InvoiceFooterAsset? @relation(fields: [footerAssetId], references: [id], onDelete: Restrict)
-
-  @@unique([invoiceId, revision])
-  @@index([organizationId, invoiceId])
-}
-
 
 model InvoiceItem {
   id                          String             @id @default(uuid())

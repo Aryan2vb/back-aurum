@@ -583,7 +583,6 @@ export class InvoicesService {
 
       return updatedInvoice;
     });
-    await this._archiveIssuedRevision(finalizedInvoice.id, organizationId);
     return finalizedInvoice;
   }
 
@@ -743,7 +742,6 @@ export class InvoicesService {
 
       return invoice;
     });
-    if (!isDraft) await this._archiveIssuedRevision(invoice.id, organizationId);
     return invoice;
   }
 
@@ -1003,92 +1001,8 @@ export class InvoicesService {
   }
 
   async generatePdf(id: string, organizationId: string): Promise<Buffer> {
-    const revision = await this.prisma.invoiceDocumentRevision.findFirst({
-      where: { invoiceId: id, organizationId },
-      orderBy: { revision: 'desc' },
-    });
-    if (revision) {
-      try {
-        return await this.uploads!.getObjectBuffer(revision.pdfR2Key);
-      } catch (error) {
-        this.logger.warn(
-          `Could not read archived PDF for invoice ${id}; rendering fallback: ${String(error)}`,
-        );
-      }
-    }
     const html = await this.generateHtml(id, organizationId);
     return this.pdfService.generatePdf(html);
-  }
-
-  async listDocumentRevisions(id: string, organizationId: string) {
-    await this.findOne(id, organizationId);
-    return this.prisma.invoiceDocumentRevision.findMany({
-      where: { invoiceId: id, organizationId },
-      // pdfUrl is omitted intentionally — revision PDFs are stored in a private R2 bucket
-      // and are only served via the authenticated GET .../revisions/:revision/pdf endpoint.
-      select: { id: true, revision: true, footerAssetId: true, createdAt: true },
-      orderBy: { revision: 'desc' },
-    });
-  }
-
-  async generateRevisionPdf(id: string, revision: number, organizationId: string) {
-    // Verify the parent invoice exists and belongs to this org (respects soft-delete).
-    await this.findOne(id, organizationId);
-    const document = await this.prisma.invoiceDocumentRevision.findFirst({
-      where: { invoiceId: id, revision, organizationId },
-    });
-    if (!document) throw new NotFoundException('Invoice revision not found');
-    return this.uploads!.getObjectBuffer(document.pdfR2Key);
-  }
-
-  private async _archiveIssuedRevision(invoiceId: string, organizationId: string): Promise<void> {
-    if (!this.uploads || !(this.prisma as any).invoiceDocumentRevision) return;
-    try {
-      const invoice = await this.prisma.invoice.findFirst({
-        where: { id: invoiceId, organizationId, deletedAt: null },
-        include: this._invoiceRenderInclude(),
-      });
-      if (!invoice || invoice.status === InvoiceStatus.DRAFT) return;
-      const revision =
-        (await this.prisma.invoiceDocumentRevision.count({
-          where: { invoiceId, organizationId },
-        })) + 1;
-      const html = this._renderInvoiceHtml(invoice);
-      const pdf = await this.pdfService.generatePdf(html);
-      const pdfR2Key = `org/${organizationId}/invoices/${invoiceId}/revisions/${revision}.pdf`;
-      const stored = await this.uploads!.uploadPrivatePdf(pdfR2Key, pdf);
-      const snapshot = JSON.parse(
-        JSON.stringify({
-          invoice: {
-            id: invoice.id,
-            invoiceNumber: invoice.invoiceNumber,
-            status: invoice.status,
-            templateType: invoice.templateType,
-            invoiceDate: invoice.invoiceDate,
-            companySnapshot: invoice.companySnapshot,
-            buyerSnapshot: invoice.buyerSnapshot,
-            items: invoice.items,
-            payments: invoice.payments,
-          },
-        }),
-      );
-      await this.prisma.invoiceDocumentRevision.create({
-        data: {
-          invoiceId,
-          organizationId,
-          revision,
-          footerAssetId: invoice.footerAssetId,
-          snapshot,
-          pdfR2Key: stored.key,
-          // pdfUrl is stored as an empty string — the column exists for future CDN/presign use
-          // but the raw R2 path is private and must never be served directly.
-          pdfUrl: '',
-        },
-      });
-    } catch (error) {
-      // Never make the invoice inaccessible if archival storage is temporarily unavailable.
-      this.logger.error(`Invoice ${invoiceId} revision archive failed`, error as Error);
-    }
   }
 
   async generateBillBook(dto: CreateBillBookDto, organizationId: string): Promise<string> {
@@ -1789,9 +1703,6 @@ export class InvoicesService {
 
       return updated;
     });
-    if (updatedInvoice.status !== InvoiceStatus.DRAFT) {
-      await this._archiveIssuedRevision(updatedInvoice.id, organizationId);
-    }
     return updatedInvoice;
   }
 

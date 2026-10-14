@@ -103,10 +103,9 @@ export class UploadController {
       where: { r2Key: dto.key, organizationId: user.organizationId },
       include: {
         invoices: { select: { id: true }, take: 1 },
-        revisions: { select: { id: true }, take: 1 },
       },
     });
-    if (protectedFooter && (protectedFooter.invoices.length || protectedFooter.revisions.length)) {
+    if (protectedFooter && protectedFooter.invoices.length) {
       throw new BadRequestException(
         'This footer is referenced by an invoice and cannot be deleted. Archive it instead.',
       );
