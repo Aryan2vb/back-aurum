@@ -144,24 +144,16 @@ export class UploadService {
       );
     }
     const key = `org/${orgId}/invoice-footer-assets/${assetId}/${randomUUID()}.${this.mimeToExt(contentType)}`;
-    // Footer assets are content-addressed (UUID key) and immutable, so the
-    // browser/CDN can cache them forever. This stops the preview from
-    // re-downloading every footer image each time it is reopened.
-    const cacheControl = 'public, max-age=31536000, immutable';
+    // Do not sign Cache-Control here: the browser would have to send it on the
+    // PUT, and the bucket's CORS rule only allows `content-type`, so the
+    // preflight fails with 403. Image caching is handled at the CDN instead.
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: key,
       ContentType: contentType,
-      CacheControl: cacheControl,
     });
     const presignedUrl = await getSignedUrl(this.client, command, { expiresIn: this.presignTtl });
-    return {
-      presignedUrl,
-      key,
-      publicUrl: `${this.publicUrl}/${key}`,
-      expiresIn: this.presignTtl,
-      cacheControl,
-    };
+    return { presignedUrl, key, publicUrl: `${this.publicUrl}/${key}`, expiresIn: this.presignTtl };
   }
 
   async getObjectMetadata(key: string) {
