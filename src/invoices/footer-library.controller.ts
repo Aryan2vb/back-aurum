@@ -1,4 +1,17 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import { Response } from 'express';
+import { createHash } from 'crypto';
 import { OrganizationRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -15,12 +28,25 @@ import {
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class FooterLibraryController {
   constructor(private readonly service: FooterLibraryService) {}
-  @Get() list(
+  @Get()
+  @Header('Cache-Control', 'private, max-age=30, must-revalidate')
+  async list(
     @CurrentUser() user: CurrentUserData,
+    @Res({ passthrough: true }) res: Response,
     @Query('folderId') folderId?: string,
     @Query('tag') tag?: string,
   ) {
-    return this.service.list(user.organizationId, folderId, tag);
+    const data = await this.service.list(user.organizationId, folderId, tag);
+
+    // Content-addressed ETag so repeated opens (slideover / page switch) can
+    // return 304 Not Modified instead of re-sending the whole payload.
+    const etag = `"${createHash('sha1').update(JSON.stringify(data)).digest('base64url')}"`;
+    res.setHeader('ETag', etag);
+    if (res.req.headers['if-none-match'] === etag) {
+      res.status(304);
+      return undefined;
+    }
+    return data;
   }
   @Post('folders')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)

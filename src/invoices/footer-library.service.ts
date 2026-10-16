@@ -17,21 +17,33 @@ export class FooterLibraryService {
   ) {}
 
   async list(organizationId: string, folderId?: string, tag?: string) {
-    await this.ensureLegacyFooter(organizationId);
-    const assets = await this.prisma.invoiceFooterAsset.findMany({
-      where: {
-        organizationId,
-        status: { not: InvoiceFooterAssetStatus.PENDING },
-        ...(folderId ? { folderId } : {}),
-        ...(tag ? { tags: { has: tag } } : {}),
-      },
-      include: { folder: true },
-      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
-    });
-    const folders = await this.prisma.invoiceFooterFolder.findMany({
-      where: { organizationId },
-      orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
-    });
+    const assetWhere = {
+      organizationId,
+      status: { not: InvoiceFooterAssetStatus.PENDING },
+      ...(folderId ? { folderId } : {}),
+      ...(tag ? { tags: { has: tag } } : {}),
+    };
+
+    // Run the two reads concurrently instead of serially.
+    const [assets, folders] = await Promise.all([
+      this.prisma.invoiceFooterAsset.findMany({
+        where: assetWhere,
+        include: { folder: true },
+        orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
+      }),
+      this.prisma.invoiceFooterFolder.findMany({
+        where: { organizationId },
+        orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+      }),
+    ]);
+
+    // The legacy backfill only ever does work when the org has no assets yet.
+    // Skip the two extra queries entirely once any asset exists (the common case).
+    if (!assets.length && !folderId && !tag) {
+      const backfilled = await this.ensureLegacyFooter(organizationId);
+      if (backfilled) return this.list(organizationId, folderId, tag);
+    }
+
     return { folders, assets };
   }
 
@@ -182,20 +194,24 @@ export class FooterLibraryService {
     return [...new Set((tags || []).map((tag) => tag.trim()).filter(Boolean))].slice(0, 12);
   }
 
-  /** Make the old singleton URL selectable once, without moving or deleting its R2 object. */
-  private async ensureLegacyFooter(organizationId: string) {
+  /**
+   * Make the old singleton URL selectable once, without moving or deleting its R2 object.
+   * Returns true only when it actually created the legacy asset, so callers can avoid a
+   * redundant re-read when nothing changed.
+   */
+  private async ensureLegacyFooter(organizationId: string): Promise<boolean> {
     const [settings, assetCount] = await Promise.all([
       this.prisma.orgInvoiceSettings.findUnique({ where: { organizationId } }),
       this.prisma.invoiceFooterAsset.count({ where: { organizationId } }),
     ]);
-    if (!settings?.footerImageUrl || assetCount) return;
+    if (!settings?.footerImageUrl || assetCount) return false;
     let r2Key = `legacy/${organizationId}/footer`;
     try {
       r2Key = new URL(settings.footerImageUrl).pathname.replace(/^\//, '');
     } catch {
       /* retain deterministic legacy key */
     }
-    await this.prisma.invoiceFooterAsset
+    const created = await this.prisma.invoiceFooterAsset
       .create({
         data: {
           organizationId,
@@ -209,5 +225,6 @@ export class FooterLibraryService {
         },
       })
       .catch(() => undefined);
+    return Boolean(created);
   }
 }
