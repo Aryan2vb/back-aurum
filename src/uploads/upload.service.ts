@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   S3Client,
   PutObjectCommand,
+  HeadObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
@@ -132,6 +133,39 @@ export class UploadService {
       // Non-fatal — caller decides whether to throw
       throw err;
     }
+  }
+
+  /** Creates a presigned upload for an immutable invoice footer asset. */
+  async presignInvoiceFooterAsset(orgId: string, assetId: string, contentType: string) {
+    const config = ASSET_CONFIG[AssetType.ORG_FOOTER_IMAGE];
+    if (!config.allowedMimes.includes(contentType)) {
+      throw new BadRequestException(
+        `Content type "${contentType}" is not allowed for invoice footers`,
+      );
+    }
+    const key = `org/${orgId}/invoice-footer-assets/${assetId}/${randomUUID()}.${this.mimeToExt(contentType)}`;
+    // Footer assets are content-addressed (UUID key) and immutable, so the
+    // browser/CDN can cache them forever. This stops the preview from
+    // re-downloading every footer image each time it is reopened.
+    const cacheControl = 'public, max-age=31536000, immutable';
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: contentType,
+      CacheControl: cacheControl,
+    });
+    const presignedUrl = await getSignedUrl(this.client, command, { expiresIn: this.presignTtl });
+    return {
+      presignedUrl,
+      key,
+      publicUrl: `${this.publicUrl}/${key}`,
+      expiresIn: this.presignTtl,
+      cacheControl,
+    };
+  }
+
+  async getObjectMetadata(key: string) {
+    return this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 
   /**

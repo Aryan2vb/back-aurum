@@ -24,6 +24,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     'Invoice',
     'InvoiceItem',
     'OrgInvoiceSettings',
+    'InvoiceFooterFolder',
+    'InvoiceFooterAsset',
   ]);
 
   private static readonly ACTIONS_REQUIRING_WHERE = new Set<string>([

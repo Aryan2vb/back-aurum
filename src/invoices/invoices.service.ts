@@ -30,6 +30,7 @@ import { InvoiceData } from './utils/invoice-types';
 import { InvoiceCalculationService } from './utils/invoice-calculation.service';
 import { CreateBillBookDto } from './dto/create-bill-book.dto';
 import { buildBillBookHtml, getBillBookTitle } from './utils/bill-book-html';
+import { UploadService } from '../uploads/upload.service';
 
 const BILL_BOOK_QUERY_BATCH_SIZE = 100;
 
@@ -42,6 +43,7 @@ export class InvoicesService {
     private readonly creditsService: CreditsService,
     private readonly pdfService: PdfService,
     private readonly calcService: InvoiceCalculationService,
+    private readonly uploads: UploadService = undefined as any,
   ) {}
 
   private _parsePaymentPaidAt(value: string | undefined, invoiceDate: Date): Date {
@@ -484,6 +486,9 @@ export class InvoicesService {
       where: { organizationId },
     });
     if (!settings) throw new BadRequestException('Invoice settings not found');
+    const draftCompany = ((draft.companySnapshot as any)?.data ||
+      draft.companySnapshot ||
+      {}) as any;
 
     const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
     const financialYear = getFinancialYear(invoiceDate);
@@ -496,7 +501,7 @@ export class InvoicesService {
       status = paidAmount.gt(0) ? InvoiceStatus.PARTIAL : InvoiceStatus.UNPAID;
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const finalizedInvoice = await this.prisma.$transaction(async (tx) => {
       const { invoiceNumber, sequenceVal } = await this._allocateInvoiceNumber(tx, {
         organizationId,
         financialYear,
@@ -537,9 +542,8 @@ export class InvoicesService {
               qrCode: settings.qrCodeUrl
                 ? `${settings.qrCodeUrl}?v=${settings.updatedAt.getTime()}`
                 : '',
-              footerImage: settings.footerImageUrl
-                ? `${settings.footerImageUrl}?v=${settings.updatedAt.getTime()}`
-                : '',
+              footerImage: draftCompany.footerImage || settings.footerImageUrl || '',
+              footerAssetId: draft.footerAssetId || draftCompany.footerAssetId || null,
               whatsappGroupQr: settings.whatsappGroupQrUrl
                 ? `${settings.whatsappGroupQrUrl}?v=${settings.updatedAt.getTime()}`
                 : '',
@@ -579,6 +583,7 @@ export class InvoicesService {
 
       return updatedInvoice;
     });
+    return finalizedInvoice;
   }
 
   private async _persistInvoice(dto: CreateInvoiceDto, user: CurrentUserData, isDraft: boolean) {
@@ -608,6 +613,7 @@ export class InvoicesService {
       metalRateSource,
       metalRateDate,
       totalHallmarkingCharges,
+      footerAssetId,
     } = financials;
 
     // Get settings for invoice number generation
@@ -616,7 +622,7 @@ export class InvoicesService {
     });
     if (!settings) throw new BadRequestException('Invoice settings not found');
 
-    return this.prisma.$transaction(async (tx) => {
+    const invoice = await this.prisma.$transaction(async (tx) => {
       let invoiceNumber: string | null = null;
       let sequenceVal: number | null = null;
 
@@ -655,6 +661,7 @@ export class InvoicesService {
           sgstAmount,
           igstAmount,
           totalHallmarkingCharges,
+          footerAssetId,
           roundOff,
           totalAmount,
           paidAmount,
@@ -735,6 +742,7 @@ export class InvoicesService {
 
       return invoice;
     });
+    return invoice;
   }
 
   async findAll(query: QueryInvoicesDto, organizationId: string) {
@@ -1463,6 +1471,7 @@ export class InvoicesService {
 
     const dummyDto: CreateInvoiceDto = {
       customerId: dto.customerId ?? existing.customerId,
+      footerAssetId: dto.footerAssetId ?? existing.footerAssetId ?? undefined,
       items: dto.items ?? (existing.items as any),
       paidAmount: paymentsSum,
       templateType: dto.templateType ?? existing.templateType,
@@ -1481,6 +1490,27 @@ export class InvoicesService {
     };
 
     const financials = await this._calculateInvoiceFinancials(dummyDto, user, true);
+    // Issued invoices retain their original company identity. A footer selection is the
+    // only branding field that can intentionally change in a new document revision.
+    if (existing.status !== InvoiceStatus.DRAFT) {
+      const previousSnapshot = ((existing.companySnapshot as any)?.data ||
+        existing.companySnapshot ||
+        {}) as any;
+      const footerWasExplicitlyChanged = dto.footerAssetId !== undefined;
+      if (!footerWasExplicitlyChanged) financials.footerAssetId = existing.footerAssetId;
+      financials.companySnapshot = {
+        version: 1,
+        data: {
+          ...previousSnapshot,
+          footerImage: footerWasExplicitlyChanged
+            ? financials.companySnapshot.data.footerImage
+            : previousSnapshot.footerImage,
+          footerAssetId: footerWasExplicitlyChanged
+            ? financials.footerAssetId
+            : previousSnapshot.footerAssetId,
+        },
+      };
+    }
 
     // Recalculate status for non-draft invoices if totals changed, or if explicit finalization requested
     let status = existing.status;
@@ -1495,7 +1525,7 @@ export class InvoicesService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updatedInvoice = await this.prisma.$transaction(async (tx) => {
       const existingItems = existing.items;
       const existingItemIds = new Set(existingItems.map((i) => i.id));
 
@@ -1628,6 +1658,7 @@ export class InvoicesService {
           sgstAmount: new Decimal(financials.sgstAmount),
           igstAmount: new Decimal(financials.igstAmount),
           totalHallmarkingCharges: new Decimal(financials.totalHallmarkingCharges),
+          footerAssetId: financials.footerAssetId,
           roundOff: new Decimal(financials.roundOff),
           totalAmount: new Decimal(financials.grandTotal),
           paidAmount: financials.paidAmount,
@@ -1672,6 +1703,7 @@ export class InvoicesService {
 
       return updated;
     });
+    return updatedInvoice;
   }
 
   private _mapFinancialItemToDb(item: any, invoiceId: string, organizationId: string) {
@@ -1787,6 +1819,16 @@ export class InvoicesService {
     if (!settings) throw new BadRequestException('Invoice settings not found');
     if (!customer) throw new BadRequestException('Customer not found');
 
+    const footerAsset = dto.footerAssetId
+      ? await this.prisma.invoiceFooterAsset.findFirst({
+          where: { id: dto.footerAssetId, organizationId, status: 'ACTIVE' },
+        })
+      : await this.prisma.invoiceFooterAsset.findFirst({
+          where: { organizationId, status: 'ACTIVE', isDefault: true },
+        });
+    if (dto.footerAssetId && !footerAsset)
+      throw new BadRequestException('Selected footer is not available');
+
     // 2. Tax classification based on settings ONLY
     const placeOfSupply = settings.stateCode || '';
     const taxType = settings.defaultTaxType || TaxType.CGST_SGST;
@@ -1850,7 +1892,8 @@ export class InvoicesService {
         bisLogo: settings.bisLogoUrl ?? '',
         signature: settings.signatureUrl ?? '',
         qrCode: settings.qrCodeUrl ?? '',
-        footerImage: settings.footerImageUrl ?? '',
+        footerImage: footerAsset?.publicUrl ?? settings.footerImageUrl ?? '',
+        footerAssetId: footerAsset?.id ?? null,
         whatsappGroupQr: settings.whatsappGroupQrUrl ?? '',
         bankDetails: settings.bankName
           ? {
@@ -1912,6 +1955,7 @@ export class InvoicesService {
       metalRateSource: dto.metalRateSource || 'MANUAL',
       metalRateDate: dto.metalRateDate ? new Date(dto.metalRateDate) : invoiceDate,
       totalHallmarkingCharges,
+      footerAssetId: footerAsset?.id ?? null,
     };
   }
 
