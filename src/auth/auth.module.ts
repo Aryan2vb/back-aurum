@@ -5,7 +5,9 @@ import { JwtStrategy } from './jwt.strategy';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { PrismaModule } from '../prisma/prisma.module';
+import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
+import { AccessPolicyModule } from '../organizations/access-policy.module';
 
 const accessTokenTtlMinutes = Number(process.env.JWT_ACCESS_TTL_MINUTES ?? 180); // Default 3 hours (180 minutes)
 const accessTokenTtlSeconds = accessTokenTtlMinutes * 60;
@@ -13,6 +15,7 @@ const accessTokenTtlSeconds = accessTokenTtlMinutes * 60;
 @Module({
   imports: [
     PrismaModule,
+    AccessPolicyModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
@@ -20,7 +23,7 @@ const accessTokenTtlSeconds = accessTokenTtlMinutes * 60;
     }),
   ],
   controllers: [AuthController],
-  providers: [JwtStrategy, AuthService, RolesGuard],
-  exports: [JwtModule, PassportModule, AuthService, RolesGuard],
+  providers: [JwtStrategy, AuthService, JwtAuthGuard, RolesGuard],
+  exports: [JwtModule, PassportModule, AuthService, JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

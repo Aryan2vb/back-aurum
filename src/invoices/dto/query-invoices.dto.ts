@@ -7,6 +7,7 @@ import {
   Min,
   Max,
   IsBoolean,
+  IsIn,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { InvoiceStatus } from '@prisma/client';
@@ -54,7 +55,7 @@ export class QueryInvoicesDto {
   @IsOptional()
   sortBy?: string = 'invoiceDate';
 
-  @IsString()
+  @IsIn(['asc', 'desc'])
   @IsOptional()
   sortOrder?: 'asc' | 'desc' = 'desc';
 }

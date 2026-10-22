@@ -1,19 +1,9 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Post,
-  Req,
-  UseGuards,
-  Logger,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Logger } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
-import { JwtAuthGuard } from './jwt-auth.guard';
+import { Public } from './public.decorator';
 import { CurrentUser, CurrentUserData } from './current-user.decorator';
 
 @Controller('auth')
@@ -24,12 +14,14 @@ export class AuthController {
     this.logger.log('AuthController initialized');
   }
 
+  @Public()
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
   signupFounder(@Body() dto: SignupDto, @Req() req: Request) {
     return this.authService.signupFounder(dto, this.extractRequestMeta(req));
   }
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto, @Req() req: Request) {
@@ -37,14 +29,12 @@ export class AuthController {
   }
 
   @Post('logout')
-  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   logout(@CurrentUser() user: CurrentUserData, @Req() req: Request) {
     return this.authService.logout(user, this.extractRequestMeta(req));
   }
 
   @Get('whoami')
-  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   whoami(@CurrentUser() user: CurrentUserData) {
     return this.authService.whoami(user);
