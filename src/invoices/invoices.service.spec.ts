@@ -1034,3 +1034,40 @@ describe('InvoicesService bill book', () => {
     expect(prisma.invoice.findMany).not.toHaveBeenCalled();
   });
 });
+
+describe('InvoicesService.findAll list query', () => {
+  const buildListService = () => {
+    const prisma = {
+      invoice: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any) as any;
+    return { prisma, service };
+  };
+
+  it('omits the company snapshot and caps page size when items are included', async () => {
+    const { prisma, service } = buildListService();
+
+    const result = await service.findAll({ includeItems: true, limit: 1000, page: 2 }, 'org-1');
+
+    const args = prisma.invoice.findMany.mock.calls[0][0];
+    expect(args.take).toBe(200);
+    expect(args.skip).toBe(200);
+    expect(args.select.companySnapshot).toBeUndefined();
+    expect(args.select.organizationId).toBeUndefined();
+    expect(args.select.buyerSnapshot).toBe(true);
+    expect(args.select.items).toBeDefined();
+    expect(args.where).toMatchObject({ organizationId: 'org-1', deletedAt: null });
+    expect(result.meta.limit).toBe(200);
+  });
+
+  it('keeps the requested page size without items', async () => {
+    const { prisma, service } = buildListService();
+
+    await service.findAll({ limit: 500, page: 1 }, 'org-1');
+
+    expect(prisma.invoice.findMany.mock.calls[0][0].take).toBe(500);
+  });
+});

@@ -33,6 +33,14 @@ import { buildBillBookHtml, getBillBookTitle } from './utils/bill-book-html';
 import { UploadService } from '../uploads/upload.service';
 
 const BILL_BOOK_QUERY_BATCH_SIZE = 100;
+const MAX_LIST_LIMIT_WITH_ITEMS = 200;
+
+/** Every invoice column except the heavy company snapshot (only needed by the edit/print views) and tenant internals. */
+const INVOICE_LIST_SCALARS = Object.fromEntries(
+  Object.keys(Prisma.InvoiceScalarFieldEnum)
+    .filter((field) => !['companySnapshot', 'organizationId', 'deletedAt'].includes(field))
+    .map((field) => [field, true]),
+) as Record<string, true>;
 
 @Injectable()
 export class InvoicesService {
@@ -788,46 +796,41 @@ export class InvoicesService {
     const validSortFields = ['invoiceDate', 'invoiceNumber', 'totalAmount', 'status', 'createdAt'];
     const sortField = validSortFields.includes(sortBy) ? sortBy : 'invoiceDate';
 
-    const skip = (page - 1) * limit;
+    // includeItems loads every item + payment per invoice, so keep that page small.
+    const take = includeItems ? Math.min(limit, MAX_LIST_LIMIT_WITH_ITEMS) : limit;
+    const skip = (page - 1) * take;
 
-    const orderBy: any[] = [{ [sortField]: sortOrder }];
-    if (sortField !== 'sequence') {
-      orderBy.push({ sequence: sortOrder });
-    }
+    const orderBy: any[] = [{ [sortField]: sortOrder }, { sequence: sortOrder }];
 
     const findOptions: any = {
       where,
       orderBy,
       skip,
-      take: limit,
-      ...(includeItems
+      take,
+      select: includeItems
         ? {
-            include: {
-              customer: { select: { id: true, fullName: true, customerCode: true } },
-              _count: { select: { items: true } },
-              items: { orderBy: { slNo: 'asc' } },
-              payments: true,
-            },
+            ...INVOICE_LIST_SCALARS,
+            customer: { select: { id: true, fullName: true, customerCode: true } },
+            items: { orderBy: { slNo: 'asc' } },
+            payments: true,
           }
         : {
-            select: {
-              id: true,
-              invoiceNumber: true,
-              status: true,
-              invoiceDate: true,
-              subtotal: true,
-              taxableAmount: true,
-              cgstAmount: true,
-              sgstAmount: true,
-              igstAmount: true,
-              totalAmount: true,
-              paidAmount: true,
-              customerId: true,
-              customer: { select: { id: true, fullName: true, customerCode: true } },
-              _count: { select: { items: true } },
-              payments: { select: { amount: true, mode: true } },
-            },
-          }),
+            id: true,
+            invoiceNumber: true,
+            status: true,
+            invoiceDate: true,
+            subtotal: true,
+            taxableAmount: true,
+            cgstAmount: true,
+            sgstAmount: true,
+            igstAmount: true,
+            totalAmount: true,
+            paidAmount: true,
+            customerId: true,
+            customer: { select: { id: true, fullName: true, customerCode: true } },
+            _count: { select: { items: true } },
+            payments: { select: { amount: true, mode: true } },
+          },
     };
 
     const [invoices, total] = await Promise.all([
@@ -842,7 +845,7 @@ export class InvoicesService {
           .minus(new Decimal(inv.paidAmount))
           .toNumber(),
       })),
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      meta: { total, page, limit: take, totalPages: Math.ceil(total / take) },
     };
   }
 
