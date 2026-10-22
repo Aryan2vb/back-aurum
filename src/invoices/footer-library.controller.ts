@@ -1,20 +1,7 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Header,
-  Param,
-  Patch,
-  Post,
-  Query,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { createHash } from 'crypto';
 import { OrganizationRole } from '@prisma/client';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, CurrentUserData } from '../auth/current-user.decorator';
 import { FooterLibraryService } from './footer-library.service';
@@ -25,7 +12,6 @@ import {
 } from './dto/invoice-footer.dto';
 
 @Controller('invoice-footers')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class FooterLibraryController {
   constructor(private readonly service: FooterLibraryService) {}
   @Get()
