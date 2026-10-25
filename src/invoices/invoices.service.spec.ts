@@ -481,6 +481,10 @@ describe('InvoicesService invoice sequence allocation', () => {
           customerId: 'customer-1',
           status: 'DRAFT',
           paidAmount: new Decimal(0),
+          taxType: 'CGST_SGST',
+          cgstRate: new Decimal(1.5),
+          sgstRate: new Decimal(1.5),
+          igstRate: new Decimal(0),
           invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
           buyerSnapshot: { data: {} },
           items: [],
@@ -565,6 +569,10 @@ describe('InvoicesService invoice sequence allocation', () => {
           customerId: 'new-customer',
           status: 'PAID',
           paidAmount: new Decimal(103),
+          taxType: 'CGST_SGST',
+          cgstRate: new Decimal(1.5),
+          sgstRate: new Decimal(1.5),
+          igstRate: new Decimal(0),
           modeOfPayment: 'CASH',
           templateType: 'jewellery',
           invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
@@ -848,7 +856,7 @@ describe('InvoicesService invoice sequence allocation', () => {
 describe('InvoicesService.update print format', () => {
   const organizationId = 'org-1';
 
-  const build = (existingTemplate: string) => {
+  const build = (existingTemplate: string, existingTax: Record<string, unknown> = {}) => {
     const tx = {
       invoice: {
         update: jest
@@ -867,6 +875,11 @@ describe('InvoicesService.update print format', () => {
           customerId: 'customer-1',
           status: 'PAID',
           paidAmount: new Decimal(103),
+          taxType: 'CGST_SGST',
+          cgstRate: new Decimal(1.5),
+          sgstRate: new Decimal(1.5),
+          igstRate: new Decimal(0),
+          ...existingTax,
           modeOfPayment: 'CASH',
           templateType: existingTemplate,
           invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
@@ -931,6 +944,49 @@ describe('InvoicesService.update print format', () => {
       { organizationId, userId: 'u' },
     );
     expect(tx.invoice.update.mock.calls[0][0].data).not.toHaveProperty('templateType');
+  });
+
+  describe('tax on update', () => {
+    const noTax = {
+      taxType: 'NONE',
+      cgstRate: new Decimal(0),
+      sgstRate: new Decimal(0),
+      igstRate: new Decimal(0),
+    };
+    const calcDto = (service: any) => service._calculateInvoiceFinancials.mock.calls[0][0];
+
+    it("keeps the invoice's own tax instead of resetting to the org default", async () => {
+      const { service } = build('jewellery', noTax);
+      await service.update(
+        'invoice-1',
+        { customerId: 'customer-2' },
+        { organizationId, userId: 'u' },
+      );
+      expect(calcDto(service)).toEqual(
+        expect.objectContaining({ taxType: 'NONE', cgstRate: 0, sgstRate: 0, igstRate: 0 }),
+      );
+    });
+
+    it('passes a taxType chosen in the editor and drops the old rates', async () => {
+      const { service } = build('jewellery', noTax);
+      await service.update('invoice-1', { taxType: 'CGST_SGST' }, { organizationId, userId: 'u' });
+      const dto = calcDto(service);
+      expect(dto.taxType).toBe('CGST_SGST');
+      expect(dto.cgstRate).toBeUndefined();
+      expect(dto.sgstRate).toBeUndefined();
+    });
+
+    it('lets an explicit rate override the stored one when the type is unchanged', async () => {
+      const { service } = build('jewellery');
+      await service.update(
+        'invoice-1',
+        { cgstRate: 2.5, sgstRate: 2.5 },
+        { organizationId, userId: 'u' },
+      );
+      expect(calcDto(service)).toEqual(
+        expect.objectContaining({ taxType: 'CGST_SGST', cgstRate: 2.5, sgstRate: 2.5 }),
+      );
+    });
   });
 });
 

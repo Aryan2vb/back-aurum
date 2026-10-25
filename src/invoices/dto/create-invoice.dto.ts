@@ -14,7 +14,7 @@ import {
   Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { MetalType, MakingChargesType, PaymentMethod } from '@prisma/client';
+import { MetalType, MakingChargesType, PaymentMethod, TaxType } from '@prisma/client';
 import { INVOICE_TEMPLATE_INPUTS } from '../utils/invoice-template';
 
 export class CreateInvoiceItemDto {
@@ -157,6 +157,27 @@ export class CreateInvoiceDto {
   @ValidateNested({ each: true })
   @Type(() => CreateInvoicePaymentDto)
   payments?: CreateInvoicePaymentDto[];
+
+  /** Tax classification for this invoice. Omit to use the organization's default tax type. */
+  @IsEnum(TaxType)
+  @IsOptional()
+  taxType?: TaxType;
+
+  /** Rates in percent. Omit to use the organization's defaults; ignored for rates that do not apply to `taxType`. */
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  cgstRate?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  sgstRate?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  igstRate?: number;
 
   /** "standard" | "modern" | "jewellery" ("classic"/"default" = standard). Defaults to "jewellery". */
   @IsIn(INVOICE_TEMPLATE_INPUTS as string[])

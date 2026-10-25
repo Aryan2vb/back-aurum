@@ -4,6 +4,7 @@ import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditsService } from '../credits/credits.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { resolveTaxConfig } from './utils/tax-config';
 import { CreateOrgInvoiceSettingsDto } from './dto/create-org-invoice-settings.dto';
 import { QueryInvoicesDto } from './dto/query-invoices.dto';
 import { RecordPaymentDto } from './dto/record-payment.dto';
@@ -1490,6 +1491,16 @@ export class InvoicesService {
       buyerStateCode: dto.buyerStateCode,
       autoCreateUdhar: dto.autoCreateUdhar ?? (existing as any).autoCreateUdhar,
       manualSequence: dto.manualSequence,
+      // Keep the invoice's own tax unless the editor changes it. When the type changes,
+      // the old rates no longer apply, so let the new type fall back to the org defaults.
+      taxType: dto.taxType ?? existing.taxType,
+      ...(dto.taxType === undefined || dto.taxType === existing.taxType
+        ? {
+            cgstRate: dto.cgstRate ?? new Decimal(existing.cgstRate).toNumber(),
+            sgstRate: dto.sgstRate ?? new Decimal(existing.sgstRate).toNumber(),
+            igstRate: dto.igstRate ?? new Decimal(existing.igstRate).toNumber(),
+          }
+        : { cgstRate: dto.cgstRate, sgstRate: dto.sgstRate, igstRate: dto.igstRate }),
     };
 
     const financials = await this._calculateInvoiceFinancials(dummyDto, user, true);
@@ -1832,14 +1843,13 @@ export class InvoicesService {
     if (dto.footerAssetId && !footerAsset)
       throw new BadRequestException('Selected footer is not available');
 
-    // 2. Tax classification based on settings ONLY
+    // 2. Tax classification: request values win, org settings fill in anything omitted
     const placeOfSupply = settings.stateCode || '';
-    const taxType = settings.defaultTaxType || TaxType.CGST_SGST;
-
-    // GST rates from settings
-    const cgstRate = settings.defaultCgstRate ?? new Decimal(0);
-    const sgstRate = settings.defaultSgstRate ?? new Decimal(0);
-    const igstRate = settings.defaultIgstRate ?? new Decimal(0);
+    const taxConfig = resolveTaxConfig(dto, settings);
+    const taxType = taxConfig.taxType;
+    const cgstRate = new Decimal(taxConfig.cgst);
+    const sgstRate = new Decimal(taxConfig.sgst);
+    const igstRate = new Decimal(taxConfig.igst);
 
     // 3. Process Line Items
     const lineItems = dto.items.map((item, index) => {
