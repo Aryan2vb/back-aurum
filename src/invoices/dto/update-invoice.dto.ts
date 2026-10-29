@@ -8,8 +8,10 @@ import {
   IsDateString,
   IsBoolean,
   IsIn,
+  IsEnum,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { TaxType } from '@prisma/client';
 import { CreateInvoiceItemDto, CreateInvoicePaymentDto } from './create-invoice.dto';
 import { INVOICE_TEMPLATE_INPUTS } from '../utils/invoice-template';
 
@@ -32,6 +34,27 @@ export class UpdateInvoiceDto {
   @Min(0)
   @IsOptional()
   paidAmount?: number;
+
+  /** Tax classification for this invoice. Omit to keep the invoice's current tax type. */
+  @IsEnum(TaxType)
+  @IsOptional()
+  taxType?: TaxType;
+
+  /** Rates in percent. Omit to keep the invoice's current rates; ignored for rates that do not apply to `taxType`. */
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  cgstRate?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  sgstRate?: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  igstRate?: number;
 
   /** Print format for this invoice: "standard" | "modern" | "jewellery" ("classic"/"default" = standard). */
   @IsIn(INVOICE_TEMPLATE_INPUTS as string[])
