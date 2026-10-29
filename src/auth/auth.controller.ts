@@ -1,10 +1,13 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Logger } from '@nestjs/common';
 import { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { Public } from './public.decorator';
 import { CurrentUser, CurrentUserData } from './current-user.decorator';
+
+const AUTH_THROTTLE = { limit: 10, ttl: 60_000 };
 
 @Controller('auth')
 export class AuthController {
@@ -15,6 +18,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: AUTH_THROTTLE })
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
   signupFounder(@Body() dto: SignupDto, @Req() req: Request) {
@@ -22,6 +26,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: AUTH_THROTTLE })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   login(@Body() dto: LoginDto, @Req() req: Request) {

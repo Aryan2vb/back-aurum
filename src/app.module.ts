@@ -21,8 +21,9 @@ import { AppController } from './app.controller';
     }),
     ThrottlerModule.forRoot([
       {
-        ttl: 60,
-        limit: 30,
+        // @nestjs/throttler v5+ takes ttl in milliseconds.
+        ttl: 60_000,
+        limit: 300,
       },
     ]),
     PrismaModule,
