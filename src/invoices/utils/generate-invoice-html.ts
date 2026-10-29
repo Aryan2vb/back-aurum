@@ -7,6 +7,7 @@ import { MakingChargesType } from '@prisma/client';
 import { getInvoiceDocumentTitle } from './invoice-document-title';
 import { InvoiceData } from './invoice-types';
 import { formatPaymentLine } from './payment-date';
+import { escapeHtmlDeep } from './html-escape';
 
 /** Purity as printed on the invoice; "-" when the item has none. */
 function formatPurity(value?: string | null): string {
@@ -14,7 +15,8 @@ function formatPurity(value?: string | null): string {
   return !v || v.toUpperCase() === 'NONE' || v === '-' ? '-' : v;
 }
 
-export function generateInvoiceHtml(data: InvoiceData): string {
+export function generateInvoiceHtml(rawData: InvoiceData): string {
+  const data = escapeHtmlDeep(rawData);
   const {
     company,
     buyer,
