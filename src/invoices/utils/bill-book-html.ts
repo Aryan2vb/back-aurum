@@ -1,3 +1,5 @@
+import { escapeHtml } from './html-escape';
+
 type BillBookHtmlInput = {
   title: string;
   invoices: string[];
@@ -29,14 +31,6 @@ export function getBillBookTitle({ selectedCount, dateFrom, dateTo }: BillBookTi
   if (to) return `Bill Book - Up to ${to}`;
   return 'Bill Book - All Time';
 }
-
-const escapeHtml = (value: string): string =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 
 const removePrintButton = (html: string): string =>
   html.replace(

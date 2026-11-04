@@ -1,11 +1,13 @@
 import { getInvoiceDocumentTitle } from './invoice-document-title';
 import { InvoiceData } from './invoice-types';
 import { formatPaymentLine } from './payment-date';
+import { escapeHtmlDeep } from './html-escape';
 
 /**
  * Generates a modern/clean themed HTML invoice
  */
-export function generateModernInvoiceHtml(data: InvoiceData): string {
+export function generateModernInvoiceHtml(rawData: InvoiceData): string {
+  const data = escapeHtmlDeep(rawData);
   const {
     company,
     buyer,

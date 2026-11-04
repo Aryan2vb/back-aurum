@@ -13,6 +13,13 @@ import { AddMemberDto } from './dto/add-member.dto';
 import { CurrentUserData } from '../auth/current-user.decorator';
 import { UploadService } from '../uploads/upload.service';
 
+const ROLE_RANK: Record<OrganizationRole, number> = {
+  [OrganizationRole.VIEWER]: 0,
+  [OrganizationRole.STAFF]: 1,
+  [OrganizationRole.ADMIN]: 2,
+  [OrganizationRole.OWNER]: 3,
+};
+
 @Injectable()
 export class OrganizationsService {
   private readonly logger = new Logger(OrganizationsService.name);
@@ -25,6 +32,10 @@ export class OrganizationsService {
   }
 
   async addMember(dto: AddMemberDto, actor: CurrentUserData) {
+    if (ROLE_RANK[dto.role] > ROLE_RANK[actor.role]) {
+      throw new ForbiddenException('You cannot grant a role higher than your own');
+    }
+
     const normalizedFullName = dto.fullName.trim();
 
     return this.prisma.$transaction(async (tx) => {

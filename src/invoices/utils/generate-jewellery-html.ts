@@ -6,8 +6,10 @@
 import { getInvoiceDocumentTitle } from './invoice-document-title';
 import { InvoiceData } from './invoice-types';
 import { formatPaymentLine } from './payment-date';
+import { escapeHtmlDeep } from './html-escape';
 
-export function generateJewelleryInvoiceHtml(data: InvoiceData): string {
+export function generateJewelleryInvoiceHtml(rawData: InvoiceData): string {
+  const data = escapeHtmlDeep(rawData);
   const {
     company,
     buyer,
