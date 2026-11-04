@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
 const pdfMake = require('pdfmake/build/pdfmake');
@@ -7,6 +7,8 @@ const pdfFonts = require('pdfmake/build/vfs_fonts');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
 const htmlToPdfmake = require('html-to-pdfmake');
 import { JSDOM } from 'jsdom';
+import { existsSync } from 'fs';
+import puppeteer, { Browser, HTTPRequest } from 'puppeteer-core';
 
 pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
 
@@ -14,9 +16,21 @@ pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 /** Max time to wait for a single image fetch. */
 const IMAGE_FETCH_TIMEOUT_MS = 10_000;
+/** Max time to wait for Chromium to render one invoice. */
+const CHROMIUM_RENDER_TIMEOUT_MS = 30_000;
+
+/** Where Chrome/Chromium usually lives; CHROME_EXECUTABLE_PATH always wins. */
+const CHROME_CANDIDATE_PATHS = [
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/Applications/Chromium.app/Contents/MacOS/Chromium',
+];
 
 @Injectable()
-export class PdfService {
+export class PdfService implements OnModuleDestroy {
   private readonly logger = new Logger(PdfService.name);
 
   /**
@@ -26,6 +40,8 @@ export class PdfService {
    * image URLs (e.g. cloud metadata endpoints or internal services).
    */
   private readonly allowedImageHosts: Set<string>;
+
+  private browserPromise: Promise<Browser> | null = null;
 
   constructor(private readonly config: ConfigService) {
     const hosts = new Set<string>();
@@ -40,7 +56,104 @@ export class PdfService {
     this.allowedImageHosts = hosts;
   }
 
+  async onModuleDestroy(): Promise<void> {
+    if (!this.browserPromise) return;
+    const browser = await this.browserPromise.catch(() => null);
+    this.browserPromise = null;
+    await browser?.close().catch(() => undefined);
+  }
+
+  /**
+   * Renders the invoice HTML in headless Chromium, exactly as the browser's "Save as PDF" would
+   * (the templates carry their own @media print and @page rules). Falls back to the pdfmake
+   * converter, which only approximates the layout, when no Chrome/Chromium is available.
+   */
   async generatePdf(html: string): Promise<Buffer> {
+    const executablePath = this.resolveChromePath();
+    if (executablePath) {
+      try {
+        return await this.generatePdfWithChromium(html, executablePath);
+      } catch (error) {
+        this.logger.error(
+          `Chromium PDF rendering failed, falling back to pdfmake: ${(error as Error).message}`,
+        );
+      }
+    } else {
+      this.logger.warn(
+        'No Chrome/Chromium found (set CHROME_EXECUTABLE_PATH); using the pdfmake fallback, which does not match the invoice layout',
+      );
+    }
+    return this.generatePdfWithPdfmake(html);
+  }
+
+  private resolveChromePath(): string | null {
+    const configured =
+      this.config.get<string>('CHROME_EXECUTABLE_PATH') ||
+      this.config.get<string>('PUPPETEER_EXECUTABLE_PATH');
+    if (configured) return configured;
+    return CHROME_CANDIDATE_PATHS.find((path) => existsSync(path)) ?? null;
+  }
+
+  private getBrowser(executablePath: string): Promise<Browser> {
+    if (!this.browserPromise) {
+      this.browserPromise = puppeteer
+        .launch({
+          executablePath,
+          headless: true,
+          // The container runs as root without a user namespace, and /dev/shm is tiny there.
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        })
+        .then((browser) => {
+          browser.on('disconnected', () => {
+            this.browserPromise = null;
+          });
+          return browser;
+        })
+        .catch((error) => {
+          this.browserPromise = null;
+          throw error;
+        });
+    }
+    return this.browserPromise;
+  }
+
+  private async generatePdfWithChromium(html: string, executablePath: string): Promise<Buffer> {
+    this.logger.debug('Generating PDF using Chromium');
+    const browser = await this.getBrowser(executablePath);
+    const page = await browser.newPage();
+    try {
+      // The HTML is a static document: no scripts needed, and only data: URLs or images from our
+      // own asset host may load. This keeps Chromium from being used to reach internal services.
+      await page.setJavaScriptEnabled(false);
+      await page.setRequestInterception(true);
+      page.on('request', (request: HTTPRequest) => {
+        const url = request.url();
+        if (url.startsWith('data:') || url === 'about:blank' || this.isAllowedImageUrl(url)) {
+          void request.continue();
+        } else {
+          void request.abort();
+        }
+      });
+
+      await page.setContent(html, {
+        waitUntil: 'load',
+        timeout: CHROMIUM_RENDER_TIMEOUT_MS,
+      });
+      await page.emulateMediaType('print');
+      const pdf = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        timeout: CHROMIUM_RENDER_TIMEOUT_MS,
+      });
+      this.logger.debug('PDF generated successfully with Chromium');
+      return Buffer.from(pdf);
+    } finally {
+      await page.close().catch(() => undefined);
+    }
+  }
+
+  private async generatePdfWithPdfmake(html: string): Promise<Buffer> {
     this.logger.debug('Generating PDF using pdfmake');
 
     try {
@@ -66,23 +179,24 @@ export class PdfService {
 
       const pdfDocGenerator = pdfMake.createPdf(docDefinition);
 
-      // Ensure we don't hang indefinitely if pdfmake fails internally
-      return new Promise<Buffer>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('PDF generation timed out after 30s'));
-        }, 30000);
-
-        try {
-          pdfDocGenerator.getBuffer((buffer: Uint8Array) => {
-            clearTimeout(timeout);
-            this.logger.debug('PDF generated successfully with pdfmake');
-            resolve(Buffer.from(buffer));
-          });
-        } catch (err) {
-          clearTimeout(timeout);
-          reject(err);
-        }
-      });
+      // pdfmake 0.3+ returns a Promise from getBuffer() and no longer calls a callback.
+      // Keep a timeout so we never hang indefinitely if pdfmake fails internally.
+      let timeout: NodeJS.Timeout | undefined;
+      try {
+        const buffer: Uint8Array = await Promise.race([
+          pdfDocGenerator.getBuffer(),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error('PDF generation timed out after 30s')),
+              30000,
+            );
+          }),
+        ]);
+        this.logger.debug('PDF generated successfully with pdfmake');
+        return Buffer.from(buffer);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
     } catch (error) {
       this.logger.error('Failed to generate PDF with pdfmake', error);
       throw error;
