@@ -81,6 +81,27 @@ export class InvoicesService {
     return paidAt;
   }
 
+  /**
+   * Returns the payments sorted by payment date, earliest first. A payment without a date counts
+   * as paid on the invoice date (as `_parsePaymentPaidAt` stores it). Same-day payments keep
+   * the order they were sent in.
+   */
+  private _sortPaymentsByDate<T extends { paidAt?: string }>(
+    payments: T[] | undefined,
+    invoiceDate: Date | string | undefined,
+  ): T[] | undefined {
+    if (!payments) return payments;
+    const parsedInvoiceDate = invoiceDate ? new Date(invoiceDate) : null;
+    const fallback =
+      parsedInvoiceDate && !Number.isNaN(parsedInvoiceDate.getTime())
+        ? parsedInvoiceDate.toISOString().slice(0, 10)
+        : '';
+    return payments
+      .map((payment, index) => ({ payment, index, key: payment.paidAt || fallback }))
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.index - b.index))
+      .map(({ payment }) => payment);
+  }
+
   private _consumeMatchingExistingPayment(payment: any, existingPayments: any[]): boolean {
     if (!payment.paidAt) return false;
 
@@ -597,6 +618,10 @@ export class InvoicesService {
 
   private async _persistInvoice(dto: CreateInvoiceDto, user: CurrentUserData, isDraft: boolean) {
     const { organizationId, userId } = user;
+    dto = {
+      ...dto,
+      payments: this._sortPaymentsByDate(dto.payments, dto.invoiceDate ?? new Date()),
+    };
     const financials = await this._calculateInvoiceFinancials(dto, user, isDraft);
     const {
       status,
@@ -813,7 +838,7 @@ export class InvoicesService {
             ...INVOICE_LIST_SCALARS,
             customer: { select: { id: true, fullName: true, customerCode: true } },
             items: { orderBy: { slNo: 'asc' } },
-            payments: true,
+            payments: { orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }] },
           }
         : {
             id: true,
@@ -830,7 +855,10 @@ export class InvoicesService {
             customerId: true,
             customer: { select: { id: true, fullName: true, customerCode: true } },
             _count: { select: { items: true } },
-            payments: { select: { amount: true, mode: true } },
+            payments: {
+              select: { amount: true, mode: true },
+              orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }],
+            },
           },
     };
 
@@ -871,7 +899,7 @@ export class InvoicesService {
         },
         udharEntries: { where: { deletedAt: null } },
         createdBy: { select: { id: true, fullName: true, email: true } },
-        payments: { orderBy: { paidAt: 'desc' } },
+        payments: { orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }] },
       },
     });
 
@@ -1609,8 +1637,9 @@ export class InvoicesService {
 
         // Create new payments
         if (dto.payments.length > 0) {
+          const paymentsByDate = this._sortPaymentsByDate(dto.payments, financials.invoiceDate)!;
           await tx.invoicePayment.createMany({
-            data: dto.payments.map((p) => ({
+            data: paymentsByDate.map((p) => ({
               invoiceId: id,
               organizationId,
               mode: p.mode,
