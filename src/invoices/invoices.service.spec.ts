@@ -85,6 +85,49 @@ describe('InvoicesService payment dates', () => {
   });
 });
 
+describe('InvoicesService payment order', () => {
+  const buildService = () => new InvoicesService({} as any, {} as any, {} as any, {} as any) as any;
+
+  it('sorts payments by date, earliest first, keeping same-day order', () => {
+    const service = buildService();
+    const payments = [
+      { mode: 'UPI', amount: 1, paidAt: '2026-06-05' },
+      { mode: 'CASH', amount: 2, paidAt: '2026-06-01' },
+      { mode: 'CARD', amount: 3, paidAt: '2026-06-03' },
+      { mode: 'CASH', amount: 4, paidAt: '2026-06-01' },
+    ];
+
+    const sorted = service._sortPaymentsByDate(payments, new Date('2026-06-10'));
+    expect(sorted.map((p: any) => p.amount)).toEqual([2, 4, 3, 1]);
+    expect(payments.map((p) => p.amount)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('treats a payment without a date as paid on the invoice date', () => {
+    const service = buildService();
+    const payments = [
+      { mode: 'CASH', amount: 1 },
+      { mode: 'UPI', amount: 2, paidAt: '2026-06-01' },
+    ];
+
+    const sorted = service._sortPaymentsByDate(payments, '2026-06-10');
+    expect(sorted.map((p: any) => p.amount)).toEqual([2, 1]);
+  });
+
+  it('passes undefined through', () => {
+    expect(buildService()._sortPaymentsByDate(undefined, new Date())).toBeUndefined();
+  });
+
+  it('returns invoice payments earliest first from findOne', async () => {
+    const prisma = { invoice: { findFirst: jest.fn().mockResolvedValue(null) } };
+    const service = new InvoicesService(prisma as any, {} as any, {} as any, {} as any);
+
+    await expect(service.findOne('invoice-1', 'org-1')).rejects.toThrow();
+    expect(prisma.invoice.findFirst.mock.calls[0][0].include.payments).toEqual({
+      orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }],
+    });
+  });
+});
+
 describe('InvoicesService invoice sequence allocation', () => {
   const organizationId = 'org-1';
   const financialYear = '2025-26';
@@ -930,6 +973,22 @@ describe('InvoicesService.update print format', () => {
     );
   });
 
+  it('saves edited payments in date order', async () => {
+    const { service, tx } = build('jewellery');
+    await service.update(
+      'invoice-1',
+      {
+        payments: [
+          { mode: 'UPI', amount: 50, paidAt: '2025-03-30' },
+          { mode: 'CASH', amount: 53, paidAt: '2025-03-20' },
+        ],
+      },
+      { organizationId, userId: 'u' },
+    );
+    const saved = tx.invoicePayment.createMany.mock.calls[0][0].data;
+    expect(saved.map((p: any) => p.mode)).toEqual(['CASH', 'UPI']);
+  });
+
   it('stores the canonical name when the editor sends the "classic" alias', async () => {
     const { service, tx } = build('jewellery');
     await service.update('invoice-1', { templateType: 'classic' }, { organizationId, userId: 'u' });
@@ -1117,6 +1176,17 @@ describe('InvoicesService.findAll list query', () => {
     expect(args.select.items).toBeDefined();
     expect(args.where).toMatchObject({ organizationId: 'org-1', deletedAt: null });
     expect(result.meta.limit).toBe(200);
+  });
+
+  it('orders each invoice payments earliest first, with and without items', async () => {
+    const { prisma, service } = buildListService();
+    const order = [{ paidAt: 'asc' }, { createdAt: 'asc' }];
+
+    await service.findAll({ includeItems: true }, 'org-1');
+    await service.findAll({}, 'org-1');
+
+    expect(prisma.invoice.findMany.mock.calls[0][0].select.payments.orderBy).toEqual(order);
+    expect(prisma.invoice.findMany.mock.calls[1][0].select.payments.orderBy).toEqual(order);
   });
 
   it('keeps the requested page size without items', async () => {
