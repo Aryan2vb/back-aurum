@@ -1,0 +1,6 @@
+reviews:
+  path_filters:
+    # Applied migrations are history: they are never edited, so review findings on
+    # them regenerate on every run. Schema changes are reviewed via schema.prisma
+    # and the new migration is verified by `prisma migrate deploy`.
+    - "!prisma/migrations/**"
