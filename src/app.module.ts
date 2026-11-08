@@ -13,6 +13,12 @@ import { ReportsModule } from './reports/reports.module';
 import { UploadModule } from './uploads/upload.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
+import { StockModule } from './stock/stock.module';
+import { VendorsModule } from './vendors/vendors.module';
+import { PurchasesModule } from './purchases/purchases.module';
+import { FinanceModule } from './finance/finance.module';
+import { BankStatementModule } from './bank-statement/bank-statement.module';
+import { BackupModule } from './backup/backup.module';
 
 @Module({
   imports: [
@@ -34,6 +40,12 @@ import { AppController } from './app.controller';
     CreditsModule,
     InvoicesModule,
     ReportsModule,
+    StockModule,
+    VendorsModule,
+    PurchasesModule,
+    FinanceModule,
+    BankStatementModule,
+    BackupModule,
   ],
   controllers: [AppController],
   providers: [

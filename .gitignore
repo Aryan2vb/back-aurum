@@ -39,7 +39,7 @@ lerna-debug.log*
 .env.local
 .env.*.local
 
-#Prisma
+# Prisma
 /prisma/migrations
 
 .vercel
@@ -47,3 +47,6 @@ lerna-debug.log*
 
 
 .postman/
+
+# Database backups (contain full tenant data)
+/backups

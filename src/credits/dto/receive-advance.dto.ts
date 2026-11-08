@@ -36,4 +36,8 @@ export class ReceiveAdvanceDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  accountId?: string;
 }
