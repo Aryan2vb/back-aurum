@@ -41,12 +41,6 @@ lerna-debug.log*
 
 #Prisma
 /prisma/migrations
-!/prisma/migrations/
-/prisma/migrations/*
-!/prisma/migrations/20261111120000_advance_audit_fields/
-!/prisma/migrations/20261111120000_advance_audit_fields/migration.sql
-!/prisma/migrations/20261114120000_advance_receipt_allocations/
-!/prisma/migrations/20261114120000_advance_receipt_allocations/migration.sql
 
 .vercel
 .env*.local
