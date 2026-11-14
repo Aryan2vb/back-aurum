@@ -202,6 +202,8 @@ export class ReportsService {
             LedgerType.ADVANCE_TRANSFER_OUT,
             LedgerType.ADVANCE_TRANSFER_IN,
             LedgerType.ADVANCE_REFUND,
+            LedgerType.ADVANCE_CORRECTION_CREDIT,
+            LedgerType.ADVANCE_CORRECTION_DEBIT,
           ],
         },
       },
@@ -212,9 +214,12 @@ export class ReportsService {
         amount: true,
         description: true,
         paymentMethod: true,
+        paymentReference: true,
         createdAt: true,
+        transactionDate: true,
+        referenceLedgerEntryId: true,
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ transactionDate: 'asc' }, { createdAt: 'asc' }],
     });
 
     if (!allEntries.length) {
@@ -222,11 +227,12 @@ export class ReportsService {
     }
 
     // Build per-customer buckets with amounts AND date tracking
-    const CREDIT_TYPES = [LedgerType.ADVANCE_RECEIVED, LedgerType.ADVANCE_TRANSFER_IN];
+    const CREDIT_TYPES = [LedgerType.ADVANCE_RECEIVED, LedgerType.ADVANCE_TRANSFER_IN, LedgerType.ADVANCE_CORRECTION_CREDIT];
     const DEBIT_TYPES = [
       LedgerType.ADVANCE_APPLIED,
       LedgerType.ADVANCE_TRANSFER_OUT,
       LedgerType.ADVANCE_REFUND,
+      LedgerType.ADVANCE_CORRECTION_DEBIT,
     ];
 
     const byCustomer = new Map<
@@ -237,9 +243,25 @@ export class ReportsService {
           id: string;
           amount: Decimal;
           date: Date;
+          recordedAt: Date;
           paymentMethod: string | null;
+          reference: string | null;
           description: string | null;
+          editable: boolean;
         }>;
+        transactions: Array<{
+          id: string;
+          type: string;
+          amount: Decimal;
+          date: Date;
+          recordedAt: Date;
+          paymentMethod: string | null;
+          reference: string | null;
+          description: string | null;
+          editable: boolean;
+        }>;
+        debitDates: Date[];
+        correctedReceiptIds: string[];
         firstReceivedAt: Date | null;
         lastReceivedAt: Date | null;
       }
@@ -250,6 +272,9 @@ export class ReportsService {
         byCustomer.set(e.customerId, {
           amounts: {},
           deposits: [],
+          transactions: [],
+          debitDates: [],
+          correctedReceiptIds: [],
           firstReceivedAt: null,
           lastReceivedAt: null,
         });
@@ -257,20 +282,39 @@ export class ReportsService {
       const bucket = byCustomer.get(e.customerId)!;
       const amount = new Decimal(e.amount);
       bucket.amounts[e.type] = (bucket.amounts[e.type] ?? new Decimal(0)).plus(amount);
+      bucket.transactions.push({
+        id: e.id,
+        type: e.type,
+        amount,
+        date: e.transactionDate,
+        recordedAt: e.createdAt,
+        paymentMethod: e.paymentMethod,
+        reference: e.paymentReference,
+        description: e.description,
+        editable: false,
+      });
+
+      if ((DEBIT_TYPES as readonly string[]).includes(e.type)) bucket.debitDates.push(e.transactionDate);
+      if (e.referenceLedgerEntryId && ([LedgerType.ADVANCE_CORRECTION_CREDIT, LedgerType.ADVANCE_CORRECTION_DEBIT] as readonly string[]).includes(e.type)) {
+        bucket.correctedReceiptIds.push(e.referenceLedgerEntryId);
+      }
 
       if (e.type === LedgerType.ADVANCE_RECEIVED) {
         bucket.deposits.push({
           id: e.id,
           amount,
-          date: e.createdAt,
+          date: e.transactionDate,
+          recordedAt: e.createdAt,
           paymentMethod: e.paymentMethod,
+          reference: e.paymentReference,
           description: e.description,
+          editable: true,
         });
-        if (!bucket.firstReceivedAt || e.createdAt < bucket.firstReceivedAt) {
-          bucket.firstReceivedAt = e.createdAt;
+        if (!bucket.firstReceivedAt || e.transactionDate < bucket.firstReceivedAt) {
+          bucket.firstReceivedAt = e.transactionDate;
         }
-        if (!bucket.lastReceivedAt || e.createdAt > bucket.lastReceivedAt) {
-          bucket.lastReceivedAt = e.createdAt;
+        if (!bucket.lastReceivedAt || e.transactionDate > bucket.lastReceivedAt) {
+          bucket.lastReceivedAt = e.transactionDate;
         }
       }
     }
@@ -294,7 +338,15 @@ export class ReportsService {
     const result = customers
       .map((c) => {
         const bucket = byCustomer.get(c.id)!;
-        const { amounts, deposits, firstReceivedAt, lastReceivedAt } = bucket;
+        for (const deposit of bucket.deposits) {
+          deposit.editable = !bucket.debitDates.some((date) => date >= deposit.date) && !bucket.correctedReceiptIds.includes(deposit.id);
+        }
+        const { amounts, deposits, transactions, firstReceivedAt, lastReceivedAt } = bucket;
+        for (const transaction of transactions) {
+          transaction.editable = transaction.type === LedgerType.ADVANCE_RECEIVED
+            && !bucket.debitDates.some((date) => date >= transaction.date)
+            && !bucket.correctedReceiptIds.includes(transaction.id);
+        }
 
         let balance = new Decimal(0);
         for (const type of CREDIT_TYPES) balance = balance.plus(amounts[type] ?? 0);
@@ -310,16 +362,21 @@ export class ReportsService {
           totalTransferOut: new Decimal(amounts[LedgerType.ADVANCE_TRANSFER_OUT] ?? 0),
           totalTransferIn: new Decimal(amounts[LedgerType.ADVANCE_TRANSFER_IN] ?? 0),
           totalRefunded: new Decimal(amounts[LedgerType.ADVANCE_REFUND] ?? 0),
+          totalCorrectionCredit: new Decimal(amounts[LedgerType.ADVANCE_CORRECTION_CREDIT] ?? 0),
+          totalCorrectionDebit: new Decimal(amounts[LedgerType.ADVANCE_CORRECTION_DEBIT] ?? 0),
           availableBalance: balance,
           firstReceivedAt,
           lastReceivedAt,
           deposits, // individual receipt entries with date + method
+          transactions,
         };
       })
-      .filter((r) => r.availableBalance.greaterThan(0))
       .sort((a, b) => b.availableBalance.toNumber() - a.availableBalance.toNumber());
 
-    const totalAdvanceHeld = result.reduce((s, r) => s.plus(r.availableBalance), new Decimal(0));
+    const totalAdvanceHeld = result.reduce(
+      (sum, row) => row.availableBalance.greaterThan(0) ? sum.plus(row.availableBalance) : sum,
+      new Decimal(0),
+    );
 
     return {
       summary: { totalAdvanceHeld, customersCount: result.length },
@@ -400,7 +457,7 @@ export class ReportsService {
     // A negative runningBalance means the business owes the customer (credit on account).
     const ledgers = await this.prisma.ledgerEntry.findMany({
       where: { organizationId, customerId, deletedAt: null },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ transactionDate: 'asc' }, { createdAt: 'asc' }],
     });
 
     let runningBalance = new Decimal(0);
@@ -440,6 +497,7 @@ export class ReportsService {
         // ── Advance / credit types ───────────────────────────────────────
         case 'ADVANCE_RECEIVED':
         case 'ADVANCE_TRANSFER_IN':
+        case 'ADVANCE_CORRECTION_CREDIT':
           // Customer deposits money with us → business owes customer → Credit (negative balance)
           credit = amount;
           runningBalance = runningBalance.minus(credit);
@@ -448,6 +506,7 @@ export class ReportsService {
         case 'ADVANCE_APPLIED':
         case 'ADVANCE_TRANSFER_OUT':
         case 'ADVANCE_REFUND':
+        case 'ADVANCE_CORRECTION_DEBIT':
           // Advance consumed / moved out → reduces what business owes customer → Debit
           debit = amount;
           runningBalance = runningBalance.plus(debit);

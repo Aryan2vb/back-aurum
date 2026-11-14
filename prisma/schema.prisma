@@ -354,6 +354,10 @@ model LedgerEntry {
   invoiceId              String?
   /// Payment method stored on ADVANCE_RECEIVED / ADVANCE_REFUND entries.
   paymentMethod          PaymentMethod?
+  /// Bank, UPI, cheque, or other external payment reference.
+  paymentReference       String?
+  /// Business-effective transaction date; createdAt remains the audit timestamp.
+  transactionDate        DateTime       @default(now())
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
   deletedAt              DateTime?
@@ -494,6 +498,7 @@ model Invoice {
   placeOfSupply           String?
   taxableAmount           Decimal?         @db.Decimal(14, 4)
   totalHallmarkingCharges Decimal          @default(0) @db.Decimal(12, 2)
+  draftAdvanceAllocations Json?
   createdBy               User?            @relation(fields: [createdById], references: [id])
   customer                Customer         @relation(fields: [customerId], references: [id])
   organization            Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -790,6 +795,9 @@ enum LedgerType {
   ADVANCE_TRANSFER_IN
   /// Advance balance returned to the customer in cash / UPI / etc.
   ADVANCE_REFUND
+  /// Balance correction linked to the original advance receipt.
+  ADVANCE_CORRECTION_CREDIT
+  ADVANCE_CORRECTION_DEBIT
 }
 
 enum StockTransactionType {

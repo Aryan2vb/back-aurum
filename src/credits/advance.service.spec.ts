@@ -112,6 +112,17 @@ describe('AdvanceService.getCustomerAdvanceBalance', () => {
 
     expect(result.availableAdvance.toNumber()).toBe(25000);
   });
+
+  it('includes linked correction credits and debits in the available balance', async () => {
+    const { service, prisma } = buildService();
+    prisma.ledgerEntry.groupBy.mockResolvedValue([
+      { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(1000) } },
+      { type: LedgerType.ADVANCE_CORRECTION_CREDIT, _sum: { amount: makeDecimal(200) } },
+      { type: LedgerType.ADVANCE_CORRECTION_DEBIT, _sum: { amount: makeDecimal(150) } },
+    ]);
+    const result = await service.getCustomerAdvanceBalance(ARYAN, ORG);
+    expect(result.availableAdvance.toNumber()).toBe(1050);
+  });
 });
 
 // ─── receiveAdvance ────────────────────────────────────────────────────────────
@@ -153,11 +164,36 @@ describe('AdvanceService.receiveAdvance', () => {
           amount: makeDecimal(100000),
           type: LedgerType.ADVANCE_RECEIVED,
           paymentMethod: PaymentMethod.UPI,
+          paymentReference: 'UTR123',
+          transactionDate: expect.any(Date),
         }),
       }),
     );
     expect(result.type).toBe(LedgerType.ADVANCE_RECEIVED);
     expect(result.amount.toNumber()).toBe(100000);
+  });
+
+  it('stores a backdated effective date and payment reference without overwriting the audit timestamp', async () => {
+    const tx = { ledgerEntry: { create: jest.fn().mockResolvedValue({ id: 'le-backdated', amount: makeDecimal(2500), type: LedgerType.ADVANCE_RECEIVED, createdAt: new Date() }) } };
+    const prisma = {
+      customer: { findFirst: jest.fn().mockResolvedValue({ id: ARYAN }) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    } as any;
+    const service = new AdvanceService(prisma);
+
+    await service.receiveAdvance(ARYAN, { ...dto, receivedAt: '2024-02-03' }, user());
+
+    const data = tx.ledgerEntry.create.mock.calls[0][0].data;
+    expect(data.transactionDate).toEqual(new Date('2024-02-03T00:00:00.000Z'));
+    expect(data.paymentReference).toBe('UTR123');
+    expect(data).not.toHaveProperty('createdAt');
+  });
+
+  it('rejects an invalid or future effective receipt date', async () => {
+    const prisma = { customer: { findFirst: jest.fn().mockResolvedValue({ id: ARYAN }) } } as any;
+    const service = new AdvanceService(prisma);
+    await expect(service.receiveAdvance(ARYAN, { ...dto, receivedAt: '2024-02-31' }, user())).rejects.toThrow(BadRequestException);
+    await expect(service.receiveAdvance(ARYAN, { ...dto, receivedAt: '2999-01-01' }, user())).rejects.toThrow(BadRequestException);
   });
 
   it('throws NotFoundException when customer does not exist', async () => {
@@ -520,6 +556,41 @@ describe('AdvanceService.refundAdvance', () => {
     const service = new AdvanceService(prisma);
 
     await expect(service.refundAdvance(ARYAN, dto, user())).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('AdvanceService receipt corrections', () => {
+  const receivedAt = new Date('2024-01-01T00:00:00.000Z');
+  const sourceReceipt = {
+    id: 'receipt-1', customerId: ARYAN, organizationId: ORG, amount: makeDecimal(1000),
+    type: LedgerType.ADVANCE_RECEIVED, transactionDate: receivedAt,
+    paymentMethod: PaymentMethod.CASH, paymentReference: null, description: 'Advance received',
+  };
+
+  it('updates an unused receipt and writes before/after audit data', async () => {
+    const updated = { ...sourceReceipt, amount: makeDecimal(1200), paymentReference: 'UPI-REF' };
+    const tx = {
+      ledgerEntry: { findFirst: jest.fn().mockResolvedValue(null), update: jest.fn().mockResolvedValue(updated) },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      ledgerEntry: { findFirst: jest.fn().mockResolvedValue(sourceReceipt) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    } as any;
+    const service = new AdvanceService(prisma);
+
+    await service.updateReceivedAdvance(ARYAN, sourceReceipt.id, { amount: 1200, reference: 'UPI-REF' }, user());
+
+    expect(tx.ledgerEntry.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: makeDecimal(1200), paymentReference: 'UPI-REF' }) }));
+    expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: 'UPDATE', entityType: 'ADVANCE_RECEIPT' }) }));
+  });
+
+  it('blocks editing a receipt after a debit has used the balance', async () => {
+    const tx = { ledgerEntry: { findFirst: jest.fn().mockResolvedValue({ id: 'applied-entry' }), update: jest.fn() } };
+    const prisma = { ledgerEntry: { findFirst: jest.fn().mockResolvedValue(sourceReceipt) }, $transaction: jest.fn(async (cb: any) => cb(tx)) } as any;
+    const service = new AdvanceService(prisma);
+    await expect(service.updateReceivedAdvance(ARYAN, sourceReceipt.id, { amount: 900 }, user())).rejects.toThrow(BadRequestException);
+    expect(tx.ledgerEntry.update).not.toHaveBeenCalled();
   });
 });
 
