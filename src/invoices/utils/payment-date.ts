@@ -11,7 +11,9 @@ export const formatPaymentDate = (value?: string | Date): string => {
 };
 
 export const formatPaymentLine = (
-  payment: { mode: string; amount: number; paidAt?: string | Date },
+  payment: { mode: string; amount: number; paidAt?: string | Date; source?: string },
   formatAmount: (amount: number) => string,
-): string =>
-  `${payment.mode}: ₹${formatAmount(payment.amount || 0)}${payment.paidAt ? ` · ${formatPaymentDate(payment.paidAt)}` : ''}`;
+): string => {
+  const mode = payment.source === 'ADVANCE' ? `${payment.mode} (Advance)` : payment.mode;
+  return `${mode}: ₹${formatAmount(payment.amount || 0)}${payment.paidAt ? ` · ${formatPaymentDate(payment.paidAt)}` : ''}`;
+};

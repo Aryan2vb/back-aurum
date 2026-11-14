@@ -625,6 +625,14 @@ model InvoicePayment {
   updatedAt      DateTime      @updatedAt
   accountId      String?
   ledgerEntryId  String?       @unique
+  /// DIRECT = money received at billing; ADVANCE = consumed from an advance receipt.
+  source         PaymentSource @default(DIRECT)
+  /// Customer whose advance was consumed (may differ from the invoice customer).
+  sourceCustomerId     String?
+  /// The advance receipt LedgerEntry (ADVANCE_RECEIVED / ADVANCE_TRANSFER_IN) this payment consumed.
+  advanceEntryId       String?
+  /// The ADVANCE_APPLIED LedgerEntry created for this payment.
+  advanceLedgerEntryId String?
   invoice        Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   financialAccount FinancialAccount? @relation(fields: [accountId], references: [id])
@@ -637,6 +645,7 @@ model InvoicePayment {
   @@index([organizationId, paidAt])
   @@index([organizationId, mode, paidAt])
   @@index([accountId])
+  @@index([advanceEntryId])
 }
 
 model SystemConfig {
@@ -777,6 +786,11 @@ enum MakingChargesType {
   PER_GRAM
   FLAT_PER_ITEM
   PERCENTAGE_ON_METAL
+}
+
+enum PaymentSource {
+  DIRECT
+  ADVANCE
 }
 
 enum LedgerType {

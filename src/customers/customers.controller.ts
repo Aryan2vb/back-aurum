@@ -562,6 +562,21 @@ export class CustomersController {
     return this.advanceService.transferAdvance(id, dto, user);
   }
 
+  /**
+   * GET /customers/:id/available-advances
+   * Advance receipts that still have money left, with original date, mode and reference.
+   */
+  @Get(':id/available-advances')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getAvailableAdvances(@Param('id') customerId: string, @CurrentUser() user: CurrentUserData) {
+    return this.advanceService.getAvailableAdvances(customerId, user.organizationId);
+  }
+
   @Patch(':id/advance/:ledgerEntryId')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
   updateAdvanceEntry(

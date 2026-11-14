@@ -227,7 +227,11 @@ export class ReportsService {
     }
 
     // Build per-customer buckets with amounts AND date tracking
-    const CREDIT_TYPES = [LedgerType.ADVANCE_RECEIVED, LedgerType.ADVANCE_TRANSFER_IN, LedgerType.ADVANCE_CORRECTION_CREDIT];
+    const CREDIT_TYPES = [
+      LedgerType.ADVANCE_RECEIVED,
+      LedgerType.ADVANCE_TRANSFER_IN,
+      LedgerType.ADVANCE_CORRECTION_CREDIT,
+    ];
     const DEBIT_TYPES = [
       LedgerType.ADVANCE_APPLIED,
       LedgerType.ADVANCE_TRANSFER_OUT,
@@ -294,8 +298,17 @@ export class ReportsService {
         editable: false,
       });
 
-      if ((DEBIT_TYPES as readonly string[]).includes(e.type)) bucket.debitDates.push(e.transactionDate);
-      if (e.referenceLedgerEntryId && ([LedgerType.ADVANCE_CORRECTION_CREDIT, LedgerType.ADVANCE_CORRECTION_DEBIT] as readonly string[]).includes(e.type)) {
+      if ((DEBIT_TYPES as readonly string[]).includes(e.type))
+        bucket.debitDates.push(e.transactionDate);
+      if (
+        e.referenceLedgerEntryId &&
+        (
+          [
+            LedgerType.ADVANCE_CORRECTION_CREDIT,
+            LedgerType.ADVANCE_CORRECTION_DEBIT,
+          ] as readonly string[]
+        ).includes(e.type)
+      ) {
         bucket.correctedReceiptIds.push(e.referenceLedgerEntryId);
       }
 
@@ -339,13 +352,16 @@ export class ReportsService {
       .map((c) => {
         const bucket = byCustomer.get(c.id)!;
         for (const deposit of bucket.deposits) {
-          deposit.editable = !bucket.debitDates.some((date) => date >= deposit.date) && !bucket.correctedReceiptIds.includes(deposit.id);
+          deposit.editable =
+            !bucket.debitDates.some((date) => date >= deposit.date) &&
+            !bucket.correctedReceiptIds.includes(deposit.id);
         }
         const { amounts, deposits, transactions, firstReceivedAt, lastReceivedAt } = bucket;
         for (const transaction of transactions) {
-          transaction.editable = transaction.type === LedgerType.ADVANCE_RECEIVED
-            && !bucket.debitDates.some((date) => date >= transaction.date)
-            && !bucket.correctedReceiptIds.includes(transaction.id);
+          transaction.editable =
+            transaction.type === LedgerType.ADVANCE_RECEIVED &&
+            !bucket.debitDates.some((date) => date >= transaction.date) &&
+            !bucket.correctedReceiptIds.includes(transaction.id);
         }
 
         let balance = new Decimal(0);
@@ -374,12 +390,15 @@ export class ReportsService {
       .sort((a, b) => b.availableBalance.toNumber() - a.availableBalance.toNumber());
 
     const totalAdvanceHeld = result.reduce(
-      (sum, row) => row.availableBalance.greaterThan(0) ? sum.plus(row.availableBalance) : sum,
+      (sum, row) => (row.availableBalance.greaterThan(0) ? sum.plus(row.availableBalance) : sum),
       new Decimal(0),
     );
 
     return {
-      summary: { totalAdvanceHeld, customersCount: result.length },
+      summary: {
+        totalAdvanceHeld,
+        customersCount: result.filter((r) => r.availableBalance.greaterThan(0)).length,
+      },
       customers: result,
     };
   }
