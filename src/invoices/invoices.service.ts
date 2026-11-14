@@ -997,10 +997,47 @@ export class InvoicesService {
         })
       : [];
     const nameById = new Map(sourceCustomers.map((c) => [c.id, c.fullName]));
-    const payments = invoice.payments.map((p: any) => ({
-      ...p,
-      sourceCustomerName: p.sourceCustomerId ? (nameById.get(p.sourceCustomerId) ?? null) : null,
-    }));
+
+    // The advance receipt each payment consumed (for "where did this advance come from")
+    const receiptIds = [
+      ...new Set(invoice.payments.map((p: any) => p.advanceEntryId).filter(Boolean)),
+    ] as string[];
+    const receipts = receiptIds.length
+      ? await this.prisma.ledgerEntry.findMany({
+          where: { id: { in: receiptIds }, organizationId },
+          select: {
+            id: true,
+            type: true,
+            amount: true,
+            transactionDate: true,
+            paymentMethod: true,
+            paymentReference: true,
+            description: true,
+            deletedAt: true,
+          },
+        })
+      : [];
+    const receiptById = new Map(receipts.map((r) => [r.id, r]));
+
+    const payments = invoice.payments.map((p: any) => {
+      const receipt = p.advanceEntryId ? receiptById.get(p.advanceEntryId) : undefined;
+      return {
+        ...p,
+        sourceCustomerName: p.sourceCustomerId ? (nameById.get(p.sourceCustomerId) ?? null) : null,
+        advanceReceipt: receipt
+          ? {
+              id: receipt.id,
+              type: receipt.type,
+              amount: new Decimal(receipt.amount).toNumber(),
+              transactionDate: receipt.transactionDate,
+              paymentMethod: receipt.paymentMethod,
+              reference: receipt.paymentReference,
+              description: receipt.description,
+              deleted: Boolean(receipt.deletedAt),
+            }
+          : null,
+      };
+    });
 
     // Drafts: refresh the remembered advance selection with live receipt balances
     const storedDraftAllocations = this._storedDraftAllocations(invoice);
@@ -1013,10 +1050,42 @@ export class InvoicesService {
           )
         : invoice.draftAdvanceAllocations;
 
+    // Issued invoices: the receipts this invoice currently uses, in the editor's shape.
+    // remainingAmount includes what this invoice already took, so the editor can keep or raise it.
+    let issuedAdvanceAllocations: any[] = [];
+    if (invoice.status !== InvoiceStatus.DRAFT && this.advanceService) {
+      const used = new Map<string, { sourceCustomerId: string; amount: Decimal }>();
+      for (const p of invoice.payments as any[]) {
+        if (p.source !== PaymentSource.ADVANCE || !p.advanceEntryId || !p.sourceCustomerId)
+          continue;
+        const prev = used.get(p.advanceEntryId);
+        used.set(p.advanceEntryId, {
+          sourceCustomerId: p.sourceCustomerId,
+          amount: (prev?.amount ?? new Decimal(0)).plus(new Decimal(p.amount)),
+        });
+      }
+      if (used.size) {
+        const described = await this.advanceService.describeAllocations(
+          this.prisma,
+          organizationId,
+          [...used.entries()].map(([advanceEntryId, u]) => ({
+            advanceEntryId,
+            sourceCustomerId: u.sourceCustomerId,
+            amount: u.amount.toNumber(),
+          })),
+        );
+        issuedAdvanceAllocations = described.map((d) => ({
+          ...d,
+          remainingAmount: new Decimal(d.remainingAmount).plus(d.amount).toNumber(),
+        }));
+      }
+    }
+
     return {
       ...invoice,
       payments,
       draftAdvanceAllocations,
+      issuedAdvanceAllocations,
       remainingBalance: remainingPayable.toNumber(),
       advanceAdjustedAmount: advanceAdjustedAmount.toNumber(),
       remainingPayable: remainingPayable.toNumber(),
@@ -1610,14 +1679,14 @@ export class InvoicesService {
     const draftAllocations = isDraftInvoice
       ? (dto.advanceAllocations ?? storedDraftAllocations)
       : [];
-    if (!isDraftInvoice && dto.advanceAllocations?.length) {
-      throw new BadRequestException(
-        'Use "Apply advance" on the invoice to add advance to an issued invoice',
-      );
-    }
+    // Issued invoice: `advanceAllocations`, when sent, is the full new set of receipts.
+    // Existing advance payments are reversed and the new set applied in the same transaction.
+    const replaceIssuedAdvance = !isDraftInvoice && dto.advanceAllocations !== undefined;
     const advanceComponent = isDraftInvoice
       ? this._allocationTotal(draftAllocations)
-      : lockedAdvanceTotal;
+      : replaceIssuedAdvance
+        ? this._allocationTotal(dto.advanceAllocations)
+        : lockedAdvanceTotal;
     const previousAdvanceComponent = isDraftInvoice
       ? this._allocationTotal(storedDraftAllocations)
       : lockedAdvanceTotal;
@@ -1862,6 +1931,61 @@ export class InvoicesService {
           payments: true,
         },
       });
+
+      if (replaceIssuedAdvance) {
+        const udhar = await tx.udharEntry.findFirst({
+          where: { invoiceId: id, organizationId, deletedAt: null },
+        });
+        let udharPaidReversal = new Decimal(0);
+        for (const payment of lockedAdvancePayments as any[]) {
+          // Legacy lump-sum rows stored the ledger id in `reference`
+          const ledgerId = payment.advanceLedgerEntryId ?? payment.reference;
+          const ledger = ledgerId
+            ? await tx.ledgerEntry.findFirst({
+                where: {
+                  id: ledgerId,
+                  organizationId,
+                  type: LedgerType.ADVANCE_APPLIED,
+                  deletedAt: null,
+                },
+              })
+            : null;
+          if (ledger) {
+            await tx.ledgerEntry.update({
+              where: { id: ledger.id, organizationId },
+              data: { deletedAt: new Date() },
+            });
+            // Advance applied after the invoice was issued was also counted on the udhar
+            if (udhar && ledger.entityId === udhar.id) {
+              udharPaidReversal = udharPaidReversal.plus(ledger.amount);
+            }
+          }
+        }
+        if (lockedAdvancePayments.length) {
+          await tx.invoicePayment.deleteMany({
+            where: { invoiceId: id, organizationId, source: PaymentSource.ADVANCE },
+          });
+        }
+        if (udhar && udharPaidReversal.greaterThan(0)) {
+          await tx.udharEntry.update({
+            where: { id: udhar.id, organizationId },
+            data: {
+              paidAmount: Decimal.max(0, new Decimal(udhar.paidAmount).minus(udharPaidReversal)),
+            },
+          });
+        }
+        if (dto.advanceAllocations!.length) {
+          await this.advanceService.applyAllocationsInTx(tx, {
+            organizationId,
+            userId: user.userId,
+            invoiceId: id,
+            invoiceNumber,
+            invoiceCustomerId: dummyDto.customerId,
+            invoiceDate: financials.invoiceDate,
+            allocations: dto.advanceAllocations!,
+          });
+        }
+      }
 
       if (isFinalizingDraft) {
         if (draftAllocations.length) {
@@ -2506,8 +2630,10 @@ export class InvoicesService {
     });
 
     if (udhar) {
-      const balanceDecimal = new Decimal(balance);
-      const isPaid = balanceDecimal.lte(0);
+      // invoice.paidAmount includes payments recorded after issue, which udhar.paidAmount also
+      // holds. Keep udhar.amount as "balance at issue" so amount - paidAmount = what's still owed.
+      const balanceDecimal = new Decimal(balance).plus(new Decimal(udhar.paidAmount));
+      const isPaid = new Decimal(balance).lte(0);
       const newStatus = isPaid
         ? CreditStatus.PAID
         : udhar.status === CreditStatus.OVERDUE
@@ -2544,7 +2670,7 @@ export class InvoicesService {
       // 4. Move any other linked LedgerEntries (like individual payments) if customer changed
       if (oldCustomerId !== newCustomerId) {
         await tx.ledgerEntry.updateMany({
-          where: { entityId: udhar.id, organizationId },
+          where: { entityId: udhar.id, organizationId, type: LedgerType.PAYMENT },
           data: { customerId: newCustomerId },
         });
       }

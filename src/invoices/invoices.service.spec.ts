@@ -1184,19 +1184,100 @@ describe('InvoicesService.update print format', () => {
     expect(service._calculateInvoiceFinancials.mock.calls[0][0].paidAmount).toBe(90);
   });
 
-  it('refuses new advance allocations on an issued invoice update', async () => {
-    const { service } = build('jewellery');
-    await expect(
-      service.update(
-        'invoice-1',
+  it('replaces the advance on an issued invoice: reverses old receipts, applies the new set', async () => {
+    const { service, tx } = build('jewellery');
+    const udhar = { id: 'udhar-1', paidAmount: new Decimal(40), amount: new Decimal(60) };
+    Object.assign(tx, {
+      udharEntry: {
+        findFirst: jest.fn().mockResolvedValue(udhar),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      ledgerEntry: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'led-1',
+          amount: new Decimal(40),
+          entityId: 'udhar-1', // applied after issue, so it was counted on the udhar
+        }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    });
+    const advanceService = {
+      applyAllocationsInTx: jest.fn().mockResolvedValue({ total: new Decimal(25) }),
+    };
+    service.advanceService = advanceService;
+    service.prisma.invoice.findFirst.mockResolvedValue({
+      id: 'invoice-1',
+      organizationId,
+      customerId: 'customer-1',
+      invoiceNumber: 'INV-1',
+      status: 'PARTIAL',
+      paidAmount: new Decimal(70),
+      taxType: 'CGST_SGST',
+      cgstRate: new Decimal(1.5),
+      sgstRate: new Decimal(1.5),
+      igstRate: new Decimal(0),
+      modeOfPayment: 'CASH',
+      templateType: 'jewellery',
+      invoiceDate: new Date('2025-04-01T00:00:00.000Z'),
+      items: [],
+      payments: [
         {
-          advanceAllocations: [
-            { advanceEntryId: 'r1', sourceCustomerId: 'customer-1', amount: 10 },
-          ],
+          id: 'p-direct',
+          mode: 'CASH',
+          amount: new Decimal(30),
+          source: 'DIRECT',
+          paidAt: new Date('2025-04-01T00:00:00.000Z'),
         },
-        { organizationId, userId: 'u' },
-      ),
-    ).rejects.toThrow('Apply advance');
+        {
+          id: 'p-adv',
+          mode: 'UPI',
+          amount: new Decimal(40),
+          source: 'ADVANCE',
+          advanceLedgerEntryId: 'led-1',
+        },
+      ],
+    });
+    const allocations = [{ advanceEntryId: 'r2', sourceCustomerId: 'customer-2', amount: 25 }];
+
+    await service.update(
+      'invoice-1',
+      {
+        payments: [{ mode: 'CASH', amount: 30, paidAt: '2025-04-01' }],
+        advanceAllocations: allocations,
+      },
+      { organizationId, userId: 'u' },
+    );
+
+    expect((tx as any).ledgerEntry.update).toHaveBeenCalledWith({
+      where: { id: 'led-1', organizationId },
+      data: { deletedAt: expect.any(Date) },
+    });
+    expect(tx.invoicePayment.deleteMany).toHaveBeenCalledWith({
+      where: { invoiceId: 'invoice-1', organizationId, source: 'ADVANCE' },
+    });
+    expect((tx as any).udharEntry.update).toHaveBeenCalledWith({
+      where: { id: 'udhar-1', organizationId },
+      data: { paidAmount: new Decimal(0) },
+    });
+    expect(advanceService.applyAllocationsInTx).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ invoiceId: 'invoice-1', allocations }),
+    );
+    // direct 30 + new advance 25
+    expect(service._calculateInvoiceFinancials.mock.calls[0][0].paidAmount).toBe(55);
+  });
+
+  it('leaves issued advance alone when the editor does not send advanceAllocations', async () => {
+    const { service, tx } = build('jewellery');
+    const advanceService = { applyAllocationsInTx: jest.fn() };
+    service.advanceService = advanceService;
+    await service.update(
+      'invoice-1',
+      { templateType: 'jewellery' },
+      { organizationId, userId: 'u' },
+    );
+    expect(advanceService.applyAllocationsInTx).not.toHaveBeenCalled();
+    expect(tx.invoicePayment.deleteMany).not.toHaveBeenCalled();
   });
 
   it('stores the canonical name when the editor sends the "classic" alias', async () => {
@@ -1405,5 +1486,42 @@ describe('InvoicesService.findAll list query', () => {
     await service.findAll({ limit: 500, page: 1 }, 'org-1');
 
     expect(prisma.invoice.findMany.mock.calls[0][0].take).toBe(500);
+  });
+});
+
+describe('InvoicesService udhar sync after edit', () => {
+  it('keeps payments recorded after issue from being counted twice', async () => {
+    const service = new InvoicesService({} as any, {} as any, {} as any, {} as any) as any;
+    const tx = {
+      udharEntry: {
+        // issued with ₹60 due, ₹20 recorded later
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'udhar-1',
+          ledgerEntryId: 'led-udhar',
+          status: 'ACTIVE',
+          amount: new Decimal(60),
+          paidAmount: new Decimal(20),
+        }),
+        update: jest.fn(),
+      },
+      ledgerEntry: { update: jest.fn(), updateMany: jest.fn() },
+    };
+
+    // invoice total 100, paid 40 at billing + 20 later = 60 → still owed 40
+    await service._syncInvoiceFinancialsWithLedger(tx, {
+      organizationId: 'org-1',
+      id: 'invoice-1',
+      invoiceNumber: 'INV-1',
+      oldCustomerId: 'c1',
+      newCustomerId: 'c1',
+      grandTotal: 100,
+      paidAmount: 60,
+      items: [],
+      userId: 'u',
+    });
+
+    const data = tx.udharEntry.update.mock.calls[0][0].data;
+    expect(data.amount.toNumber()).toBe(60); // amount - paidAmount (20) = 40 owed
+    expect(data.status).toBe('ACTIVE');
   });
 });

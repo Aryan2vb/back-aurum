@@ -1071,6 +1071,8 @@ export class AdvanceService {
       invoiceCustomerId: string;
       invoiceDate: Date;
       allocations: AdvanceAllocationInput[];
+      /** Set when the amount is also added to this udhar's paidAmount (advance applied after issue). */
+      udharId?: string | null;
     },
   ) {
     const { organizationId, userId, invoiceId, invoiceCustomerId, invoiceDate } = params;
@@ -1122,7 +1124,7 @@ export class AdvanceService {
             amount,
             type: LedgerType.ADVANCE_APPLIED,
             description: `Advance applied to Invoice ${label}${crossCustomer ? ' (billed to another customer)' : ''}`,
-            entityId: null,
+            entityId: params.udharId ?? null,
             invoiceId,
             referenceLedgerEntryId: lot.entry.id,
             transactionDate: invoiceDate,
@@ -1182,6 +1184,15 @@ export class AdvanceService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const udhar = await tx.udharEntry.findFirst({
+        where: {
+          invoiceId,
+          organizationId,
+          status: { in: [CreditStatus.ACTIVE, CreditStatus.OVERDUE] },
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
       await this.applyAllocationsInTx(tx, {
         organizationId,
         userId,
@@ -1190,6 +1201,7 @@ export class AdvanceService {
         invoiceCustomerId: invoice.customerId,
         invoiceDate: invoice.invoiceDate,
         allocations,
+        udharId: udhar?.id ?? null,
       });
       return this._settleInvoiceAfterAdvance(tx, invoice, applyAmount);
     });
