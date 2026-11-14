@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
+import { AdvanceAllocationInput, AdvanceService } from '../credits/advance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditsService } from '../credits/credits.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
@@ -18,6 +19,7 @@ import {
   TaxType,
   MakingChargesType,
   PaymentMethod,
+  PaymentSource,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { getFinancialYear } from './utils/invoice-calculations';
@@ -53,7 +55,29 @@ export class InvoicesService {
     private readonly pdfService: PdfService,
     private readonly calcService: InvoiceCalculationService,
     private readonly uploads: UploadService = undefined as any,
+    private readonly advanceService: AdvanceService = undefined as any,
   ) {}
+
+  private _allocationTotal(allocations?: { amount: number }[] | null) {
+    return (allocations ?? []).reduce(
+      (sum, a) => sum.plus(new Decimal(a?.amount || 0)),
+      new Decimal(0),
+    );
+  }
+
+  private _storedDraftAllocations(invoice: {
+    draftAdvanceAllocations?: unknown;
+  }): AdvanceAllocationInput[] {
+    const raw = invoice.draftAdvanceAllocations;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((a: any) => a && a.advanceEntryId && a.sourceCustomerId && Number(a.amount) > 0)
+      .map((a: any) => ({
+        advanceEntryId: a.advanceEntryId,
+        sourceCustomerId: a.sourceCustomerId,
+        amount: Number(a.amount),
+      }));
+  }
 
   private _parsePaymentPaidAt(value: string | undefined, invoiceDate: Date): Date {
     const normalizedInvoiceDate = new Date(invoiceDate);
@@ -597,6 +621,23 @@ export class InvoicesService {
         },
       });
 
+      const draftAllocations = this._storedDraftAllocations(draft);
+      if (draftAllocations.length) {
+        await this.advanceService.applyAllocationsInTx(tx, {
+          organizationId,
+          userId,
+          invoiceId: updatedInvoice.id,
+          invoiceNumber,
+          invoiceCustomerId: draft.customerId,
+          invoiceDate,
+          allocations: draftAllocations,
+        });
+        await tx.invoice.update({
+          where: { id, organizationId },
+          data: { draftAdvanceAllocations: Prisma.DbNull },
+        });
+      }
+
       const shouldCreateUdhar = dto.autoCreateUdhar !== false;
       if (balance.gt(0) && shouldCreateUdhar) {
         await this._createInvoiceBalanceRecord(tx, {
@@ -659,6 +700,15 @@ export class InvoicesService {
     const invoice = await this.prisma.$transaction(async (tx) => {
       let invoiceNumber: string | null = null;
       let sequenceVal: number | null = null;
+      const draftAdvanceAllocations =
+        isDraft && dto.advanceAllocations?.length
+          ? await this.advanceService.describeAllocations(
+              tx,
+              organizationId,
+              dto.advanceAllocations,
+              { strict: true },
+            )
+          : undefined;
 
       if (!isDraft) {
         const allocation = await this._allocateInvoiceNumber(tx, {
@@ -715,6 +765,9 @@ export class InvoicesService {
           createdById: userId,
           invoiceNumber,
           sequence: sequenceVal,
+          ...(draftAdvanceAllocations
+            ? { draftAdvanceAllocations: draftAdvanceAllocations as any }
+            : {}),
           payments: dto.payments?.length
             ? {
                 create: dto.payments.map((p) => ({
@@ -760,7 +813,20 @@ export class InvoicesService {
         include: { items: true },
       });
 
-      // 2. Automated credit management
+      // 2. Consume advance receipts atomically with the invoice
+      if (!isDraft && dto.advanceAllocations?.length) {
+        await this.advanceService.applyAllocationsInTx(tx, {
+          organizationId,
+          userId,
+          invoiceId: invoice.id,
+          invoiceNumber,
+          invoiceCustomerId: dto.customerId,
+          invoiceDate,
+          allocations: dto.advanceAllocations,
+        });
+      }
+
+      // 3. Automated credit management
       if (needsCredit && dto.autoCreateUdhar !== false) {
         await this._createInvoiceBalanceRecord(tx, {
           organizationId,
@@ -920,8 +986,106 @@ export class InvoicesService {
       .minus(new Decimal(invoice.paidAmount))
       .toDecimalPlaces(2);
 
+    // Name the customer behind each advance payment (cross-customer billing)
+    const sourceIds = [
+      ...new Set(invoice.payments.map((p: any) => p.sourceCustomerId).filter(Boolean)),
+    ] as string[];
+    const sourceCustomers = sourceIds.length
+      ? await this.prisma.customer.findMany({
+          where: { id: { in: sourceIds }, organizationId },
+          select: { id: true, fullName: true },
+        })
+      : [];
+    const nameById = new Map(sourceCustomers.map((c) => [c.id, c.fullName]));
+
+    // The advance receipt each payment consumed (for "where did this advance come from")
+    const receiptIds = [
+      ...new Set(invoice.payments.map((p: any) => p.advanceEntryId).filter(Boolean)),
+    ] as string[];
+    const receipts = receiptIds.length
+      ? await this.prisma.ledgerEntry.findMany({
+          where: { id: { in: receiptIds }, organizationId },
+          select: {
+            id: true,
+            type: true,
+            amount: true,
+            transactionDate: true,
+            paymentMethod: true,
+            paymentReference: true,
+            description: true,
+            deletedAt: true,
+          },
+        })
+      : [];
+    const receiptById = new Map(receipts.map((r) => [r.id, r]));
+
+    const payments = invoice.payments.map((p: any) => {
+      const receipt = p.advanceEntryId ? receiptById.get(p.advanceEntryId) : undefined;
+      return {
+        ...p,
+        sourceCustomerName: p.sourceCustomerId ? (nameById.get(p.sourceCustomerId) ?? null) : null,
+        advanceReceipt: receipt
+          ? {
+              id: receipt.id,
+              type: receipt.type,
+              amount: new Decimal(receipt.amount).toNumber(),
+              transactionDate: receipt.transactionDate,
+              paymentMethod: receipt.paymentMethod,
+              reference: receipt.paymentReference,
+              description: receipt.description,
+              deleted: Boolean(receipt.deletedAt),
+            }
+          : null,
+      };
+    });
+
+    // Drafts: refresh the remembered advance selection with live receipt balances
+    const storedDraftAllocations = this._storedDraftAllocations(invoice);
+    const draftAdvanceAllocations =
+      invoice.status === InvoiceStatus.DRAFT && storedDraftAllocations.length && this.advanceService
+        ? await this.advanceService.describeAllocations(
+            this.prisma,
+            organizationId,
+            storedDraftAllocations,
+          )
+        : invoice.draftAdvanceAllocations;
+
+    // Issued invoices: the receipts this invoice currently uses, in the editor's shape.
+    // remainingAmount includes what this invoice already took, so the editor can keep or raise it.
+    let issuedAdvanceAllocations: any[] = [];
+    if (invoice.status !== InvoiceStatus.DRAFT && this.advanceService) {
+      const used = new Map<string, { sourceCustomerId: string; amount: Decimal }>();
+      for (const p of invoice.payments as any[]) {
+        if (p.source !== PaymentSource.ADVANCE || !p.advanceEntryId || !p.sourceCustomerId)
+          continue;
+        const prev = used.get(p.advanceEntryId);
+        used.set(p.advanceEntryId, {
+          sourceCustomerId: p.sourceCustomerId,
+          amount: (prev?.amount ?? new Decimal(0)).plus(new Decimal(p.amount)),
+        });
+      }
+      if (used.size) {
+        const described = await this.advanceService.describeAllocations(
+          this.prisma,
+          organizationId,
+          [...used.entries()].map(([advanceEntryId, u]) => ({
+            advanceEntryId,
+            sourceCustomerId: u.sourceCustomerId,
+            amount: u.amount.toNumber(),
+          })),
+        );
+        issuedAdvanceAllocations = described.map((d) => ({
+          ...d,
+          remainingAmount: new Decimal(d.remainingAmount).plus(d.amount).toNumber(),
+        }));
+      }
+    }
+
     return {
       ...invoice,
+      payments,
+      draftAdvanceAllocations,
+      issuedAdvanceAllocations,
       remainingBalance: remainingPayable.toNumber(),
       advanceAdjustedAmount: advanceAdjustedAmount.toNumber(),
       remainingPayable: remainingPayable.toNumber(),
@@ -1272,6 +1436,7 @@ export class InvoicesService {
           mode: p.mode,
           amount: new Decimal(p.amount).toNumber(),
           paidAt: p.paidAt,
+          source: p.source,
         })) || [],
     };
 
@@ -1446,6 +1611,12 @@ export class InvoicesService {
         data: { status: InvoiceStatus.CANCELLED, updatedAt: new Date() },
       });
 
+      // Return any advance this invoice consumed to the customers it came from.
+      await tx.ledgerEntry.updateMany({
+        where: { invoiceId: id, organizationId, type: LedgerType.ADVANCE_APPLIED, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
+
       const udhar = await tx.udharEntry.findFirst({
         where: { invoiceId: id, organizationId, deletedAt: null },
       });
@@ -1494,12 +1665,39 @@ export class InvoicesService {
       throw new BadRequestException('Cancelled invoices cannot be modified.');
     }
 
-    // Calculate paidAmount from payments if provided, otherwise use dto.paidAmount or existing
-    const paymentsSum = dto.payments?.length
-      ? dto.payments.reduce((sum, p) => sum + new Decimal(p.amount).toNumber(), 0)
+    const isDraftInvoice = existing.status === InvoiceStatus.DRAFT;
+    const isFinalizingDraft = isDraftInvoice && !!dto.finalize;
+    // Advance already consumed by an issued invoice stays as-is; edits only touch direct payments.
+    const lockedAdvancePayments = existing.payments.filter(
+      (p: any) => p.source === PaymentSource.ADVANCE,
+    );
+    const lockedAdvanceTotal = lockedAdvancePayments.reduce(
+      (sum, p) => sum.plus(new Decimal(p.amount)),
+      new Decimal(0),
+    );
+    const storedDraftAllocations = this._storedDraftAllocations(existing);
+    const draftAllocations = isDraftInvoice
+      ? (dto.advanceAllocations ?? storedDraftAllocations)
+      : [];
+    // Issued invoice: `advanceAllocations`, when sent, is the full new set of receipts.
+    // Existing advance payments are reversed and the new set applied in the same transaction.
+    const replaceIssuedAdvance = !isDraftInvoice && dto.advanceAllocations !== undefined;
+    const advanceComponent = isDraftInvoice
+      ? this._allocationTotal(draftAllocations)
+      : replaceIssuedAdvance
+        ? this._allocationTotal(dto.advanceAllocations)
+        : lockedAdvanceTotal;
+    const previousAdvanceComponent = isDraftInvoice
+      ? this._allocationTotal(storedDraftAllocations)
+      : lockedAdvanceTotal;
+
+    // Direct money: the payments list if sent, else paidAmount (which may include advance), else what was stored.
+    const directPaid = dto.payments?.length
+      ? dto.payments.reduce((sum, p) => sum.plus(new Decimal(p.amount)), new Decimal(0))
       : dto.paidAmount !== undefined
-        ? dto.paidAmount
-        : new Decimal(existing.paidAmount).toNumber();
+        ? Decimal.max(0, new Decimal(dto.paidAmount).minus(advanceComponent))
+        : Decimal.max(0, new Decimal(existing.paidAmount).minus(previousAdvanceComponent));
+    const paymentsSum = directPaid.plus(advanceComponent).toNumber();
 
     const dummyDto: CreateInvoiceDto = {
       customerId: dto.customerId ?? existing.customerId,
@@ -1532,6 +1730,9 @@ export class InvoicesService {
     };
 
     const financials = await this._calculateInvoiceFinancials(dummyDto, user, true);
+    if (advanceComponent.greaterThan(financials.grandTotal)) {
+      throw new BadRequestException('Applied advance exceeds the invoice total');
+    }
     // Issued invoices retain their original company identity. A footer selection is the
     // only branding field that can intentionally change in a new document revision.
     if (existing.status !== InvoiceStatus.DRAFT) {
@@ -1623,14 +1824,17 @@ export class InvoicesService {
 
       // Synchronize payments if provided
       if (dto.payments !== undefined) {
-        const existingPaymentsToPreserve = [...existing.payments];
+        const existingPaymentsToPreserve = existing.payments.filter(
+          (p: any) => p.source !== PaymentSource.ADVANCE,
+        );
 
-        // Delete all existing payments
-        if (existing.payments.length > 0) {
+        // Replace direct payments; advance payments are tied to ledger rows and stay.
+        if (existingPaymentsToPreserve.length > 0) {
           await tx.invoicePayment.deleteMany({
             where: {
               invoiceId: id,
               organizationId,
+              source: PaymentSource.DIRECT,
             },
           });
         }
@@ -1727,6 +1931,94 @@ export class InvoicesService {
           payments: true,
         },
       });
+
+      if (replaceIssuedAdvance) {
+        const udhar = await tx.udharEntry.findFirst({
+          where: { invoiceId: id, organizationId, deletedAt: null },
+        });
+        let udharPaidReversal = new Decimal(0);
+        for (const payment of lockedAdvancePayments as any[]) {
+          // Legacy lump-sum rows stored the ledger id in `reference`
+          const ledgerId = payment.advanceLedgerEntryId ?? payment.reference;
+          const ledger = ledgerId
+            ? await tx.ledgerEntry.findFirst({
+                where: {
+                  id: ledgerId,
+                  organizationId,
+                  type: LedgerType.ADVANCE_APPLIED,
+                  deletedAt: null,
+                },
+              })
+            : null;
+          if (ledger) {
+            await tx.ledgerEntry.update({
+              where: { id: ledger.id, organizationId },
+              data: { deletedAt: new Date() },
+            });
+            // Advance applied after the invoice was issued was also counted on the udhar
+            if (udhar && ledger.entityId === udhar.id) {
+              udharPaidReversal = udharPaidReversal.plus(ledger.amount);
+            }
+          }
+        }
+        if (lockedAdvancePayments.length) {
+          await tx.invoicePayment.deleteMany({
+            where: { invoiceId: id, organizationId, source: PaymentSource.ADVANCE },
+          });
+        }
+        if (udhar && udharPaidReversal.greaterThan(0)) {
+          await tx.udharEntry.update({
+            where: { id: udhar.id, organizationId },
+            data: {
+              paidAmount: Decimal.max(0, new Decimal(udhar.paidAmount).minus(udharPaidReversal)),
+            },
+          });
+        }
+        if (dto.advanceAllocations!.length) {
+          await this.advanceService.applyAllocationsInTx(tx, {
+            organizationId,
+            userId: user.userId,
+            invoiceId: id,
+            invoiceNumber,
+            invoiceCustomerId: dummyDto.customerId,
+            invoiceDate: financials.invoiceDate,
+            allocations: dto.advanceAllocations!,
+          });
+        }
+      }
+
+      if (isFinalizingDraft) {
+        if (draftAllocations.length) {
+          await this.advanceService.applyAllocationsInTx(tx, {
+            organizationId,
+            userId: user.userId,
+            invoiceId: id,
+            invoiceNumber,
+            invoiceCustomerId: dummyDto.customerId,
+            invoiceDate: financials.invoiceDate,
+            allocations: draftAllocations,
+          });
+        }
+        if (existing.draftAdvanceAllocations !== null) {
+          await tx.invoice.update({
+            where: { id, organizationId },
+            data: { draftAdvanceAllocations: Prisma.DbNull },
+          });
+        }
+      } else if (isDraftInvoice && dto.advanceAllocations !== undefined) {
+        const described = dto.advanceAllocations.length
+          ? await this.advanceService.describeAllocations(
+              tx,
+              organizationId,
+              dto.advanceAllocations,
+              { strict: true },
+            )
+          : null;
+        await tx.invoice.update({
+          where: { id, organizationId },
+          data: { draftAdvanceAllocations: described ? (described as any) : Prisma.DbNull },
+        });
+      }
 
       // Synchronize ledger/udhar if invoice is finalized
       if (status !== InvoiceStatus.DRAFT) {
@@ -1965,9 +2257,16 @@ export class InvoicesService {
 
     const invoiceDate = dto.invoiceDate ? new Date(dto.invoiceDate) : new Date();
     const financialYear = getFinancialYear(invoiceDate);
-    const paidAmount = dto.payments?.length
+    // Advance allocations count once: `payments` lists direct money only, while a client
+    // that sends just `paidAmount` may already include the advance in it.
+    const allocationTotal = this._allocationTotal(dto.advanceAllocations);
+    const directPaid = dto.payments?.length
       ? dto.payments.reduce((sum, p) => sum.plus(new Decimal(p.amount)), new Decimal(0))
-      : new Decimal(dto.paidAmount || 0);
+      : Decimal.max(0, new Decimal(dto.paidAmount || 0).minus(allocationTotal));
+    const paidAmount = directPaid.plus(allocationTotal);
+    if (allocationTotal.greaterThan(totals.grandTotal)) {
+      throw new BadRequestException('Applied advance exceeds the invoice total');
+    }
 
     let status: InvoiceStatus;
     if (isDraft) status = InvoiceStatus.DRAFT;
@@ -2331,8 +2630,10 @@ export class InvoicesService {
     });
 
     if (udhar) {
-      const balanceDecimal = new Decimal(balance);
-      const isPaid = balanceDecimal.lte(0);
+      // invoice.paidAmount includes payments recorded after issue, which udhar.paidAmount also
+      // holds. Keep udhar.amount as "balance at issue" so amount - paidAmount = what's still owed.
+      const balanceDecimal = new Decimal(balance).plus(new Decimal(udhar.paidAmount));
+      const isPaid = new Decimal(balance).lte(0);
       const newStatus = isPaid
         ? CreditStatus.PAID
         : udhar.status === CreditStatus.OVERDUE
@@ -2369,7 +2670,7 @@ export class InvoicesService {
       // 4. Move any other linked LedgerEntries (like individual payments) if customer changed
       if (oldCustomerId !== newCustomerId) {
         await tx.ledgerEntry.updateMany({
-          where: { entityId: udhar.id, organizationId },
+          where: { entityId: udhar.id, organizationId, type: LedgerType.PAYMENT },
           data: { customerId: newCustomerId },
         });
       }

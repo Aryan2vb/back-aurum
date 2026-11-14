@@ -171,7 +171,7 @@ export function generateModernInvoiceHtml(rawData: InvoiceData): string {
                 <div class="invoice-meta">
                     <div><strong>${metadata.invoiceNo}</strong></div>
                     <div>Date: <strong>${metadata.date}</strong></div>
-                    ${data.payments && data.payments.length ? `<div>Payment: ${data.payments.map((p: any) => p.mode).join(', ')}</div>` : metadata.modeOfPayment ? `<div>Payment: ${metadata.modeOfPayment}</div>` : ''}
+                    ${data.payments && data.payments.length ? `<div>Payment: ${[...new Set(data.payments.map((p: any) => p.mode))].join(', ')}</div>` : metadata.modeOfPayment ? `<div>Payment: ${metadata.modeOfPayment}</div>` : ''}
                 </div>
             </div>
         </div>

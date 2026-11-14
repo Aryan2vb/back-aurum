@@ -112,6 +112,17 @@ describe('AdvanceService.getCustomerAdvanceBalance', () => {
 
     expect(result.availableAdvance.toNumber()).toBe(25000);
   });
+
+  it('includes linked correction credits and debits in the available balance', async () => {
+    const { service, prisma } = buildService();
+    prisma.ledgerEntry.groupBy.mockResolvedValue([
+      { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(1000) } },
+      { type: LedgerType.ADVANCE_CORRECTION_CREDIT, _sum: { amount: makeDecimal(200) } },
+      { type: LedgerType.ADVANCE_CORRECTION_DEBIT, _sum: { amount: makeDecimal(150) } },
+    ]);
+    const result = await service.getCustomerAdvanceBalance(ARYAN, ORG);
+    expect(result.availableAdvance.toNumber()).toBe(1050);
+  });
 });
 
 // ─── receiveAdvance ────────────────────────────────────────────────────────────
@@ -134,11 +145,14 @@ describe('AdvanceService.receiveAdvance', () => {
     };
 
     const tx = {
-      ledgerEntry: { create: jest.fn().mockResolvedValue(createdEntry) },
+      ledgerEntry: {
+        create: jest.fn().mockResolvedValue(createdEntry),
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
     };
 
     const prisma = {
-      customer: { findFirst: jest.fn().mockResolvedValue({ id: ARYAN }) },
+      customer: { findFirst: jest.fn().mockResolvedValue({ id: ARYAN, documents: [] }) },
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
 
@@ -153,11 +167,50 @@ describe('AdvanceService.receiveAdvance', () => {
           amount: makeDecimal(100000),
           type: LedgerType.ADVANCE_RECEIVED,
           paymentMethod: PaymentMethod.UPI,
+          paymentReference: 'UTR123',
+          transactionDate: expect.any(Date),
         }),
       }),
     );
     expect(result.type).toBe(LedgerType.ADVANCE_RECEIVED);
     expect(result.amount.toNumber()).toBe(100000);
+  });
+
+  it('stores a backdated effective date and payment reference without overwriting the audit timestamp', async () => {
+    const tx = {
+      ledgerEntry: {
+        groupBy: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({
+          id: 'le-backdated',
+          amount: makeDecimal(2500),
+          type: LedgerType.ADVANCE_RECEIVED,
+          createdAt: new Date(),
+        }),
+      },
+    };
+    const prisma = {
+      customer: { findFirst: jest.fn().mockResolvedValue({ id: ARYAN, documents: [] }) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    } as any;
+    const service = new AdvanceService(prisma);
+
+    await service.receiveAdvance(ARYAN, { ...dto, receivedAt: '2024-02-03' }, user());
+
+    const data = tx.ledgerEntry.create.mock.calls[0][0].data;
+    expect(data.transactionDate).toEqual(new Date('2024-02-03T00:00:00.000Z'));
+    expect(data.paymentReference).toBe('UTR123');
+    expect(data).not.toHaveProperty('createdAt');
+  });
+
+  it('rejects an invalid or future effective receipt date', async () => {
+    const prisma = { customer: { findFirst: jest.fn().mockResolvedValue({ id: ARYAN }) } } as any;
+    const service = new AdvanceService(prisma);
+    await expect(
+      service.receiveAdvance(ARYAN, { ...dto, receivedAt: '2024-02-31' }, user()),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      service.receiveAdvance(ARYAN, { ...dto, receivedAt: '2999-01-01' }, user()),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('throws NotFoundException when customer does not exist', async () => {
@@ -362,8 +415,8 @@ describe('AdvanceService.transferAdvance', () => {
       customer: {
         findFirst: jest
           .fn()
-          .mockResolvedValueOnce({ id: ARYAN, fullName: 'Aryan' })
-          .mockResolvedValueOnce({ id: MRS_ARYAN, fullName: 'Mrs Aryan' }),
+          .mockResolvedValueOnce({ id: ARYAN, fullName: 'Aryan', documents: [] })
+          .mockResolvedValueOnce({ id: MRS_ARYAN, fullName: 'Mrs Aryan', documents: [] }),
       },
       $transaction: jest.fn(async (cb: any) => cb(tx)),
     } as any;
@@ -523,6 +576,75 @@ describe('AdvanceService.refundAdvance', () => {
   });
 });
 
+describe('AdvanceService receipt corrections', () => {
+  const receivedAt = new Date('2024-01-01T00:00:00.000Z');
+  const sourceReceipt = {
+    id: 'receipt-1',
+    customerId: ARYAN,
+    organizationId: ORG,
+    amount: makeDecimal(1000),
+    type: LedgerType.ADVANCE_RECEIVED,
+    transactionDate: receivedAt,
+    paymentMethod: PaymentMethod.CASH,
+    paymentReference: null,
+    description: 'Advance received',
+  };
+
+  it('updates an unused receipt and writes before/after audit data', async () => {
+    const updated = { ...sourceReceipt, amount: makeDecimal(1200), paymentReference: 'UPI-REF' };
+    const tx = {
+      ledgerEntry: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue(updated),
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
+      customer: { findFirst: jest.fn().mockResolvedValue({ documents: [] }) },
+      auditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      ledgerEntry: { findFirst: jest.fn().mockResolvedValue(sourceReceipt) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    } as any;
+    const service = new AdvanceService(prisma);
+
+    await service.updateReceivedAdvance(
+      ARYAN,
+      sourceReceipt.id,
+      { amount: 1200, reference: 'UPI-REF' },
+      user(),
+    );
+
+    expect(tx.ledgerEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ amount: makeDecimal(1200), paymentReference: 'UPI-REF' }),
+      }),
+    );
+    expect(tx.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'UPDATE', entityType: 'ADVANCE_RECEIPT' }),
+      }),
+    );
+  });
+
+  it('blocks editing a receipt after a debit has used the balance', async () => {
+    const tx = {
+      ledgerEntry: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'applied-entry' }),
+        update: jest.fn(),
+      },
+    };
+    const prisma = {
+      ledgerEntry: { findFirst: jest.fn().mockResolvedValue(sourceReceipt) },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+    } as any;
+    const service = new AdvanceService(prisma);
+    await expect(
+      service.updateReceivedAdvance(ARYAN, sourceReceipt.id, { amount: 900 }, user()),
+    ).rejects.toThrow(BadRequestException);
+    expect(tx.ledgerEntry.update).not.toHaveBeenCalled();
+  });
+});
+
 // ─── Full Aryan Scenario ──────────────────────────────────────────────────────
 // Exercises the balance formula end-to-end using the formula directly
 // (since each step is integration-tested above, here we verify the math).
@@ -672,5 +794,227 @@ describe('Customer statement with advance entries', () => {
 
     // Final: Aryan owes ₹55,000 net (the UDHAR not yet fully covered)
     // This is correct: ₹80,000 udhar - ₹40,000 advance applied - ₹100,000 received + ₹25,000 out + ₹10,000 refunded
+  });
+});
+
+// ─── Receipt lots & allocations ───────────────────────────────────────────────
+
+const day = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`);
+const entry = (id: string, type: LedgerType, amount: number, ymd: string, extra: any = {}) => ({
+  id,
+  type,
+  amount: makeDecimal(amount),
+  transactionDate: day(ymd),
+  createdAt: day(ymd),
+  customerId: ARYAN,
+  paymentMethod: null,
+  paymentReference: null,
+  description: null,
+  referenceLedgerEntryId: null,
+  ...extra,
+});
+
+describe('AdvanceService receipt lots', () => {
+  it('splits linked and unlinked debits across receipts, oldest first', async () => {
+    const entries = [
+      entry('r1', LedgerType.ADVANCE_RECEIVED, 10000, '2026-01-01', {
+        paymentMethod: 'UPI',
+        paymentReference: 'UTR1',
+      }),
+      entry('r2', LedgerType.ADVANCE_RECEIVED, 5000, '2026-02-01', { paymentMethod: 'CASH' }),
+      entry('t1', LedgerType.ADVANCE_TRANSFER_IN, 2000, '2026-02-10'),
+      // linked application consumes r2 directly
+      entry('a1', LedgerType.ADVANCE_APPLIED, 3000, '2026-03-01', { referenceLedgerEntryId: 'r2' }),
+      // legacy lump-sum application and a refund come off the oldest receipt
+      entry('a0', LedgerType.ADVANCE_APPLIED, 4000, '2026-03-02'),
+      entry('rf', LedgerType.ADVANCE_REFUND, 1000, '2026-03-03'),
+      entry('c1', LedgerType.ADVANCE_CORRECTION_CREDIT, 500, '2026-03-04', {
+        referenceLedgerEntryId: 'r1',
+      }),
+    ];
+    const prisma = {
+      customer: { findFirst: jest.fn().mockResolvedValue({ id: ARYAN, fullName: 'Aryan' }) },
+      ledgerEntry: { findMany: jest.fn().mockResolvedValue(entries) },
+    } as any;
+    const service = new AdvanceService(prisma);
+
+    const receipts = await service.getAvailableAdvances(ARYAN, ORG);
+    const byId = Object.fromEntries(receipts.map((r: any) => [r.id, r]));
+
+    expect(byId.r1).toMatchObject({
+      originalAmount: 10500,
+      remainingAmount: 5500,
+      paymentMethod: 'UPI',
+      reference: 'UTR1',
+    });
+    expect(byId.r2).toMatchObject({ originalAmount: 5000, remainingAmount: 2000 });
+    expect(byId.t1).toMatchObject({ remainingAmount: 2000 });
+    // lot remainders add up to the balance: 10000+5000+2000+500 - 3000-4000-1000 = 9500
+    expect(receipts.reduce((s: number, r: any) => s + r.remainingAmount, 0)).toBe(9500);
+  });
+
+  it('hides fully used receipts', async () => {
+    const prisma = {
+      customer: { findFirst: jest.fn().mockResolvedValue({ id: ARYAN, fullName: 'Aryan' }) },
+      ledgerEntry: {
+        findMany: jest.fn().mockResolvedValue([
+          entry('r1', LedgerType.ADVANCE_RECEIVED, 1000, '2026-01-01'),
+          entry('a1', LedgerType.ADVANCE_APPLIED, 1000, '2026-01-05', {
+            referenceLedgerEntryId: 'r1',
+          }),
+        ]),
+      },
+    } as any;
+    const service = new AdvanceService(prisma);
+    expect(await service.getAvailableAdvances(ARYAN, ORG)).toEqual([]);
+  });
+});
+
+describe('AdvanceService.applyAllocationsInTx', () => {
+  const buildTx = (entries: any[], balance: number) => ({
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    customer: { findFirst: jest.fn().mockResolvedValue({ id: MRS_ARYAN, fullName: 'Mrs Aryan' }) },
+    ledgerEntry: {
+      findMany: jest.fn().mockResolvedValue(entries),
+      groupBy: jest
+        .fn()
+        .mockResolvedValue([
+          { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(balance) } },
+        ]),
+      create: jest.fn().mockResolvedValue({ id: 'applied-1' }),
+    },
+    invoicePayment: {
+      create: jest.fn().mockImplementation(async ({ data }: any) => ({ id: 'pay-1', ...data })),
+    },
+  });
+  const params = (allocations: any[], invoiceDate = day('2026-03-10')) => ({
+    organizationId: ORG,
+    userId: 'user-staff',
+    invoiceId: 'inv-1',
+    invoiceNumber: 'INV-1',
+    invoiceCustomerId: ARYAN,
+    invoiceDate,
+    allocations,
+  });
+  const receipt = entry('r1', LedgerType.ADVANCE_RECEIVED, 10000, '2026-01-15', {
+    customerId: MRS_ARYAN,
+    paymentMethod: 'UPI',
+    paymentReference: 'UTR9',
+  });
+
+  it('consumes a receipt from another customer with its own date, mode and reference', async () => {
+    const tx = buildTx([receipt], 10000);
+    const service = new AdvanceService({} as any);
+
+    const result = await service.applyAllocationsInTx(
+      tx as any,
+      params([{ advanceEntryId: 'r1', sourceCustomerId: MRS_ARYAN, amount: 4000 }]),
+    );
+
+    expect(result.total.toNumber()).toBe(4000);
+    expect(tx.$queryRaw).toHaveBeenCalled();
+    expect(tx.ledgerEntry.create.mock.calls[0][0].data).toMatchObject({
+      customerId: MRS_ARYAN,
+      type: LedgerType.ADVANCE_APPLIED,
+      invoiceId: 'inv-1',
+      referenceLedgerEntryId: 'r1',
+      transactionDate: day('2026-03-10'),
+    });
+    expect(tx.invoicePayment.create.mock.calls[0][0].data).toMatchObject({
+      mode: 'UPI',
+      paidAt: day('2026-01-15'),
+      reference: 'UTR9',
+      source: 'ADVANCE',
+      sourceCustomerId: MRS_ARYAN,
+      advanceEntryId: 'r1',
+      advanceLedgerEntryId: 'applied-1',
+    });
+  });
+
+  it('rejects more than the receipt has left', async () => {
+    // customer holds more overall (another receipt), but this receipt only has 10,000
+    const tx = buildTx([receipt], 20000);
+    const service = new AdvanceService({} as any);
+    await expect(
+      service.applyAllocationsInTx(
+        tx as any,
+        params([{ advanceEntryId: 'r1', sourceCustomerId: MRS_ARYAN, amount: 10001 }]),
+      ),
+    ).rejects.toThrow('has only');
+    expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a receipt dated after the invoice', async () => {
+    const tx = buildTx([receipt], 10000);
+    const service = new AdvanceService({} as any);
+    await expect(
+      service.applyAllocationsInTx(
+        tx as any,
+        params(
+          [{ advanceEntryId: 'r1', sourceCustomerId: MRS_ARYAN, amount: 100 }],
+          day('2026-01-10'),
+        ),
+      ),
+    ).rejects.toThrow('after the invoice date');
+  });
+
+  it('rejects the same receipt twice', async () => {
+    const tx = buildTx([receipt], 10000);
+    const service = new AdvanceService({} as any);
+    await expect(
+      service.applyAllocationsInTx(
+        tx as any,
+        params([
+          { advanceEntryId: 'r1', sourceCustomerId: MRS_ARYAN, amount: 100 },
+          { advanceEntryId: 'r1', sourceCustomerId: MRS_ARYAN, amount: 100 },
+        ]),
+      ),
+    ).rejects.toThrow('more than once');
+  });
+});
+
+describe('AdvanceService balance checks', () => {
+  it('counts a receipt recorded later the same day when the debit is dated today', async () => {
+    const service = new AdvanceService({} as any);
+    const groupBy = jest
+      .fn()
+      .mockResolvedValue([
+        { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(500) } },
+      ]);
+    const tx = { ledgerEntry: { groupBy } } as any;
+    await (service as any)._assertSufficientBalance(
+      tx,
+      ARYAN,
+      ORG,
+      makeDecimal(500),
+      day('2026-03-10'),
+    );
+    const asOfCall = groupBy.mock.calls.find((c: any) => c[0].where.transactionDate);
+    expect(asOfCall[0].where.transactionDate.lte.toISOString()).toBe('2026-03-10T23:59:59.999Z');
+  });
+
+  it("blocks a backdated debit that today's balance cannot cover", async () => {
+    const service = new AdvanceService({} as any);
+    const groupBy = jest
+      .fn()
+      // current balance: 100 received, 100 refunded later
+      .mockResolvedValueOnce([
+        { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(100) } },
+        { type: LedgerType.ADVANCE_REFUND, _sum: { amount: makeDecimal(100) } },
+      ])
+      // as of the backdated day only the receipt existed
+      .mockResolvedValueOnce([
+        { type: LedgerType.ADVANCE_RECEIVED, _sum: { amount: makeDecimal(100) } },
+      ]);
+    const tx = { ledgerEntry: { groupBy } } as any;
+    await expect(
+      (service as any)._assertSufficientBalance(
+        tx,
+        ARYAN,
+        ORG,
+        makeDecimal(100),
+        day('2026-01-05'),
+      ),
+    ).rejects.toThrow('Insufficient advance balance');
   });
 });
