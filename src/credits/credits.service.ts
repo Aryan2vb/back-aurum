@@ -52,6 +52,7 @@ export class CreditsService {
           description: rest.description || rest.itemSummary || 'Direct Udhar',
           createdById: user.userId,
           createdAt,
+          transactionDate: createdAt,
           udharEntry: {
             create: {
               organizationId: user.organizationId,
@@ -297,6 +298,7 @@ export class CreditsService {
           amount: newAmount,
           description: dto.notes || payment.description,
           createdAt: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
+          transactionDate: dto.transactionDate ? new Date(dto.transactionDate) : undefined,
         },
       });
 

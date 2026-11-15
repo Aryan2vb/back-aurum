@@ -356,7 +356,13 @@ export class InvoicesController {
     @Body() dto: ApplyAdvanceDto,
     @CurrentUser() user: CurrentUserData,
   ) {
+    if (dto.allocations?.length) {
+      this.logger.log(
+        `POST /invoices/${id}/apply-advance — ${dto.allocations.length} receipt allocation(s)`,
+      );
+      return this.advanceService.applyAdvanceAllocationsToInvoice(id, dto.allocations, user);
+    }
     this.logger.log(`POST /invoices/${id}/apply-advance — amount: ${dto.amount}`);
-    return this.advanceService.applyAdvanceToInvoice(id, dto.amount, user, dto.paidAt, dto.notes);
+    return this.advanceService.applyAdvanceToInvoice(id, dto.amount!, user, dto.paidAt, dto.notes);
   }
 }

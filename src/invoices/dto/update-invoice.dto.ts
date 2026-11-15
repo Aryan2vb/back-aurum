@@ -13,6 +13,7 @@ import {
 import { Type } from 'class-transformer';
 import { TaxType } from '@prisma/client';
 import { CreateInvoiceItemDto, CreateInvoicePaymentDto } from './create-invoice.dto';
+import { AdvanceAllocationDto } from './advance-allocation.dto';
 import { INVOICE_TEMPLATE_INPUTS } from '../utils/invoice-template';
 
 export class UpdateInvoiceDto {
@@ -114,6 +115,13 @@ export class UpdateInvoiceDto {
   @ValidateNested({ each: true })
   @Type(() => CreateInvoicePaymentDto)
   payments?: CreateInvoicePaymentDto[];
+
+  /** Advance receipts for a draft (remembered) or for the finalizing update (applied). */
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AdvanceAllocationDto)
+  advanceAllocations?: AdvanceAllocationDto[];
   @IsOptional()
   @IsBoolean()
   finalize?: boolean;

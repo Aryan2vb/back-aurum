@@ -1,4 +1,12 @@
-import { IsNumber, IsOptional, IsPositive, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class TransferAdvanceDto {
@@ -10,6 +18,10 @@ export class TransferAdvanceDto {
   @Min(0.01)
   @Type(() => Number)
   amount: number;
+
+  @IsDateString()
+  @IsOptional()
+  transactionDate?: string;
 
   @IsString()
   @IsOptional()

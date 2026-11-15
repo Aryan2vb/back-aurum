@@ -39,6 +39,8 @@ import { AdvanceService } from '../credits/advance.service';
 import { ReceiveAdvanceDto } from '../credits/dto/receive-advance.dto';
 import { RefundAdvanceDto } from '../credits/dto/refund-advance.dto';
 import { TransferAdvanceDto } from '../credits/dto/transfer-advance.dto';
+import { UpdateAdvanceDto } from '../credits/dto/update-advance.dto';
+import { CorrectAdvanceDto } from '../credits/dto/correct-advance.dto';
 
 @Controller('customers')
 export class CustomersController {
@@ -558,6 +560,44 @@ export class CustomersController {
       `POST /customers/${id}/advance/transfer — to: ${dto.toCustomerId} amount: ${dto.amount}`,
     );
     return this.advanceService.transferAdvance(id, dto, user);
+  }
+
+  /**
+   * GET /customers/:id/available-advances
+   * Advance receipts that still have money left, with original date, mode and reference.
+   */
+  @Get(':id/available-advances')
+  @Roles(
+    OrganizationRole.OWNER,
+    OrganizationRole.ADMIN,
+    OrganizationRole.STAFF,
+    OrganizationRole.VIEWER,
+  )
+  getAvailableAdvances(@Param('id') customerId: string, @CurrentUser() user: CurrentUserData) {
+    return this.advanceService.getAvailableAdvances(customerId, user.organizationId);
+  }
+
+  @Patch(':id/advance/:ledgerEntryId')
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  updateAdvanceEntry(
+    @Param('id') customerId: string,
+    @Param('ledgerEntryId') ledgerEntryId: string,
+    @Body() dto: UpdateAdvanceDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.advanceService.updateReceivedAdvance(customerId, ledgerEntryId, dto, user);
+  }
+
+  @Post(':id/advance/:ledgerEntryId/correction')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN, OrganizationRole.STAFF)
+  correctAdvanceEntry(
+    @Param('id') customerId: string,
+    @Param('ledgerEntryId') ledgerEntryId: string,
+    @Body() dto: CorrectAdvanceDto,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.advanceService.correctAdvance(customerId, ledgerEntryId, dto, user);
   }
 
   /**

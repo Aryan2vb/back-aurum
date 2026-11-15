@@ -1,3 +1,4 @@
+import { AdvanceAllocationDto } from './advance-allocation.dto';
 import {
   IsString,
   IsNotEmpty,
@@ -157,6 +158,17 @@ export class CreateInvoiceDto {
   @ValidateNested({ each: true })
   @Type(() => CreateInvoicePaymentDto)
   payments?: CreateInvoicePaymentDto[];
+
+  /**
+   * Advance receipts to consume. On a final invoice they are applied atomically
+   * with creation; on a draft they are only remembered. `paidAmount` may include
+   * these amounts — the server counts them once.
+   */
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AdvanceAllocationDto)
+  advanceAllocations?: AdvanceAllocationDto[];
 
   /** Tax classification for this invoice. Omit to use the organization's default tax type. */
   @IsEnum(TaxType)
