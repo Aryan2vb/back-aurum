@@ -737,7 +737,10 @@ export class AdvanceService {
           );
         }
       }
-      const updated = await tx.ledgerEntry.update({ where: { id: ledgerEntryId }, data });
+      const updated = await tx.ledgerEntry.update({
+        where: { id: ledgerEntryId, organizationId },
+        data,
+      });
       await tx.auditLog.create({
         data: {
           organizationId,

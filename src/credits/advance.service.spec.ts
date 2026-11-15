@@ -616,6 +616,8 @@ describe('AdvanceService receipt corrections', () => {
 
     expect(tx.ledgerEntry.update).toHaveBeenCalledWith(
       expect.objectContaining({
+        // PrismaService rejects tenant-scoped updates without organizationId
+        where: { id: sourceReceipt.id, organizationId: ORG },
         data: expect.objectContaining({ amount: makeDecimal(1200), paymentReference: 'UPI-REF' }),
       }),
     );
