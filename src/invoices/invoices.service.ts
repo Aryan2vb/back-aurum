@@ -1,7 +1,12 @@
 import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
-import { AdvanceAllocationInput, AdvanceService } from '../credits/advance.service';
+import {
+  ADVANCE_CREDIT_TYPES,
+  ALL_ADVANCE_TYPES,
+  AdvanceAllocationInput,
+  AdvanceService,
+} from '../credits/advance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditsService } from '../credits/credits.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
@@ -944,6 +949,72 @@ export class InvoicesService {
     };
   }
 
+  /**
+   * For each advance payment on an invoice: the source customer's advance balance just
+   * before this invoice used it. Allocations applied together (one save) share the same
+   * "before" figure, so two receipts used at once both show the balance before either.
+   * Entries are counted as they stood at that moment (soft-deleted later still count).
+   * Receipts edited in place afterwards are counted at their current amount.
+   */
+  private async _advanceBalanceBeforeApplication(
+    organizationId: string,
+    payments: Array<{ advanceLedgerEntryId?: string | null }>,
+  ): Promise<Map<string, Decimal>> {
+    const result = new Map<string, Decimal>();
+    const appliedIds = new Set(
+      payments.map((p) => p.advanceLedgerEntryId).filter(Boolean) as string[],
+    );
+    if (!appliedIds.size) return result;
+
+    const applied = await this.prisma.ledgerEntry.findMany({
+      where: { id: { in: [...appliedIds] }, organizationId },
+      select: { customerId: true },
+    });
+    const customerIds = [...new Set(applied.map((e) => e.customerId))];
+    if (!customerIds.length) return result;
+
+    const entries = await this.prisma.ledgerEntry.findMany({
+      where: {
+        organizationId,
+        customerId: { in: customerIds },
+        type: { in: [...ALL_ADVANCE_TYPES] },
+      },
+      select: {
+        id: true,
+        customerId: true,
+        type: true,
+        amount: true,
+        createdAt: true,
+        deletedAt: true,
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    const credit = new Set<string>(ADVANCE_CREDIT_TYPES);
+    const signed = (e: (typeof entries)[number]) =>
+      credit.has(e.type) ? new Decimal(e.amount) : new Decimal(e.amount).negated();
+
+    for (const customerId of customerIds) {
+      const own = entries.filter((e) => e.customerId === customerId);
+      let i = 0;
+      while (i < own.length) {
+        if (!appliedIds.has(own[i].id)) {
+          i++;
+          continue;
+        }
+        // A run of this invoice's applications with nothing else in between = one save
+        const start = own[i].createdAt;
+        const run: string[] = [];
+        while (i < own.length && appliedIds.has(own[i].id)) run.push(own[i++].id);
+        const before = own
+          .filter((e) => e.createdAt < start && (!e.deletedAt || e.deletedAt > start))
+          .reduce((sum, e) => sum.plus(signed(e)), new Decimal(0));
+        const value = before.lessThan(0) ? new Decimal(0) : before.toDecimalPlaces(2);
+        for (const id of run) result.set(id, value);
+      }
+    }
+    return result;
+  }
+
   async findOne(id: string, organizationId: string) {
     const invoice = await this.prisma.invoice.findFirst({
       where: { id, organizationId, deletedAt: null },
@@ -1018,12 +1089,19 @@ export class InvoicesService {
         })
       : [];
     const receiptById = new Map(receipts.map((r) => [r.id, r]));
+    const balanceBeforeByEntry = await this._advanceBalanceBeforeApplication(
+      organizationId,
+      invoice.payments,
+    );
 
     const payments = invoice.payments.map((p: any) => {
       const receipt = p.advanceEntryId ? receiptById.get(p.advanceEntryId) : undefined;
       return {
         ...p,
         sourceCustomerName: p.sourceCustomerId ? (nameById.get(p.sourceCustomerId) ?? null) : null,
+        advanceBalanceBefore: p.advanceLedgerEntryId
+          ? (balanceBeforeByEntry.get(p.advanceLedgerEntryId)?.toNumber() ?? null)
+          : null,
         advanceReceipt: receipt
           ? {
               id: receipt.id,

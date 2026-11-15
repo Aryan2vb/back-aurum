@@ -1525,3 +1525,62 @@ describe('InvoicesService udhar sync after edit', () => {
     expect(data.status).toBe('ACTIVE');
   });
 });
+
+describe('InvoicesService._advanceBalanceBeforeApplication', () => {
+  const t = (min: number) => new Date(Date.UTC(2026, 10, 1, 10, min));
+  const entry = (id: string, type: string, amount: number, min: number, deletedMin?: number) => ({
+    id,
+    customerId: 'cust-a',
+    type,
+    amount: new Decimal(amount),
+    createdAt: t(min),
+    deletedAt: deletedMin === undefined ? null : t(deletedMin),
+  });
+
+  it('returns the balance before this invoice used the advance, shared by one save', async () => {
+    const ledger = [
+      entry('r1', 'ADVANCE_RECEIVED', 10000, 0),
+      entry('r2', 'ADVANCE_RECEIVED', 5000, 1),
+      entry('old', 'ADVANCE_APPLIED', 2000, 2), // another invoice
+      entry('gone', 'ADVANCE_RECEIVED', 999, 3, 4), // deleted before this invoice
+      entry('a1', 'ADVANCE_APPLIED', 6000, 5), // this invoice, receipt r1
+      entry('a2', 'ADVANCE_APPLIED', 4000, 5), // this invoice, receipt r2 (same save)
+      entry('later', 'ADVANCE_RECEIVED', 7000, 9), // after: not counted
+    ];
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ customerId: 'cust-a' }, { customerId: 'cust-a' }])
+      .mockResolvedValueOnce(ledger);
+    const service = new InvoicesService(
+      { ledgerEntry: { findMany } } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    ) as any;
+
+    const result: Map<string, Decimal> = await service._advanceBalanceBeforeApplication('org-1', [
+      { advanceLedgerEntryId: 'a1' },
+      { advanceLedgerEntryId: 'a2' },
+      { advanceLedgerEntryId: null },
+    ]);
+
+    // 10000 + 5000 - 2000 = 13000 (the deleted receipt and later receipt are excluded)
+    expect(result.get('a1')?.toNumber()).toBe(13000);
+    expect(result.get('a2')?.toNumber()).toBe(13000);
+    expect(findMany.mock.calls[0][0].where.organizationId).toBe('org-1');
+    expect(findMany.mock.calls[1][0].where.organizationId).toBe('org-1');
+  });
+
+  it('skips the lookup when no payment came from an advance', async () => {
+    const findMany = jest.fn();
+    const service = new InvoicesService(
+      { ledgerEntry: { findMany } } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    ) as any;
+    const result = await service._advanceBalanceBeforeApplication('org-1', [{}]);
+    expect(result.size).toBe(0);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+});

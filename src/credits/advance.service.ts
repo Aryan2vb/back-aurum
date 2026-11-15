@@ -41,7 +41,7 @@ interface ReceiptLot {
 }
 
 /** Ledger types that INCREASE the customer's advance credit balance. */
-const ADVANCE_CREDIT_TYPES = [
+export const ADVANCE_CREDIT_TYPES = [
   LedgerType.ADVANCE_RECEIVED,
   LedgerType.ADVANCE_TRANSFER_IN,
   LedgerType.ADVANCE_CORRECTION_CREDIT,
